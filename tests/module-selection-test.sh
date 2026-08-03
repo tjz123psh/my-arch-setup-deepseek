@@ -58,7 +58,7 @@ assert_contains asus-default 'module: asus-hardware state=selected origin=defaul
 assert_contains asus-default 'module: personal-user-services state=selected origin=default availability=available'
 assert_not_contains asus-default 'module: dms-greetd '
 assert_not_contains asus-default 'module: dms-niri-greeter '
-assert_contains asus-default 'module: daily-apps state=selected origin=default availability=planning'
+assert_contains asus-default 'module: daily-apps state=selected origin=default availability=available'
 assert_contains asus-default 'apply readiness: blocked by non-executable selected modules'
 assert_contains asus-default 'official packages: 15 reviewed package(s), not installed in plan mode'
 assert_contains asus-default 'configuration targets: 162 audited file mapping(s)'

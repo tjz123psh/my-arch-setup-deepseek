@@ -7,7 +7,7 @@
 > **当前状态：规范化生产路径已经通过一次性虚拟机验证；物理主机尚未执行 apply。**
 > 项目显式映射 198 个配置文件，其中 `physical-v1` 162 个、`vm-v1` 36 个；
 > 经过隐私清理的 Neovim 配置共 42 个文件。生产就绪登记为
-> 9 个 `available`、21 个 `planning`、2 个 `unavailable`。
+> 13 个 `available`、17 个 `planning`、2 个 `unavailable`。
 
 ## 项目边界
 

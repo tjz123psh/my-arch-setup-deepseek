@@ -1,24 +1,26 @@
-# VM batch 2026-08-04 — module-level promotion validation (planned)
+# VM batch 2026-08-04 — module-level promotion validation (complete)
 
 This document records the fourth disposable-VM validation batch, executed on
 2026-08-04 in this repository (my-arch-setup-deepseek). It validates **module
 selection** for four production-planning modules — `daily-apps`,
 `repository-tools`, `development-toolchain` and `personal-autostart` — whose
 recipe-level pipeline evidence already exists (batches 2026-08-03 / 2026-08-03b
-validated all twelve fixed AUR recipes). The batch runs the full nine-stage DAG
+validated the fixed AUR recipes; `claude-code` and
+`intellij-idea-ultimate-edition` were removed from `development-toolchain` by
+operator decision before the final run). The batch runs the full nine-stage DAG
 with these modules selected, and on success promotes them to `available` in
 `modules.tsv` and `production-module-readiness.tsv`.
 
-> **Status: PAUSED (2026-08-04, awaiting operator decision).** The candidate
-> manifests were validated read-only on the host (sandbox) and the VM plan is
-> clean (`no apply blocker`, effect vector `2,1,77,1,4,15,15,33,29`, 177
-> effects). The VM DAG apply progressed through official-update (496 packages),
-> official-packages, archlinuxcn-bootstrap and archlinuxcn-packages (all
-> verified-skip on later attempts), and built 5 of 15 AUR artifacts. Execution
-> stalled in `aur-source-acquisition` because the host FlClash proxy lost all
-> foreign egress (github.com, dl.google.com, download.jetbrains.com, flclash
-> CDN all TLS-EOF; only Chinese mirrors reachable). The operator paused the
-> batch and asked to decide later (see §Pause record below).
+> **Status: COMPLETE.** After a host-network outage paused the batch, the
+> operator restored FlClash egress and the run resumed with the post-removal
+> candidate tree. The full nine-stage DAG passed in the guest (plan fingerprint
+> `3ad14c99…`, effect vector `2,1,77,1,4,13,13,33,29`, 173 effects), an
+> idempotent rerun skipped all 13 AUR artifacts without rebuilding, and
+> independent `pacman -Q` confirmed the module-level package effects. The
+> evidence lives in
+> `~/.local/state/my-archlinux-setup/vm-lab/20260804/`. Host promotion (four
+> modules → `available`) is applied and the full local test suite passes. See
+> §Verification run (2026-08-04) below.
 
 ## Scope and boundary
 
@@ -199,3 +201,69 @@ daily-apps,repository-tools,development-toolchain,personal-autostart \
 All guest processes were stopped before the pause (verified no residual
 orchestrator/makepkg/curl). The domain is still running with its overlay
 intact.
+
+## Verification run (2026-08-04, resumed after network restore)
+
+The operator restored host FlClash egress, the batch resumed, and this section
+records the final successful run. The old PAUSED state (fingerprint
+`86ad4393…`) was superseded by a new tree (commit e3c2325 plus the candidate
+promotion manifests) whose plan fingerprint is `3ad14c99…`.
+
+### Guest run (domain `myarch-batch4-promotion`)
+
+- Fresh tree injected from the host archive (SHA-256 `167982e2…`, 431 members)
+  plus the private AUR source cache for linuxqq/paru/wechat.
+- Plan: ready, no apply blocker, effect vector `2,1,77,1,4,13,13,33,29`
+  (173 effects).
+- Full DAG apply (`--mode new`): all nine stages passed — privilege-wrapper,
+  official-update (496 packages), official-packages, archlinuxcn-bootstrap,
+  archlinuxcn-packages, aur-source-acquisition (13 recipes source-verified),
+  aur-build-install (13 clean-chroot builds + installs), user-config
+  (33 targets), system-actions (failed-units empty).
+- Idempotent rerun (`--rerun`): run-completed with the same fingerprint; the
+  AUR build log shows `skip: <pkg>: verified artifact already exists` for all
+  13 packages and "nothing to do" for the chroot update; no artifact mtime
+  changed (all artifacts remain in the 21:54–21:58 window).
+- Independent `pacman -Q`: all 13 AUR packages installed with the pinned
+  versions (e.g. paru 2.1.0-5, opencode-bin 1.18.10-1, linuxqq-appimage
+  3.2.32_20260730-1); module-level official packages present (pacman-contrib
+  1.13.1-1, reflector 2023-5, downgrade 12.0.2-1); `paru --version` runs
+  (v2.1.0, libalpm v16.0.1); guest total 812 installed packages.
+
+### Evidence (host `~/.local/state/my-archlinux-setup/vm-lab/20260804/`)
+
+- `aur-installed.json` — module-level installation snapshot (13 AUR + 3 module
+  official packages + total count), sha256 `dd48cacc…`.
+- `run-apply.log` / `run-rerun.log` — full-orchestrator run logs for the apply
+  (fingerprint `3ad14c99…`) and the idempotent rerun, sha256 `b7da5264…` /
+  `09d0ef0b…`.
+- `aur-build-20260803T215415Z-155887.log` — the successful 13-recipe clean-chroot
+  build log (sha256 `cc1d4dd0…`); `aur-build-20260803T220140Z-213228.log` — the
+  idempotent rerun skip log (sha256 `b1c5399f…`).
+- `aur-install-20260803T215842Z-199594.log` / `aur-install-20260803T220144Z-213291.log`,
+  `aur-source-acquire-*.log` — per-stage AUR install/source logs.
+- Earlier paused-attempt logs (17:20–17:57, fingerprint `86ad4393…`) are also
+  preserved in the directory for provenance.
+
+### Cleanup
+
+ACPI shutdown → `virsh undefine --nvram myarch-batch4-promotion` → offline
+`qemu-img check` (No errors, 19.17% allocated) → overlay and NVRAM deleted.
+The read-only baseline `baseline-handoff.qcow2` and its digest
+(`4210f312…`) are unchanged. The domain list is empty.
+
+### Host promotion (commit after this document)
+
+- `manifests/modules.tsv`: `daily-apps`, `repository-tools`,
+  `development-toolchain` → `available` (`personal-autostart` was already
+  available).
+- `manifests/production-module-readiness.tsv`: the same four rows →
+  `available`, evidence text updated to record the module-level verification.
+- `manifests/profile-modules.tsv`: four `vm`/`vm-v1` rows with `disabled`
+  default added (so `--modules` can select them without changing the default vm
+  selection).
+- `tests/production-readiness-test.sh`: proven set covers all 13 recipes,
+  readiness counts `{available: 13, planning: 17, unavailable: 2}`,
+  audit_modules now `developer-editor`, `personal-scripts`, `asus-hardware`,
+  `personal-user-services`.
+- Full local suite: 39/39 tests pass (including docs-check and static-check).

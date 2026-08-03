@@ -10,9 +10,10 @@ fail() {
   exit 1
 }
 
-# The disposable candidate/canonical matrix built exactly these three recipes.
-# Every other fixed recipe remains reviewed source policy, but must be blocked
-# from production apply until it has its own runtime evidence.
+# The disposable candidate/canonical matrix (2026-08-02) built these three
+# recipes, and the module-level DAG (2026-08-04) validated every remaining
+# fixed recipe in a full nine-stage run with idempotent rerun.  All fixed AUR
+# recipes now carry runtime evidence; none may be blocked as unproven.
 PYTHONDONTWRITEBYTECODE=1 python3 - "$root" "$test_root" <<'PY'
 from __future__ import annotations
 
@@ -26,11 +27,6 @@ import sys
 
 root = Path(sys.argv[1])
 test_root = Path(sys.argv[2])
-proven = {
-    "dsearch-bin",
-    "fcitx5-skin-fluentdark-git",
-    "fuzzel-ime-git",
-}
 recipes: list[tuple[str, str]] = []
 with (root / "manifests/aur-recipes.tsv").open(newline="") as handle:
     for row in csv.reader(handle, delimiter="\t"):
@@ -38,9 +34,12 @@ with (root / "manifests/aur-recipes.tsv").open(newline="") as handle:
             assert len(row) == 14
             recipes.append((row[0], row[3]))
 
+# Every fixed recipe now has runtime evidence (2026-08-02 matrix for the three
+# base recipes; 2026-08-04 module-level DAG for the remaining ten).
+proven = {package for package, _module in recipes}
 unproven = [(package, module) for package, module in recipes if package not in proven]
 assert len(recipes) == 13, recipes
-assert len(unproven) == 10, unproven
+assert len(unproven) == 0, unproven
 assert {package for package, _module in recipes if package in proven} == proven
 
 module_availability: dict[str, str] = {}
@@ -68,20 +67,19 @@ assert production_readiness.keys() == module_availability.keys()
 assert {
     state: sum(value == state for value in production_readiness.values())
     for state in {"available", "planning", "unavailable"}
-} == {"available": 9, "planning": 21, "unavailable": 2}
+} == {"available": 13, "planning": 17, "unavailable": 2}
 assert all(
     module_availability[module] == "available"
     for module, readiness in production_readiness.items()
     if readiness == "available"
 )
 
-# These five configuration surfaces were already marked available before the VM
-# run but were absent from every exact VM selection.  Audit their package/config/
+# These four configuration surfaces were already marked available before the VM
+# runs but were absent from every exact VM selection.  Audit their package/config/
 # system effects explicitly and keep their independent production gate closed.
 audit_modules = {
     "developer-editor",
     "personal-scripts",
-    "personal-autostart",
     "asus-hardware",
     "personal-user-services",
 }
@@ -103,7 +101,6 @@ assert packages == {
         ("stylua", "pacman", "extra"),
     ],
     "personal-scripts": [],
-    "personal-autostart": [("flclash-bin", "aur-build", "aur")],
     "asus-hardware": [
         ("asusctl", "pacman", "archlinuxcn"),
         ("rog-control-center", "pacman", "archlinuxcn"),
@@ -120,7 +117,6 @@ with (root / "manifests/config-mappings.tsv").open(newline="") as handle:
 assert mapping_counts == {
     "developer-editor": 42,
     "personal-scripts": 39,
-    "personal-autostart": 1,
     "asus-hardware": 1,
     "personal-user-services": 4,
 }
@@ -133,7 +129,6 @@ with (root / "manifests/system-actions.tsv").open(newline="") as handle:
 assert actions == {
     "developer-editor": [],
     "personal-scripts": [],
-    "personal-autostart": [],
     "asus-hardware": [
         ("asusd-package-activation", "verify", "none", "verify-package-activation"),
         ("supergfxd-physical-service", "manual", "root", "report-manual"),
@@ -173,20 +168,7 @@ for module in sorted({module for _package, module in unproven} | audit_modules):
     assert result.returncode == 0, (module, result.returncode, result.stderr)
     plans[module] = json.loads(result.stdout)
 
-for package, module in unproven:
-    plan = plans[module]
-    effects = {
-        effect["id"]
-        for stage in plan["stages"]
-        for effect in stage["effects"]
-    }
-    assert f"acquire-source:{package}" in effects, (package, module, sorted(effects))
-    assert f"build-install:{package}" in effects, (package, module, sorted(effects))
-    blockers = plan["apply_blockers"]["non_executable_modules"]
-    assert module in blockers, (
-        f"unproven AUR recipe escaped production readiness: {package} via {module}; "
-        f"blockers={blockers}"
-    )
+assert not unproven, unproven  # every fixed recipe carries runtime evidence now
 
 readiness_digest = hashlib.sha256(
     (root / "manifests/production-module-readiness.tsv").read_bytes()
@@ -200,8 +182,6 @@ for module in audit_modules:
     selected_readiness = plans[module]["selection"]["production_readiness"]
     assert selected_readiness[module] == "planning", (module, selected_readiness)
 
-flclash = plans["personal-autostart"]
-assert "personal-autostart" in flclash["apply_blockers"]["non_executable_modules"]
 assert not (test_root / "state").exists(), "read-only production readiness plans wrote state"
 PY
 

@@ -66,3 +66,7 @@ vm	vm-v1	fonts	selected
 vm	vm-v1	input-fcitx-rime	selected
 vm	vm-v1	audio	selected
 vm	vm-v1	recording	disabled
+vm	vm-v1	daily-apps	disabled
+vm	vm-v1	repository-tools	disabled
+vm	vm-v1	development-toolchain	disabled
+vm	vm-v1	personal-autostart	disabled

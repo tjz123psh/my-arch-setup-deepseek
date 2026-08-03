@@ -13,13 +13,13 @@ personal-user-services	available	selectable	-	-	Reviewed user systemd unit files
 base-preconditions	available	selectable	-	-	Manual base, boot, network and core-runtime preconditions verified without taking ownership
 archlinuxcn-trust	available	dependency	-	-	Pinned keyring and exact repository trust required by selected archlinuxcn packages
 build-foundation	available	selectable	-	-	Official build and source-control foundation required before declared third-party builds
-repository-tools	planning	selectable	build-foundation,archlinuxcn-trust	-	Reviewed package maintenance and repository tooling
+repository-tools	available	selectable	build-foundation,archlinuxcn-trust	-	Reviewed package maintenance and repository tooling
 fonts	available	selectable	-	-	Fonts required by the reviewed desktop and editor configuration
-daily-apps	planning	selectable	-	-	Personal daily applications installed without account or profile migration
+daily-apps	available	selectable	-	-	Personal daily applications installed without account or profile migration
 desktop-apps	planning	selectable	desktop-shared	-	Shared graphical applications and file-management utilities
 input-fcitx-rime	available	selectable	desktop-shared,archlinuxcn-trust	-	Chinese Fcitx5 and Rime packages plus reviewed input configuration
 cli-tools	planning	selectable	-	-	Command-line workstation utilities used by the user and reviewed scripts
-development-toolchain	planning	selectable	build-foundation,archlinuxcn-trust	-	Language runtimes, compilers and development diagnostics
+development-toolchain	available	selectable	build-foundation,archlinuxcn-trust	-	Language runtimes, compilers and development diagnostics
 container-tools	planning	selectable	-	-	Docker container runtime and compose tooling
 storage-maintenance	planning	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
 virtualization	planning	selectable	-	-	KVM, libvirt and graphical virtual-machine tooling

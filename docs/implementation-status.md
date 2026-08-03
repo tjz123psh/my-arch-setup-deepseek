@@ -69,14 +69,17 @@ with production execution: selecting `personal-autostart` alone exposed the
 unproved `flclash-bin` AUR recipe with no blocker.
 
 `manifests/production-module-readiness.tsv` now supplies the independent,
-plan-hashed execution gate. It covers all 32 modules exactly once: 9 available,
-21 planning and 2 unavailable. The five registry-available but non-VM-selected
-surfaces—`developer-editor`, `personal-scripts`, `personal-autostart`,
-`asus-hardware` and `personal-user-services`—remain usable by the reviewed
+plan-hashed execution gate. It covers all 32 modules exactly once: 13 available,
+17 planning and 2 unavailable. The four registry-available but non-VM-selected
+surfaces—`developer-editor`, `personal-scripts`, `asus-hardware` and
+`personal-user-services`—remain usable by the reviewed
 config-only path but are production-planning for the full DAG. Regression plans
-enumerate all 12 non-VM AUR recipes and audit the package/config/system effects
-of those five modules. Exact VM selections have no blocker; the physical ASUS
-default has exactly 21 and fails before preflight.
+audit the package/config/system effects of those four modules. Exact VM
+selections have no blocker; the physical ASUS default has 17 blockers
+(`asus-hardware`, `bluetooth`, `cli-tools`, `container-tools`, `desktop-apps`,
+`developer-editor`, `graphics-amd`, `graphics-nvidia`, `hardware-tools`,
+`kernel-support`, `ocr`, `personal-scripts`, `personal-user-services`, `power`,
+`recording`, `storage-maintenance`, `virtualization`) and fails before preflight.
 
 A canonical manifest still cannot override a false stage or production module
 row, and an external manifest cannot authorize apply. The legacy
@@ -402,7 +405,7 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
 | Manual disk/base/GRUB/network handoff | Contract and frozen VM baseline verified | Real reinstall remains user/manual by design |
 | Exact module/WM selection | Implemented; Niri, Hyprland and both config/process boundaries passed | Greeter remains a separate unavailable module |
 | Official + archlinuxcn trust stages | Canonical VM-selected effects applied, verified, retried and rerun | Existing physical host repository state requires a fresh reviewed reconcile plan |
-| Fixed AUR pipeline | Three VM-selected recipes plus all twelve further recipes passed real source/build/artifact/install/rerun paths in disposable VM batches, including partial-chroot recovery and .INSTALL/.CHANGELOG metadata acceptance | No recipe-level boundary remains; only module promotion and physical-host application are outstanding |
+| Fixed AUR pipeline | All thirteen fixed recipes passed real source/build/artifact/install/rerun paths: three in the 2026-08-02 matrix, the remaining ten in the module-level DAG of batch 2026-08-04 (after claude-code and intellij-idea-ultimate-edition were removed by operator decision), including partial-chroot recovery and .INSTALL/.CHANGELOG metadata acceptance | Module promotion for the four validated modules is complete; physical-host application is outstanding |
 | User config and privilege wrapper | Hash-bound effects, race-safe backup/restore and idempotence passed | No real HOME apply was performed |
 | Automatic system actions | VM-applicable actions and rollback/state checks passed | Hardware services and privileged groups remain physical/manual |
 | Portal/audio/Fcitx session ownership | Strict Niri/Hyprland checkers passed in all exact selections | Hyprland noninteractive screenshot remained unavailable; real audio devices are physical-only |

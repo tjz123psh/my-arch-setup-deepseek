@@ -57,13 +57,17 @@ All nine canonical handlers and auxiliary inputs are present. Every stage
 integration flag is true and exactly `base-preconditions`, `archlinuxcn-trust`,
 `build-foundation`, `fonts` and `audio` registry fields were promoted after the
 candidate matrix. The later independent production-readiness manifest is also a
-plan input: it marks the nine modules present in exact VM selections available,
-21 other modules planning and 2 greeter modules unavailable. Thus reviewed
-config availability cannot authorize an unselected effect: all 12 non-VM AUR
-recipes passed the recipe-level pipeline in batches 2026-08-03 and
-2026-08-03b, but no recipe-level subset result generalizes to a module —
-every planning module still requires its own module selection in the VM
-matrix before promotion.
+plan input: it marks the thirteen modules present in exact VM selections
+available (the 2026-08-02 matrix added five; the module-level DAG batch
+2026-08-04 added `daily-apps`, `repository-tools`, `development-toolchain` and
+`personal-autostart`), 17 other modules planning and 2 greeter modules
+unavailable. Thus reviewed config availability cannot authorize an unselected
+effect: every fixed AUR recipe now carries module-level runtime evidence (the
+three base recipes from the 2026-08-02 matrix, the remaining ten from the
+2026-08-04 full-DAG run after `claude-code` and
+`intellij-idea-ultimate-edition` were removed by operator decision), and every
+planning module still requires its own module selection in the VM matrix before
+promotion.
 
 Read-only plans are safe before approval:
 
@@ -563,14 +567,16 @@ without deleting its target, immutable baseline, seed or private evidence.
 ## Evidence boundary after VM completion
 
 Automated selected-package/config/service/session behavior is complete for the
-exact VM scope. Physical ASUS/GPU/outputs, Bluetooth, real audio devices,
-suspend, boot/recovery, privileged group membership, the deferred greeter and
-module-level effects of the 10 recipes behind production-planning module gates
-are not satisfied by this matrix (the recipes themselves passed the low-level
-pipeline in batches 2026-08-03 / 2026-08-03b; see
-[`vm-execution-plan-20260803.md`](vm-execution-plan-20260803.md) and
-[`vm-execution-plan-20260803b.md`](vm-execution-plan-20260803b.md)).
-Hyprland runtime checks pass, but reliable guest-owned visual capture remains
+exact VM scope, and the module-level DAG batch 2026-08-04 verified the full
+module selection for `daily-apps`, `repository-tools`,
+`development-toolchain` and `personal-autostart` (13 recipes source-acquired,
+clean-chroot built, installed, and idempotently re-run). Physical
+ASUS/GPU/outputs, Bluetooth, real audio devices, suspend, boot/recovery,
+privileged group membership and the deferred greeter are not satisfied by this
+matrix (see
+[`vm-execution-plan-20260804.md`](vm-execution-plan-20260804.md) for the
+module-level run and its evidence). Hyprland runtime checks pass, but reliable
+guest-owned visual capture remains
 environment-dependent.
 
 ## Post-review final-tree both-WM spot run — 2026-08-02
