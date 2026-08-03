@@ -158,15 +158,17 @@ sources = set()
 source_keys = set()
 target_keys = set()
 known_scopes = set(profile_scopes.values()) - {"none"}
-for line_number, raw in data_lines(mapping, "# schema=2"):
+for line_number, raw in data_lines(mapping, "# schema=3"):
     parts = raw.split("\t")
-    if len(parts) != 4 or not all(parts):
+    if len(parts) != 5 or not all(parts):
         raise SystemExit(f"invalid config mapping at line {line_number}")
-    config_scope, module, source, target = parts
+    config_scope, module, source, target, mode = parts
     if config_scope not in known_scopes:
         raise SystemExit(f"unknown config scope at line {line_number}: {config_scope}")
     if module not in modules:
         raise SystemExit(f"unknown config module at line {line_number}: {module}")
+    if not re.fullmatch(r"[0-7]{3,4}", mode) or mode not in {"600", "644", "744", "755"}:
+        raise SystemExit(f"invalid config mapping mode at line {line_number}: {mode}")
     if not any(
         profile_scopes[profile] == config_scope and module in choices
         for profile, choices in profile_modules.items()

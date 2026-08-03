@@ -29,12 +29,12 @@ test	fixture-v1	scripts	selected
 none	none	config	selected
 MANIFEST
 cat >"$fixture/manifests/config-mappings.tsv" <<'MANIFEST'
-# schema=2
-# scope<TAB>module<TAB>source<TAB>target
-fixture-v1	config	config/home/.config/app/config.ini	.config/app/config.ini
-fixture-v1	scripts	config/home/scripts/tool	scripts/tool
-fixture-v1	config	config/home/scripts/desktop/gsudo	scripts/desktop/gsudo
-fixture-v1	config	config/home/scripts/desktop/fuzzel-askpass	scripts/desktop/fuzzel-askpass
+# schema=3
+# scope<TAB>module<TAB>source<TAB>target<TAB>mode
+fixture-v1	config	config/home/.config/app/config.ini	.config/app/config.ini	644
+fixture-v1	scripts	config/home/scripts/tool	scripts/tool	755
+fixture-v1	config	config/home/scripts/desktop/gsudo	scripts/desktop/gsudo	755
+fixture-v1	config	config/home/scripts/desktop/fuzzel-askpass	scripts/desktop/fuzzel-askpass	755
 MANIFEST
 printf 'fixture=true\n' >"$fixture/config/home/.config/app/config.ini"
 printf '#!/usr/bin/env bash\nprintf fixture\\n\n' >"$fixture/config/home/scripts/tool"

@@ -136,7 +136,9 @@ def lexical_absolute(path: Path) -> Path:
     return Path(os.path.abspath(os.fspath(path.expanduser())))
 
 
-def read_regular(path: Path, label: str, *, require_owner: bool = True) -> tuple[bytes, os.stat_result]:
+def read_regular(
+    path: Path, label: str, *, require_owner: bool = True
+) -> tuple[bytes, os.stat_result]:
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
         fd = os.open(path, flags)
@@ -189,8 +191,12 @@ def safe_lines(path: Path, schema: str, label: str) -> list[str]:
     return lines
 
 
-def rows(path: Path, schema: str, label: str, fields: int) -> Iterable[tuple[int, list[str]]]:
-    for line_number, parts in enumerate(csv.reader(safe_lines(path, schema, label)[1:], delimiter="\t"), 2):
+def rows(
+    path: Path, schema: str, label: str, fields: int
+) -> Iterable[tuple[int, list[str]]]:
+    for line_number, parts in enumerate(
+        csv.reader(safe_lines(path, schema, label)[1:], delimiter="\t"), 2
+    ):
         if not parts or not parts[0] or parts[0].startswith("#"):
             continue
         if len(parts) != fields or not all(parts):
@@ -213,7 +219,11 @@ def safe_relative(value: str, label: str) -> None:
 
 
 def allowed_target(value: str) -> bool:
-    return value.startswith(".config/") or value.startswith(".local/share/fcitx5/rime/") or value.startswith("scripts/")
+    return (
+        value.startswith(".config/")
+        or value.startswith(".local/share/fcitx5/rime/")
+        or value.startswith("scripts/")
+    )
 
 
 def parse_modules(raw: str, label: str) -> tuple[str, ...]:
@@ -231,8 +241,14 @@ def load_modules() -> dict[str, str]:
     result: dict[str, str] = {}
     for line_number, parts in rows(MODULES_PATH, "# schema=1", "module registry", 6):
         module, _availability, kind = parts[:3]
-        if TOKEN_RE.fullmatch(module) is None or module in result or kind not in {"selectable", "dependency"}:
-            fail(f"module registry has an unsafe, duplicate, or invalid module at line {line_number}")
+        if (
+            TOKEN_RE.fullmatch(module) is None
+            or module in result
+            or kind not in {"selectable", "dependency"}
+        ):
+            fail(
+                f"module registry has an unsafe, duplicate, or invalid module at line {line_number}"
+            )
         result[module] = kind
     if not result:
         fail("module registry has no entries")
@@ -244,17 +260,25 @@ def load_profile_scope(profile: str, known_modules: set[str]) -> tuple[str, set[
     offered: set[str] = set()
     profiles: set[str] = set()
     seen: set[tuple[str, str]] = set()
-    for line_number, parts in rows(PROFILES_PATH, "# schema=1", "profile module manifest", 4):
+    for line_number, parts in rows(
+        PROFILES_PATH, "# schema=1", "profile module manifest", 4
+    ):
         row_profile, scope, module, state = parts
         profiles.add(row_profile)
         key = (row_profile, module)
         if key in seen:
             fail(f"profile module manifest repeats {row_profile}/{module}")
         seen.add(key)
-        if TOKEN_RE.fullmatch(row_profile) is None or (scope != "none" and TOKEN_RE.fullmatch(scope) is None):
-            fail(f"profile module manifest has an unsafe profile/scope at line {line_number}")
+        if TOKEN_RE.fullmatch(row_profile) is None or (
+            scope != "none" and TOKEN_RE.fullmatch(scope) is None
+        ):
+            fail(
+                f"profile module manifest has an unsafe profile/scope at line {line_number}"
+            )
         if module not in known_modules or state not in {"selected", "disabled"}:
-            fail(f"profile module manifest has an invalid module/state at line {line_number}")
+            fail(
+                f"profile module manifest has an invalid module/state at line {line_number}"
+            )
         if row_profile == profile:
             scopes.add(scope)
             offered.add(module)
@@ -275,14 +299,23 @@ def load_mappings(
     selected_rows: list[Mapping] = []
     seen: set[tuple[str, str]] = set()
     seen_sources: set[tuple[str, str]] = set()
-    for line_number, parts in rows(MAPPINGS_PATH, "# schema=2", "config mapping manifest", 4):
-        row_scope, module, source_relative, target_relative = parts
+    for line_number, parts in rows(
+        MAPPINGS_PATH, "# schema=3", "config mapping manifest", 5
+    ):
+        row_scope, module, source_relative, target_relative, mode_raw = parts
         if TOKEN_RE.fullmatch(row_scope) is None or module not in known_modules:
             fail(f"config mapping has an invalid scope/module at line {line_number}")
         safe_relative(source_relative, "configuration source")
         safe_relative(target_relative, "configuration target")
         if not allowed_target(target_relative):
-            fail(f"configuration target is outside approved user roots: {target_relative}")
+            fail(
+                f"configuration target is outside approved user roots: {target_relative}"
+            )
+        if re.fullmatch(r"[0-7]{3,4}", mode_raw) is None:
+            fail(f"config mapping has an invalid mode at line {line_number}")
+        source_mode = int(mode_raw, 8)
+        if source_mode not in ALLOWED_SOURCE_MODES:
+            fail(f"config mapping declares an unsupported mode: {mode_raw}")
         key = (row_scope, target_relative)
         source_key = (row_scope, source_relative)
         if key in seen:
@@ -292,11 +325,15 @@ def load_mappings(
         seen.add(key)
         seen_sources.add(source_key)
         source = PROJECT_ROOT / source_relative
-        source_data, source_info = read_regular(source, f"configuration source {source_relative}")
-        source_mode = stat.S_IMODE(source_info.st_mode)
-        if source_mode not in ALLOWED_SOURCE_MODES or source_info.st_mode & 0o022:
-            fail(f"configuration source has an unsupported mode: {source_relative}")
-        privilege_target = target_relative in {"scripts/desktop/gsudo", "scripts/desktop/fuzzel-askpass"}
+        source_data, source_info = read_regular(
+            source, f"configuration source {source_relative}"
+        )
+        if source_info.st_mode & 0o022:
+            fail(f"configuration source is group/world writable: {source_relative}")
+        privilege_target = target_relative in {
+            "scripts/desktop/gsudo",
+            "scripts/desktop/fuzzel-askpass",
+        }
         if row_scope == scope and (
             (privilege_only and privilege_target)
             or (not privilege_only and not privilege_target and module in selected)
@@ -335,11 +372,16 @@ def parse_effects(raw: str) -> tuple[dict[str, str], ...]:
         expected = {"detail", "id", "module", "payload_sha256"}
         if not isinstance(item, dict) or set(item) != expected:
             fail(f"configuration effect {index} has malformed fields")
-        if not all(isinstance(item[key], str) and item[key] and not contains_control(item[key]) for key in expected):
+        if not all(
+            isinstance(item[key], str) and item[key] and not contains_control(item[key])
+            for key in expected
+        ):
             fail(f"configuration effect {index} has an unsafe value")
         if HEX64_RE.fullmatch(item["payload_sha256"]) is None:
             fail(f"configuration effect {index} has an invalid payload SHA-256")
-        result.append({key: item[key] for key in ("detail", "id", "module", "payload_sha256")})
+        result.append(
+            {key: item[key] for key in ("detail", "id", "module", "payload_sha256")}
+        )
     return tuple(result)
 
 
@@ -348,9 +390,12 @@ def load_context() -> Context:
     stage = require_env("FULL_ORCHESTRATOR_STAGE")
     profile = require_env("FULL_ORCHESTRATOR_PROFILE")
     mode = require_env("FULL_ORCHESTRATOR_MODE")
-    modules = parse_modules(require_env("FULL_ORCHESTRATOR_MODULES"), "FULL_ORCHESTRATOR_MODULES")
+    modules = parse_modules(
+        require_env("FULL_ORCHESTRATOR_MODULES"), "FULL_ORCHESTRATOR_MODULES"
+    )
     stage_modules = parse_modules(
-        require_env("FULL_ORCHESTRATOR_STAGE_MODULES"), "FULL_ORCHESTRATOR_STAGE_MODULES"
+        require_env("FULL_ORCHESTRATOR_STAGE_MODULES"),
+        "FULL_ORCHESTRATOR_STAGE_MODULES",
     )
     effects = parse_effects(require_env("FULL_ORCHESTRATOR_EFFECTS_JSON"))
     fingerprint = require_env("FULL_ORCHESTRATOR_PLAN_FINGERPRINT")
@@ -371,8 +416,13 @@ def load_context() -> Context:
     if any(module not in module_registry for module in modules):
         fail("orchestrator selection references an unknown module")
     scope, offered = load_profile_scope(profile, set(module_registry))
-    if any(module_registry[module] == "selectable" and module not in offered for module in modules):
-        fail("orchestrator selection contains a selectable module not offered by the profile")
+    if any(
+        module_registry[module] == "selectable" and module not in offered
+        for module in modules
+    ):
+        fail(
+            "orchestrator selection contains a selectable module not offered by the profile"
+        )
     if scope == "none":
         fail(f"profile {profile} has no applicable configuration scope")
     mappings = load_mappings(
@@ -383,17 +433,23 @@ def load_context() -> Context:
     )
     if not mappings:
         fail(f"applicable {stage} stage has no selected mapping")
-    if stage == "privilege-wrapper" and {mapping.target_relative for mapping in mappings} != {
+    if stage == "privilege-wrapper" and {
+        mapping.target_relative for mapping in mappings
+    } != {
         "scripts/desktop/gsudo",
         "scripts/desktop/fuzzel-askpass",
     }:
         fail("privilege-wrapper stage does not contain the exact two reviewed targets")
-    expected_modules = tuple(module for module in modules if any(row.module == module for row in mappings))
+    expected_modules = tuple(
+        module for module in modules if any(row.module == module for row in mappings)
+    )
     if stage_modules != expected_modules:
         fail("user-config stage modules do not reproduce the selected mapping policy")
     expected_effects = tuple(mapping.effect() for mapping in mappings)
     if effects != expected_effects:
-        fail("orchestrator effects do not exactly reproduce the reviewed config mappings")
+        fail(
+            "orchestrator effects do not exactly reproduce the reviewed config mappings"
+        )
     return Context(
         action,
         stage,
@@ -445,7 +501,9 @@ def inspect_components(home: Path, target: Path) -> None:
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
             fail(f"target parent is not a real directory: {current}")
         if info.st_uid != os.geteuid() or info.st_mode & 0o022:
-            fail(f"target parent is not exclusively writable by the invoking user: {current}")
+            fail(
+                f"target parent is not exclusively writable by the invoking user: {current}"
+            )
 
 
 def inspect_target(home: Path, mapping: Mapping) -> TargetSnapshot:
@@ -457,10 +515,18 @@ def inspect_target(home: Path, mapping: Mapping) -> TargetSnapshot:
         return TargetSnapshot(path, False, None, None, None, None, None)
     except OSError as exc:
         fail(f"could not inspect configuration target {mapping.target_relative}: {exc}")
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-        fail(f"configuration target is not a single-link regular file: {mapping.target_relative}")
+    if (
+        stat.S_ISLNK(info.st_mode)
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+    ):
+        fail(
+            f"configuration target is not a single-link regular file: {mapping.target_relative}"
+        )
     if info.st_uid != os.geteuid():
-        fail(f"configuration target is not owned by the invoking user: {mapping.target_relative}")
+        fail(
+            f"configuration target is not owned by the invoking user: {mapping.target_relative}"
+        )
     data, stable = read_regular(path, f"configuration target {mapping.target_relative}")
     return TargetSnapshot(
         path,
@@ -479,7 +545,10 @@ def classify(context: Context, home: Path) -> tuple[TargetPlan, ...]:
         snapshot = inspect_target(home, mapping)
         if not snapshot.exists:
             classification = "create"
-        elif snapshot.sha256 == mapping.source_sha256 and snapshot.mode == mapping.source_mode:
+        elif (
+            snapshot.sha256 == mapping.source_sha256
+            and snapshot.mode == mapping.source_mode
+        ):
             classification = "unchanged"
         else:
             classification = "replace"
@@ -493,7 +562,11 @@ def ensure_external_parent(path: Path) -> None:
             info = path.lstat()
         except OSError as exc:
             fail(f"could not inspect state parent {path}: {exc}")
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+        ):
             fail(f"state parent is unsafe: {path}")
         if info.st_mode & 0o002:
             fail(f"state parent is world-writable: {path}")
@@ -519,7 +592,11 @@ def ensure_private_directory(path: Path) -> None:
         ):
             fail(f"private directory is unsafe or not mode 700: {path}")
         return
-    ensure_private_directory(path.parent) if path.parent.name == "my-archlinux-setup" else ensure_external_parent(path.parent)
+    ensure_private_directory(
+        path.parent
+    ) if path.parent.name == "my-archlinux-setup" else ensure_external_parent(
+        path.parent
+    )
     try:
         path.mkdir(mode=0o700)
         os.chmod(path, 0o700)
@@ -555,16 +632,25 @@ def state_paths(context: Context, home: Path) -> tuple[Path, Path, Path]:
 
 def fsync_directory(path: Path) -> None:
     try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0))
+        fd = os.open(
+            path,
+            os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+        )
         os.fsync(fd)
         os.close(fd)
     except OSError as exc:
         fail(f"could not fsync directory {path}: {exc}")
 
 
-def renameat2(path_from: Path, path_to: Path, flags: int, *, audit: bool = True) -> None:
+def renameat2(
+    path_from: Path, path_to: Path, flags: int, *, audit: bool = True
+) -> None:
     if audit:
-        sys.audit("myarch.config-conditional-replace", os.fspath(path_from), os.fspath(path_to))
+        sys.audit(
+            "myarch.config-conditional-replace",
+            os.fspath(path_from),
+            os.fspath(path_to),
+        )
     if _RENAMEAT2 is None:
         fail("renameat2 is unavailable; cannot commit configuration conditionally", 1)
     ctypes.set_errno(0)
@@ -594,7 +680,12 @@ def regular_file_snapshot(path: Path, label: str) -> TargetSnapshot:
 
 
 def displaced_snapshot_matches(path: Path, expected: TargetSnapshot) -> bool:
-    if not expected.exists or expected.data is None or expected.sha256 is None or expected.mode is None:
+    if (
+        not expected.exists
+        or expected.data is None
+        or expected.sha256 is None
+        or expected.mode is None
+    ):
         return False
     try:
         data, info = read_regular(path, "displaced configuration target")
@@ -615,19 +706,29 @@ def displaced_snapshot_matches(path: Path, expected: TargetSnapshot) -> bool:
     )
 
 
-def conditional_replace_target(temporary: Path, target: Path, expected: TargetSnapshot) -> None:
+def conditional_replace_target(
+    temporary: Path, target: Path, expected: TargetSnapshot
+) -> None:
     if not expected.exists:
         try:
             renameat2(temporary, target, RENAME_NOREPLACE)
         except OSError as exc:
-            fail(f"configuration target changed at final create boundary: {target}: {exc}", 1)
+            fail(
+                f"configuration target changed at final create boundary: {target}: {exc}",
+                1,
+            )
         return
 
-    installer_temporary = regular_file_snapshot(temporary, "installer temporary payload")
+    installer_temporary = regular_file_snapshot(
+        temporary, "installer temporary payload"
+    )
     try:
         renameat2(temporary, target, RENAME_EXCHANGE)
     except OSError as exc:
-        fail(f"configuration target changed at final replace boundary: {target}: {exc}", 1)
+        fail(
+            f"configuration target changed at final replace boundary: {target}: {exc}",
+            1,
+        )
     if displaced_snapshot_matches(temporary, expected):
         try:
             temporary.unlink()
@@ -658,7 +759,10 @@ def conditional_replace_target(temporary: Path, target: Path, expected: TargetSn
     try:
         temporary.unlink()
     except OSError as exc:
-        fail(f"could not remove verified installer temporary payload {temporary}: {exc}", 1)
+        fail(
+            f"could not remove verified installer temporary payload {temporary}: {exc}",
+            1,
+        )
     fail(f"configuration target changed at final replace boundary: {target}", 1)
 
 
@@ -668,15 +772,21 @@ def conditional_remove_target(target: Path, expected: TargetSnapshot) -> None:
     fd: int | None = None
     quarantine: Path | None = None
     try:
-        fd, name = tempfile.mkstemp(prefix=f".myarch-remove-{target.name}.", dir=target.parent)
+        fd, name = tempfile.mkstemp(
+            prefix=f".myarch-remove-{target.name}.", dir=target.parent
+        )
         quarantine = Path(name)
         os.close(fd)
         fd = None
         quarantine.unlink()
-        sys.audit("myarch.config-conditional-remove", os.fspath(target), os.fspath(quarantine))
+        sys.audit(
+            "myarch.config-conditional-remove", os.fspath(target), os.fspath(quarantine)
+        )
         renameat2(target, quarantine, RENAME_NOREPLACE, audit=False)
     except OSError as exc:
-        fail(f"configuration target changed at final remove boundary: {target}: {exc}", 1)
+        fail(
+            f"configuration target changed at final remove boundary: {target}: {exc}", 1
+        )
     finally:
         if fd is not None:
             os.close(fd)
@@ -730,7 +840,14 @@ def atomic_write(path: Path, data: bytes, mode: int) -> None:
 
 
 def atomic_json(path: Path, document: dict[str, Any]) -> None:
-    atomic_write(path, json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2).encode("utf-8") + b"\n", 0o600)
+    atomic_write(
+        path,
+        json.dumps(document, ensure_ascii=False, sort_keys=True, indent=2).encode(
+            "utf-8"
+        )
+        + b"\n",
+        0o600,
+    )
 
 
 def policy_sha256() -> str:
@@ -752,7 +869,11 @@ def inspect_optional_directory(path: Path, label: str, *, private: bool) -> bool
         return False
     except OSError as exc:
         fail(f"could not inspect {label} {path}: {exc}")
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+    if (
+        stat.S_ISLNK(info.st_mode)
+        or not stat.S_ISDIR(info.st_mode)
+        or info.st_uid != os.geteuid()
+    ):
         fail(f"{label} is unsafe: {path}")
     mode = stat.S_IMODE(info.st_mode)
     if (private and mode != 0o700) or (not private and info.st_mode & 0o002):
@@ -768,7 +889,9 @@ def readonly_backups_root(home: Path) -> Path | None:
     if not inspect_optional_directory(project, "private project state", private=True):
         return None
     backups = project / "backups"
-    if not inspect_optional_directory(backups, "private backup directory", private=True):
+    if not inspect_optional_directory(
+        backups, "private backup directory", private=True
+    ):
         return None
     return backups
 
@@ -800,7 +923,9 @@ def validate_backup_tree(root: Path, document: dict[str, Any]) -> None:
             for name in directory_names:
                 child = directory / name
                 child_info = child.lstat()
-                if stat.S_ISLNK(child_info.st_mode) or not stat.S_ISDIR(child_info.st_mode):
+                if stat.S_ISLNK(child_info.st_mode) or not stat.S_ISDIR(
+                    child_info.st_mode
+                ):
                     fail(f"backup directory tree contains an unsafe entry: {child}")
             for name in file_names:
                 path = directory / name
@@ -808,11 +933,17 @@ def validate_backup_tree(root: Path, document: dict[str, Any]) -> None:
                     continue
                 entry = expected.get(path)
                 if entry is None:
-                    fail(f"backup directory contains an unrecorded file: {path.relative_to(root)}")
-                data, info = read_regular(path, f"backup payload {path.relative_to(root)}")
+                    fail(
+                        f"backup directory contains an unrecorded file: {path.relative_to(root)}"
+                    )
+                data, info = read_regular(
+                    path, f"backup payload {path.relative_to(root)}"
+                )
                 if hashlib.sha256(data).hexdigest() != entry["sha256"]:
                     fail(f"backup payload hash mismatch: {path.relative_to(root)}")
-                if stat.S_IMODE(info.st_mode) != backup_mode(entry["mode"], "backup target"):
+                if stat.S_IMODE(info.st_mode) != backup_mode(
+                    entry["mode"], "backup target"
+                ):
                     fail(f"backup payload mode mismatch: {path.relative_to(root)}")
                 observed.add(path)
     except ConfigFailure:
@@ -849,35 +980,67 @@ def load_backup_document(root: Path) -> dict[str, Any]:
         "status",
         "targets",
     }
-    if not isinstance(value, dict) or set(value) != expected or value.get("schema") != 1:
+    if (
+        not isinstance(value, dict)
+        or set(value) != expected
+        or value.get("schema") != 1
+    ):
         fail(f"backup metadata has an unsupported schema for {root.name}")
     backup_id = value["id"]
-    if not isinstance(backup_id, str) or BACKUP_ID_RE.fullmatch(backup_id) is None or backup_id != root.name:
+    if (
+        not isinstance(backup_id, str)
+        or BACKUP_ID_RE.fullmatch(backup_id) is None
+        or backup_id != root.name
+    ):
         fail(f"backup metadata id is unsafe or mismatched for {root.name}")
     if value["kind"] not in {"deployment-replacement", "pre-restore"}:
         fail(f"backup metadata kind is invalid for {backup_id}")
-    if not isinstance(value["profile"], str) or TOKEN_RE.fullmatch(value["profile"]) is None:
+    if (
+        not isinstance(value["profile"], str)
+        or TOKEN_RE.fullmatch(value["profile"]) is None
+    ):
         fail(f"backup metadata profile is invalid for {backup_id}")
     if value["stage"] not in {"privilege-wrapper", "user-config"}:
         fail(f"backup metadata stage is invalid for {backup_id}")
     if value["mode"] not in {"new", "reconcile", "restore"}:
         fail(f"backup metadata mode is invalid for {backup_id}")
-    if not isinstance(value["policy_sha256"], str) or HEX64_RE.fullmatch(value["policy_sha256"]) is None:
+    if (
+        not isinstance(value["policy_sha256"], str)
+        or HEX64_RE.fullmatch(value["policy_sha256"]) is None
+    ):
         fail(f"backup metadata policy digest is invalid for {backup_id}")
-    if not isinstance(value["plan_fingerprint"], str) or HEX64_RE.fullmatch(value["plan_fingerprint"]) is None:
+    if (
+        not isinstance(value["plan_fingerprint"], str)
+        or HEX64_RE.fullmatch(value["plan_fingerprint"]) is None
+    ):
         fail(f"backup metadata plan fingerprint is invalid for {backup_id}")
-    if not isinstance(value["run_id"], str) or RUN_ID_RE.fullmatch(value["run_id"]) is None:
+    if (
+        not isinstance(value["run_id"], str)
+        or RUN_ID_RE.fullmatch(value["run_id"]) is None
+    ):
         fail(f"backup metadata run id is invalid for {backup_id}")
     source_id = value["source_backup_id"]
     if source_id is not None and (
-        not isinstance(source_id, str) or BACKUP_ID_RE.fullmatch(source_id) is None or source_id == backup_id
+        not isinstance(source_id, str)
+        or BACKUP_ID_RE.fullmatch(source_id) is None
+        or source_id == backup_id
     ):
         fail(f"backup metadata source id is invalid for {backup_id}")
-    if value["status"] not in {"running", "completed", "failed"} or not isinstance(value["targets"], list):
+    if value["status"] not in {"running", "completed", "failed"} or not isinstance(
+        value["targets"], list
+    ):
         fail(f"backup metadata status/targets are invalid for {backup_id}")
     targets: list[dict[str, Any]] = []
     seen: set[str] = set()
-    target_fields = {"target", "source", "exists", "sha256", "mode", "backup", "captured"}
+    target_fields = {
+        "target",
+        "source",
+        "exists",
+        "sha256",
+        "mode",
+        "backup",
+        "captured",
+    }
     for index, entry in enumerate(value["targets"]):
         if not isinstance(entry, dict) or set(entry) != target_fields:
             fail(f"backup target {index} has malformed fields for {backup_id}")
@@ -888,9 +1051,13 @@ def load_backup_document(root: Path) -> dict[str, Any]:
         safe_relative(target, "backup target")
         safe_relative(source, "backup source")
         if not allowed_target(target) or target in seen:
-            fail(f"backup target {index} is outside approved roots or duplicated for {backup_id}")
+            fail(
+                f"backup target {index} is outside approved roots or duplicated for {backup_id}"
+            )
         seen.add(target)
-        if not isinstance(entry["exists"], bool) or not isinstance(entry["captured"], bool):
+        if not isinstance(entry["exists"], bool) or not isinstance(
+            entry["captured"], bool
+        ):
             fail(f"backup target {index} has invalid state for {backup_id}")
         if entry["exists"]:
             if (
@@ -899,12 +1066,20 @@ def load_backup_document(root: Path) -> dict[str, Any]:
                 or backup_mode(entry["mode"], "backup target") > 0o777
                 or entry["backup"] != target
             ):
-                fail(f"backup target {index} has invalid payload metadata for {backup_id}")
-        elif entry["sha256"] is not None or entry["mode"] is not None or entry["backup"] is not None:
+                fail(
+                    f"backup target {index} has invalid payload metadata for {backup_id}"
+                )
+        elif (
+            entry["sha256"] is not None
+            or entry["mode"] is not None
+            or entry["backup"] is not None
+        ):
             fail(f"absent backup target {index} has payload metadata for {backup_id}")
         targets.append(entry)
     value["targets"] = sorted(targets, key=lambda item: item["target"])
-    if value["status"] == "completed" and any(not entry["captured"] for entry in targets):
+    if value["status"] == "completed" and any(
+        not entry["captured"] for entry in targets
+    ):
         fail(f"completed backup contains an uncaptured target: {backup_id}")
     validate_backup_tree(root, value)
     return value
@@ -914,7 +1089,10 @@ def approved_backup_mappings(document: dict[str, Any]) -> dict[str, Mapping]:
     registry = load_modules()
     scope, _offered = load_profile_scope(document["profile"], set(registry))
     if scope == "none":
-        fail(f"backup profile no longer has an approved config scope: {document['profile']}", 1)
+        fail(
+            f"backup profile no longer has an approved config scope: {document['profile']}",
+            1,
+        )
     mappings = load_mappings(
         scope,
         set(registry),
@@ -925,7 +1103,10 @@ def approved_backup_mappings(document: dict[str, Any]) -> dict[str, Mapping]:
     for entry in document["targets"]:
         mapping = by_target.get(entry["target"])
         if mapping is None or mapping.source_relative != entry["source"]:
-            fail(f"backup target is no longer in the approved profile scope: {entry['target']}", 1)
+            fail(
+                f"backup target is no longer in the approved profile scope: {entry['target']}",
+                1,
+            )
     return by_target
 
 
@@ -971,7 +1152,14 @@ def list_backups(home: Path) -> int:
                 "blocker": blocker,
             }
         )
-    print(json.dumps({"schema": 1, "backups": public}, ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+    print(
+        json.dumps(
+            {"schema": 1, "backups": public},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
     return 0
 
 
@@ -992,7 +1180,9 @@ def deployment_backup_document(context: Context, backup_id: str) -> dict[str, An
     }
 
 
-def validate_deployment_backup(context: Context, root: Path, document: dict[str, Any]) -> None:
+def validate_deployment_backup(
+    context: Context, root: Path, document: dict[str, Any]
+) -> None:
     expected = {
         "id": root.name,
         "kind": "deployment-replacement",
@@ -1019,7 +1209,11 @@ def ensure_backup_parents(root: Path, relative: str) -> Path:
         parent = parent.parent
     if parent != root:
         info = parent.lstat()
-        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid():
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.geteuid()
+        ):
             fail(f"backup parent is unsafe: {parent}")
     for directory in reversed(missing):
         try:
@@ -1047,7 +1241,9 @@ def snapshot_entry(mapping: Mapping, snapshot: TargetSnapshot) -> dict[str, Any]
         "source": mapping.source_relative,
         "exists": snapshot.exists,
         "sha256": snapshot.sha256 if snapshot.exists else None,
-        "mode": f"{snapshot.mode:03o}" if snapshot.exists and snapshot.mode is not None else None,
+        "mode": f"{snapshot.mode:03o}"
+        if snapshot.exists and snapshot.mode is not None
+        else None,
         "backup": mapping.target_relative if snapshot.exists else None,
         "captured": False,
     }
@@ -1062,15 +1258,27 @@ def capture_snapshot(
     home: Path | None = None,
 ) -> None:
     if home is not None and not snapshot_matches(home, mapping, snapshot):
-        fail(f"configuration target changed before backup capture: {mapping.target_relative}", 1)
+        fail(
+            f"configuration target changed before backup capture: {mapping.target_relative}",
+            1,
+        )
     expected = snapshot_entry(mapping, snapshot)
-    matches = [entry for entry in document["targets"] if entry["target"] == mapping.target_relative]
+    matches = [
+        entry
+        for entry in document["targets"]
+        if entry["target"] == mapping.target_relative
+    ]
     if len(matches) > 1:
         fail(f"backup metadata repeats target: {mapping.target_relative}")
     if matches:
         entry = matches[0]
-        if any(entry[key] != value for key, value in expected.items() if key != "captured"):
-            fail(f"existing backup does not match the first observed target state: {mapping.target_relative}", 1)
+        if any(
+            entry[key] != value for key, value in expected.items() if key != "captured"
+        ):
+            fail(
+                f"existing backup does not match the first observed target state: {mapping.target_relative}",
+                1,
+            )
     else:
         entry = expected
         document["targets"].append(entry)
@@ -1078,13 +1286,28 @@ def capture_snapshot(
     document["status"] = "running"
     atomic_json(root / ".backup.json", document)
     if snapshot.exists:
-        if snapshot.data is None or snapshot.sha256 is None or snapshot.mode is None or snapshot.mode > 0o777:
-            fail(f"cannot safely capture target mode/content: {mapping.target_relative}")
+        if (
+            snapshot.data is None
+            or snapshot.sha256 is None
+            or snapshot.mode is None
+            or snapshot.mode > 0o777
+        ):
+            fail(
+                f"cannot safely capture target mode/content: {mapping.target_relative}"
+            )
         backup = ensure_backup_parents(root, mapping.target_relative)
         if backup.exists() or backup.is_symlink():
-            data, info = read_regular(backup, f"existing config backup {mapping.target_relative}")
-            if hashlib.sha256(data).hexdigest() != snapshot.sha256 or stat.S_IMODE(info.st_mode) != snapshot.mode:
-                fail(f"existing backup content/mode mismatch: {mapping.target_relative}", 1)
+            data, info = read_regular(
+                backup, f"existing config backup {mapping.target_relative}"
+            )
+            if (
+                hashlib.sha256(data).hexdigest() != snapshot.sha256
+                or stat.S_IMODE(info.st_mode) != snapshot.mode
+            ):
+                fail(
+                    f"existing backup content/mode mismatch: {mapping.target_relative}",
+                    1,
+                )
         else:
             atomic_write_backup(backup, snapshot.data, snapshot.mode)
     entry["captured"] = True
@@ -1110,7 +1333,9 @@ def prepare_deployment_backup(
     return document
 
 
-def named_backup(home: Path, backup_id: str) -> tuple[Path, dict[str, Any], dict[str, Mapping]]:
+def named_backup(
+    home: Path, backup_id: str
+) -> tuple[Path, dict[str, Any], dict[str, Mapping]]:
     if BACKUP_ID_RE.fullmatch(backup_id) is None or backup_id in {".", ".."}:
         fail(f"unsafe backup id: {backup_id}")
     backups = readonly_backups_root(home)
@@ -1141,7 +1366,9 @@ def build_restore_plans(
             data, info = read_regular(path, f"restore source {entry['target']}")
             desired_hash = hashlib.sha256(data).hexdigest()
             desired_mode = stat.S_IMODE(info.st_mode)
-            if desired_hash != entry["sha256"] or desired_mode != backup_mode(entry["mode"], "backup target"):
+            if desired_hash != entry["sha256"] or desired_mode != backup_mode(
+                entry["mode"], "backup target"
+            ):
                 fail(f"restore source changed after inventory: {entry['target']}")
             if not current.exists:
                 classification = "create"
@@ -1149,10 +1376,22 @@ def build_restore_plans(
                 classification = "unchanged"
             else:
                 classification = "replace"
-            plans.append(RestorePlan(mapping, current, True, data, desired_hash, desired_mode, classification))
+            plans.append(
+                RestorePlan(
+                    mapping,
+                    current,
+                    True,
+                    data,
+                    desired_hash,
+                    desired_mode,
+                    classification,
+                )
+            )
         else:
             classification = "remove" if current.exists else "unchanged"
-            plans.append(RestorePlan(mapping, current, False, None, None, None, classification))
+            plans.append(
+                RestorePlan(mapping, current, False, None, None, None, classification)
+            )
     return tuple(plans)
 
 
@@ -1192,22 +1431,34 @@ def restore_document(source: dict[str, Any], backup_id: str) -> dict[str, Any]:
 def atomically_restore_target(home: Path, plan: RestorePlan) -> None:
     mapping = plan.mapping
     if not snapshot_matches(home, mapping, plan.snapshot):
-        fail(f"configuration target changed after restore confirmation: {mapping.target_relative}", 1)
+        fail(
+            f"configuration target changed after restore confirmation: {mapping.target_relative}",
+            1,
+        )
     path = plan.snapshot.path
     if not plan.desired_exists:
         if plan.snapshot.exists:
             conditional_remove_target(path, plan.snapshot)
             fsync_directory(path.parent)
         return
-    if plan.desired_data is None or plan.desired_mode is None or plan.desired_sha256 is None:
+    if (
+        plan.desired_data is None
+        or plan.desired_mode is None
+        or plan.desired_sha256 is None
+    ):
         fail(f"internal restore payload error: {mapping.target_relative}")
     ensure_target_parents(home, path)
     if not snapshot_matches(home, mapping, plan.snapshot):
-        fail(f"configuration target changed while preparing restore: {mapping.target_relative}", 1)
+        fail(
+            f"configuration target changed while preparing restore: {mapping.target_relative}",
+            1,
+        )
     fd: int | None = None
     temporary: Path | None = None
     try:
-        fd, name = tempfile.mkstemp(prefix=f".my-arch-restore-{path.name}.", dir=path.parent)
+        fd, name = tempfile.mkstemp(
+            prefix=f".my-arch-restore-{path.name}.", dir=path.parent
+        )
         temporary = Path(name)
         os.fchmod(fd, plan.desired_mode)
         offset = 0
@@ -1240,15 +1491,29 @@ def restore_backup(home: Path, backup_id: str) -> int:
     plans = build_restore_plans(home, root, source, mappings)
     changing = tuple(plan for plan in plans if plan.classification != "unchanged")
     for plan in plans:
-        suffix = "absent" if not plan.desired_exists else f"sha256={plan.desired_sha256} mode={plan.desired_mode:03o}"
-        print(f"config-stage-apply: restore-plan {plan.classification} {plan.mapping.target_relative} {suffix}")
+        suffix = (
+            "absent"
+            if not plan.desired_exists
+            else f"sha256={plan.desired_sha256} mode={plan.desired_mode:03o}"
+        )
+        print(
+            f"config-stage-apply: restore-plan {plan.classification} {plan.mapping.target_relative} {suffix}"
+        )
     if not changing:
-        print(f"config-stage-apply: backup {backup_id} already matches all approved targets")
+        print(
+            f"config-stage-apply: backup {backup_id} already matches all approved targets"
+        )
         return 0
-    print(f"config-stage-apply: confirmation required; type exactly: restore {backup_id}", file=sys.stderr)
+    print(
+        f"config-stage-apply: confirmation required; type exactly: restore {backup_id}",
+        file=sys.stderr,
+    )
     answer = sys.stdin.readline()
     if answer != f"restore {backup_id}\n":
-        print("config-stage-apply: restore cancelled; no target or state was changed", file=sys.stderr)
+        print(
+            "config-stage-apply: restore cancelled; no target or state was changed",
+            file=sys.stderr,
+        )
         return 1
     for plan in changing:
         if not snapshot_matches(home, plan.mapping, plan.snapshot):
@@ -1264,7 +1529,9 @@ def restore_backup(home: Path, backup_id: str) -> int:
     try:
         # Capture every current target before the first restore write.
         for plan in changing:
-            capture_snapshot(rollback_root, rollback, plan.mapping, plan.snapshot, home=home)
+            capture_snapshot(
+                rollback_root, rollback, plan.mapping, plan.snapshot, home=home
+            )
         rollback["status"] = "completed"
         atomic_json(rollback_root / ".backup.json", rollback)
     except ConfigFailure:
@@ -1287,14 +1554,21 @@ def restore_backup(home: Path, backup_id: str) -> int:
         for plan in changing:
             # Revalidate the immutable backup source immediately before use.
             if plan.desired_exists:
-                data, info = read_regular(root / plan.mapping.target_relative, f"restore source {plan.mapping.target_relative}")
+                data, info = read_regular(
+                    root / plan.mapping.target_relative,
+                    f"restore source {plan.mapping.target_relative}",
+                )
                 if (
                     hashlib.sha256(data).hexdigest() != plan.desired_sha256
                     or stat.S_IMODE(info.st_mode) != plan.desired_mode
                 ):
-                    fail(f"restore source changed before apply: {plan.mapping.target_relative}")
+                    fail(
+                        f"restore source changed before apply: {plan.mapping.target_relative}"
+                    )
             atomically_restore_target(home, plan)
-            operation["targets"].append({"target": plan.mapping.target_relative, "status": "restored"})
+            operation["targets"].append(
+                {"target": plan.mapping.target_relative, "status": "restored"}
+            )
             atomic_json(operation_path, operation)
             print(f"config-stage-apply: restored {plan.mapping.target_relative}")
     except ConfigFailure:
@@ -1384,12 +1658,17 @@ def deploy_target(home: Path, plan: TargetPlan) -> None:
     mapping = plan.mapping
     ensure_target_parents(home, plan.snapshot.path)
     if not snapshot_matches(home, mapping, plan.snapshot):
-        fail(f"configuration target changed after preflight: {mapping.target_relative}", 1)
+        fail(
+            f"configuration target changed after preflight: {mapping.target_relative}",
+            1,
+        )
     parent = plan.snapshot.path.parent
     fd: int | None = None
     temporary: Path | None = None
     try:
-        fd, name = tempfile.mkstemp(prefix=f".my-arch-config-{plan.snapshot.path.name}.", dir=parent)
+        fd, name = tempfile.mkstemp(
+            prefix=f".my-arch-config-{plan.snapshot.path.name}.", dir=parent
+        )
         temporary = Path(name)
         os.fchmod(fd, mapping.source_mode)
         offset = 0
@@ -1420,7 +1699,9 @@ def deploy_target(home: Path, plan: TargetPlan) -> None:
 def preflight(context: Context, home: Path) -> int:
     plans = classify(context, home)
     for plan in plans:
-        print(f"config-stage-apply: {plan.classification} {plan.mapping.target_relative}")
+        print(
+            f"config-stage-apply: {plan.classification} {plan.mapping.target_relative}"
+        )
     print(
         "config-stage-apply: read-only preflight passed "
         f"({len(plans)} exact target(s), mode={context.mode})"
@@ -1455,7 +1736,9 @@ def execute(context: Context, home: Path) -> int:
                 if plan.classification == "replace":
                     if backup_document is None:
                         fail("internal error: replacement has no backup manifest")
-                    capture_snapshot(backup_root, backup_document, mapping, plan.snapshot, home=home)
+                    capture_snapshot(
+                        backup_root, backup_document, mapping, plan.snapshot, home=home
+                    )
                     backup_relative = mapping.target_relative
                 deploy_target(home, plan)
                 result = "deployed"
@@ -1490,7 +1773,10 @@ def verify(context: Context, home: Path) -> int:
         try:
             snapshot = inspect_target(home, mapping)
         except ConfigFailure as exc:
-            print(f"config-stage-apply: verification unavailable for {mapping.target_relative}: {exc}", file=sys.stderr)
+            print(
+                f"config-stage-apply: verification unavailable for {mapping.target_relative}: {exc}",
+                file=sys.stderr,
+            )
             return exc.status
         if not snapshot.exists:
             failures.append(f"missing {mapping.target_relative}")
@@ -1500,7 +1786,9 @@ def verify(context: Context, home: Path) -> int:
             failures.append(f"mode-drift {mapping.target_relative}")
     if failures:
         for failure in failures:
-            print(f"config-stage-apply: verification blocker: {failure}", file=sys.stderr)
+            print(
+                f"config-stage-apply: verification blocker: {failure}", file=sys.stderr
+            )
         return 1
     print(f"config-stage-apply: verified {len(context.mappings)} exact target(s)")
     return 0
@@ -1514,8 +1802,16 @@ def parser() -> argparse.ArgumentParser:
         )
     )
     actions = result.add_mutually_exclusive_group()
-    actions.add_argument("--list-backups", action="store_true", help="emit a read-only JSON backup inventory")
-    actions.add_argument("--restore-backup", metavar="ID", help="preview and explicitly confirm one scoped restore")
+    actions.add_argument(
+        "--list-backups",
+        action="store_true",
+        help="emit a read-only JSON backup inventory",
+    )
+    actions.add_argument(
+        "--restore-backup",
+        metavar="ID",
+        help="preview and explicitly confirm one scoped restore",
+    )
     return result
 
 

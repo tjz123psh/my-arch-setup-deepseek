@@ -79,8 +79,8 @@ mapping_rows = {}
 for line_number, raw in enumerate(mapping_path.read_text().splitlines(), 1):
     if not raw or raw.startswith("#"):
         continue
-    scope, module, source, target = raw.split("\t")
-    mapping_rows[(scope, target)] = (module, source)
+    scope, module, source, target, mode = raw.split("\t")
+    mapping_rows[(scope, target)] = (module, source, mode)
 
 expected_promotions = {
     ".config/DankMaterialShell/firefox.css": ("desktop-shared", "644"),
@@ -142,14 +142,14 @@ for target, row in include_rows.items():
         raise SystemExit(f"candidate mode changed for {target}: {candidate_mode}")
     mapping = mapping_rows.get(("physical-v1", target))
     expected_source = f"config/home/{target}"
-    if mapping != (expected_module, expected_source):
+    if mapping is None or mapping[:2] != (expected_module, expected_source):
         raise SystemExit(f"personal include is not mapped to {expected_module}: {target}")
+    declared_mode = mapping[2]
+    if declared_mode != expected_mode:
+        raise SystemExit(f"mapping declared mode changed for {target}: {declared_mode}")
     source_path = root / expected_source
     if not source_path.is_file() or source_path.is_symlink():
         raise SystemExit(f"promoted personal source is missing or unsafe: {expected_source}")
-    actual_mode = f"{source_path.stat().st_mode & 0o777:o}"
-    if actual_mode != expected_mode:
-        raise SystemExit(f"promoted personal source mode changed for {target}: {actual_mode}")
 
 installer_text = (root / "installer/install.sh").read_text()
 if "personal-config-candidates.tsv" in installer_text:

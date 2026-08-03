@@ -7,7 +7,9 @@ not a generic public dotfile template and is never permission to copy all of
 `$HOME` or `.config`.
 
 Every deployed regular file must have one per-scope row in
-`manifests/config-mappings.tsv`, one selected module owner and a reviewed mode.
+`manifests/config-mappings.tsv`, one selected module owner and a reviewed mode
+declared in that row (`600`, `644`, `744` or `755`); the declared mode, not the
+working-tree permission, is what gets deployed.
 `config/home/` owns the 162-row physical payload; `config/vm/home/` owns only the
 four VM-specific files, while the remaining VM rows deliberately reuse reviewed
 physical sources.

@@ -76,11 +76,11 @@ base-fixture	pacman	core	verify-only	checks	manual-precondition	verify	confirmed
 EOF
 
 cat >"$fixture/manifests/config-mappings.tsv" <<'EOF'
-# schema=2
-# scope<TAB>module<TAB>source<TAB>target
-physical-v1	config	config/test.conf	.config/full-orchestrator-test.conf
-physical-v1	config	config/gsudo	scripts/desktop/gsudo
-physical-v1	config	config/fuzzel-askpass	scripts/desktop/fuzzel-askpass
+# schema=3
+# scope<TAB>module<TAB>source<TAB>target<TAB>mode
+physical-v1	config	config/test.conf	.config/full-orchestrator-test.conf	644
+physical-v1	config	config/gsudo	scripts/desktop/gsudo	755
+physical-v1	config	config/fuzzel-askpass	scripts/desktop/fuzzel-askpass	755
 EOF
 printf 'fixture=true\n' >"$fixture/config/test.conf"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$fixture/config/gsudo"

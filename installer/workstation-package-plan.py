@@ -90,13 +90,18 @@ def load_inventory() -> dict[str, InventoryRecord]:
             fail(f"unsafe inventory package at line {line_number}: {record.package}")
         if record.package in records:
             fail(f"duplicate inventory package: {record.package}")
-        if record.channel not in CHANNELS or record.repository not in REPOSITORIES[record.channel]:
+        if (
+            record.channel not in CHANNELS
+            or record.repository not in REPOSITORIES[record.channel]
+        ):
             fail(
                 f"inventory channel/repository mismatch for {record.package}: "
                 f"{record.channel}/{record.repository}"
             )
         if record.restore_mode not in RESTORE_MODES:
-            fail(f"invalid inventory restore mode for {record.package}: {record.restore_mode}")
+            fail(
+                f"invalid inventory restore mode for {record.package}: {record.restore_mode}"
+            )
         if record.execution != "inventory-only":
             fail(f"inventory package became executable: {record.package}")
         if any(ord(character) < 32 for character in record.installed_version):
@@ -125,12 +130,12 @@ def load_modules() -> set[str]:
 
 
 def load_mapping_modules() -> Counter[str]:
-    lines = safe_lines(MAPPINGS, "# schema=2", "configuration mapping")
+    lines = safe_lines(MAPPINGS, "# schema=3", "configuration mapping")
     counts: Counter[str] = Counter()
     for line_number, parts in enumerate(csv.reader(lines[1:], delimiter="\t"), 2):
         if not parts or not parts[0] or parts[0].startswith("#"):
             continue
-        if len(parts) != 4 or not all(parts):
+        if len(parts) != 5 or not all(parts):
             fail(f"invalid configuration mapping row at line {line_number}")
         counts[parts[1]] += 1
     if not counts:
@@ -146,16 +151,34 @@ def load_source_transitions() -> dict[str, tuple[str, str, str, str]]:
             continue
         if len(parts) != 6 or not all(parts):
             fail(f"invalid package source transition at line {line_number}")
-        package, observed_channel, observed_repository, target_channel, target_repository, rationale = parts
+        (
+            package,
+            observed_channel,
+            observed_repository,
+            target_channel,
+            target_repository,
+            rationale,
+        ) = parts
         if package in transitions:
             fail(f"duplicate package source transition: {package}")
-        if observed_channel not in CHANNELS or observed_repository not in REPOSITORIES[observed_channel]:
+        if (
+            observed_channel not in CHANNELS
+            or observed_repository not in REPOSITORIES[observed_channel]
+        ):
             fail(f"invalid observed transition source for {package}")
-        if target_channel not in CHANNELS or target_repository not in REPOSITORIES[target_channel]:
+        if (
+            target_channel not in CHANNELS
+            or target_repository not in REPOSITORIES[target_channel]
+        ):
             fail(f"invalid target transition source for {package}")
         if any(ord(character) < 32 for character in rationale):
             fail(f"control character in transition rationale for {package}")
-        transitions[package] = (observed_channel, observed_repository, target_channel, target_repository)
+        transitions[package] = (
+            observed_channel,
+            observed_repository,
+            target_channel,
+            target_repository,
+        )
     return transitions
 
 
@@ -177,18 +200,27 @@ def load_policy(
             fail(f"unsafe reconciled package at line {line_number}: {record.package}")
         if record.package in records:
             fail(f"duplicate reconciled package: {record.package}")
-        if record.channel not in CHANNELS or record.repository not in REPOSITORIES[record.channel]:
+        if (
+            record.channel not in CHANNELS
+            or record.repository not in REPOSITORIES[record.channel]
+        ):
             fail(
                 f"reconciled channel/repository mismatch for {record.package}: "
                 f"{record.channel}/{record.repository}"
             )
         if record.acquisition not in {
-            "pacman", "archlinuxcn-bootstrap", "aur-build", "paru-bootstrap",
-            "verify-only", "deferred",
+            "pacman",
+            "archlinuxcn-bootstrap",
+            "aur-build",
+            "paru-bootstrap",
+            "verify-only",
+            "deferred",
         }:
             fail(f"invalid acquisition for {record.package}: {record.acquisition}")
         if record.module not in modules:
-            fail(f"reconciled package references unknown module: {record.package}: {record.module}")
+            fail(
+                f"reconciled package references unknown module: {record.package}: {record.module}"
+            )
         if record.restore_mode not in RESTORE_MODES:
             fail(f"invalid restore mode for {record.package}: {record.restore_mode}")
         if record.policy != POLICY_BY_MODE[record.restore_mode]:
@@ -217,7 +249,10 @@ def load_policy(
             fail(f"invalid origin for {record.package}: {record.origin}")
         if any(ord(character) < 32 for character in record.purpose):
             fail(f"control character in purpose for {record.package}")
-        if record.restore_mode == "config-backed" and mapping_modules[record.module] == 0:
+        if (
+            record.restore_mode == "config-backed"
+            and mapping_modules[record.module] == 0
+        ):
             fail(
                 f"config-backed package has no same-module mapping: "
                 f"{record.package}: {record.module}"
@@ -228,7 +263,9 @@ def load_policy(
         name for name, record in records.items() if record.origin == "current-explicit"
     }
     if current != set(inventory):
-        fail(f"current-explicit reconciliation drift: {sorted(current ^ set(inventory))}")
+        fail(
+            f"current-explicit reconciliation drift: {sorted(current ^ set(inventory))}"
+        )
     source_changes: set[str] = set()
     for package in sorted(current):
         source = inventory[package]
@@ -238,14 +275,20 @@ def load_policy(
         if desired_source != observed:
             source_changes.add(package)
             if transitions.get(package) != (*observed, *desired_source):
-                fail(f"current package source changed without exact transition evidence: {package}")
+                fail(
+                    f"current package source changed without exact transition evidence: {package}"
+                )
     if set(transitions) != source_changes:
-        fail(f"stale or missing package source transitions: {sorted(set(transitions) ^ source_changes)}")
+        fail(
+            f"stale or missing package source transitions: {sorted(set(transitions) ^ source_changes)}"
+        )
     desired = {
         name for name, record in records.items() if record.origin == "confirmed-desired"
     }
     if desired & set(inventory):
-        fail(f"confirmed-desired rows duplicate current inventory: {sorted(desired & set(inventory))}")
+        fail(
+            f"confirmed-desired rows duplicate current inventory: {sorted(desired & set(inventory))}"
+        )
     if not desired:
         fail("reconciled policy contains no confirmed desired non-explicit packages")
     return sorted(records.values(), key=lambda record: record.package)
@@ -255,14 +298,19 @@ def build_plan(records: list[PackagePolicy]) -> dict[str, Any]:
     install = [record for record in records if record.policy == "install"]
     verify = [record for record in records if record.policy == "verify"]
     deferred = [record for record in records if record.policy == "deferred"]
-    package_only = [record for record in records if record.restore_mode == "package-only"]
-    config_backed = [record for record in records if record.restore_mode == "config-backed"]
+    package_only = [
+        record for record in records if record.restore_mode == "package-only"
+    ]
+    config_backed = [
+        record for record in records if record.restore_mode == "config-backed"
+    ]
     current = [record for record in records if record.origin == "current-explicit"]
     desired = [record for record in records if record.origin == "confirmed-desired"]
     official = [
         record
         for record in install
-        if record.channel == "pacman" and record.repository in {"core", "extra", "multilib"}
+        if record.channel == "pacman"
+        and record.repository in {"core", "extra", "multilib"}
     ]
     archlinuxcn = [
         record
@@ -363,7 +411,9 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
         description="Render the complete reconciled workstation package policy without applying it."
     )
-    parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+    parser.add_argument(
+        "--json", action="store_true", help="emit machine-readable JSON"
+    )
     args = parser.parse_args(argv)
     inventory = load_inventory()
     records = load_policy(

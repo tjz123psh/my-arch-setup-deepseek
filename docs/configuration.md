@@ -5,12 +5,14 @@ workstation or its dedicated validation VM. Machine-specific values are allowed
 in `physical-v1` when they are part of the working ASUS setup; credentials,
 private keys, cookies, account profiles and network secrets remain excluded.
 
-The schema-2 source of truth is `manifests/config-mappings.tsv`. Each row binds
-one configuration scope, module, repository-relative regular-file source and
-HOME-relative target. The current set contains 198 files: 162 in `physical-v1`
-and 36 in `vm-v1`. Source/target uniqueness is enforced per scope, so a reduced
-VM payload may deliberately target the same HOME-relative path as its physical
-counterpart without sharing the same source file.
+The schema-3 source of truth is `manifests/config-mappings.tsv`. Each row binds
+one configuration scope, module, repository-relative regular-file source,
+HOME-relative target and the reviewed deploy mode (`600`, `644`, `744` or
+`755`). The declared mode drives deployed permissions, so the reviewed payload
+keeps its exact modes on a clean clone. The current set contains 198 files: 162
+in `physical-v1` and 36 in `vm-v1`. Source/target uniqueness is enforced per
+scope, so a reduced VM payload may deliberately target the same HOME-relative
+path as its physical counterpart without sharing the same source file.
 
 ## Scope ownership
 

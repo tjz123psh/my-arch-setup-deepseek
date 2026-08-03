@@ -273,9 +273,12 @@ are not copied.
 
 ## Configuration mappings
 
-`config-mappings.tsv` uses schema 2 and has four fields: configuration scope,
-owning module, repository-relative source and invoking-user-HOME-relative
-target. Source/target uniqueness is enforced per scope.
+`config-mappings.tsv` uses schema 3 and has five fields: configuration scope,
+owning module, repository-relative source, invoking-user-HOME-relative target
+and the reviewed deploy mode (`600`, `644`, `744` or `755`). The declared mode
+is the source of truth for deployed file permissions; it no longer depends on
+the source file's working-tree mode, so the reviewed set survives a clean clone.
+Source/target uniqueness is enforced per scope.
 
 The manifest has 198 rows:
 

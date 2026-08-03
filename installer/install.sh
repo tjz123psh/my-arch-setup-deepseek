@@ -708,24 +708,28 @@ is_allowed_user_mapping_target() {
 validate_mapping() {
   [[ -f "$CONFIG_MAPPING" ]] || die "configuration mapping is missing"
   reject_symlinked_project_path "manifests/config-mappings.tsv"
-  require_manifest_schema "$CONFIG_MAPPING" "# schema=2" "configuration mapping manifest"
+  require_manifest_schema "$CONFIG_MAPPING" "# schema=3" "configuration mapping manifest"
   CONFIG_MODULES=()
   CONFIG_SOURCES=()
   CONFIG_TARGETS=()
   CONFIG_MODES=()
 
-  local config_scope module source_relative target_relative extra source source_mode status
+  local config_scope module source_relative target_relative mapping_mode extra source status
   declare -A seen_sources=()
   declare -A seen_targets=()
   declare -A seen_config_scopes=()
-  while IFS=$'\t' read -r config_scope module source_relative target_relative extra; do
+  while IFS=$'\t' read -r config_scope module source_relative target_relative mapping_mode extra; do
     [[ -n "$config_scope" && "$config_scope" != \#* ]] || continue
-    [[ -n "$module" && -n "$source_relative" && -n "$target_relative" && -z "$extra" ]] || \
+    [[ -n "$module" && -n "$source_relative" && -n "$target_relative" && -n "$mapping_mode" && -z "$extra" ]] || \
       die "invalid configuration mapping entry: $config_scope"
     [[ "$config_scope" =~ ^[a-z0-9][a-z0-9-]*$ ]] || \
       die "invalid configuration scope: $config_scope"
     [[ -n "${MODULE_AVAILABILITY[$module]:-}" ]] || \
       die "configuration mapping references unknown module: $module"
+    [[ "$mapping_mode" =~ ^[0-7]{3,4}$ ]] || \
+      die "configuration mapping declares an invalid mode: $mapping_mode"
+    [[ "$mapping_mode" == 600 || "$mapping_mode" == 644 || "$mapping_mode" == 744 || "$mapping_mode" == 755 ]] || \
+      die "configuration mapping mode must be 600, 644, 744 or 755: $mapping_mode"
     seen_config_scopes["$config_scope"]=1
     [[ "$source_relative" != /* && "$target_relative" != /* ]] || \
       die "absolute mapping path is not allowed: $source_relative"
@@ -750,20 +754,12 @@ validate_mapping() {
     source="${PROJECT_DIR}/${source_relative}"
     reject_symlinked_project_path "$source_relative"
     [[ -f "$source" ]] || die "approved source is missing or is not a regular file: $source_relative"
-    if source_mode=$(stat -c '%a' -- "$source"); then
-      :
-    else
-      status=$?
-      die_with_status "$status" "could not inspect approved source mode (stat exit $status): $source_relative"
-    fi
-    [[ "$source_mode" == 600 || "$source_mode" == 644 || "$source_mode" == 744 || "$source_mode" == 755 ]] || \
-      die "approved source mode must be 600, 644, 744 or 755: $source_relative (mode $source_mode)"
 
     if [[ "$CONFIG_SCOPE" == "$config_scope" && -n "${SELECTED_MODULE[$module]:-}" ]]; then
       CONFIG_MODULES+=("$module")
       CONFIG_SOURCES+=("$source_relative")
       CONFIG_TARGETS+=("$target_relative")
-      CONFIG_MODES+=("$source_mode")
+      CONFIG_MODES+=("$mapping_mode")
     fi
   done <"$CONFIG_MAPPING"
   ((${#seen_sources[@]} > 0)) || die "configuration mapping has no deployable entries"
