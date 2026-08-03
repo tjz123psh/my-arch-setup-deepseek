@@ -546,10 +546,17 @@ def create_cargo_vendor(
     cargo_home.mkdir(mode=0o700)
     home.mkdir(mode=0o700)
     environment = os.environ.copy()
+    # The cargo binary is a rustup shim on Arch; rustup locates its toolchain
+    # under $HOME/.rustup (RUSTUP_HOME). Since the subprocess HOME is redirected
+    # to an isolated temporary directory, resolve the real toolchain location
+    # from the caller's environment before overwriting HOME.
+    caller_home = environment.get("HOME") or "/root"
+    rustup_home = environment.get("RUSTUP_HOME") or caller_home + "/.rustup"
     environment.update(
         {
             "HOME": str(home),
             "CARGO_HOME": str(cargo_home),
+            "RUSTUP_HOME": rustup_home,
             "CARGO_NET_GIT_FETCH_WITH_CLI": "false",
             "LC_ALL": "C",
         }

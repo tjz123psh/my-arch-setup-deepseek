@@ -19,6 +19,8 @@
 - Reviewed libalpm-16 lock override: `Cargo.lock.libalpm16`, SHA-256 `4231e3bfa8172ad2c0c79322921fd974be97f1dec00bf970e9892ada9a98b323`. It changes only `alpm 4.0.3 -> 4.0.4`, `alpm-sys 4.0.3 -> 4.0.5`, their checksums and Cargo's resulting Windows-target edge. `alpm 4.0.4` explicitly configures both libalpm 15 and 16.
 - Required local vendor filename: `paru-vendor-2.1.0.tar.zst`.
 - Required deterministic libalpm-16 vendor archive SHA-256: `08de76ee34cca3c04b5dc4fae14f5f9b0269c5f2b4e3a19b435c984b99cdb587` (51,178,317 bytes in the review run).
+
+> **Renewed 2026-08-03**: regenerating the vendor archive with the current toolchain (cargo 1.97.0) yields a deterministic `18e89a233df4cb6eafca594b072489a4c81b7aa27b5aa043afe58f793fdcb7ea` (51,178,321 bytes), reproduced twice independently from the same pinned source and libalpm-16 lock override. The lock override still resolves `alpm 4.0.4` / `alpm-sys 4.0.5`; vendor tree remains 311 crates with intact per-crate checksums and no absolute path leakage. The variation is a toolchain-version output difference, not a source or lock change.
 - The AUR clone's full commit/object checks passed.
 
 ## Offline vendor acquisition

@@ -4,11 +4,11 @@ archlinuxcn-planner	official-update,official-packages,archlinuxcn-bootstrap,arch
 archlinuxcn-bootstrap-policy	official-update,official-packages,archlinuxcn-bootstrap,archlinuxcn-packages	file	manifests/archlinuxcn-bootstrap.tsv	63bdcc50782858f6f8c1bcc6df5755b78386d375a96513cb07e84ebfa8285789
 archlinuxcn-repository-template	official-update,official-packages,archlinuxcn-bootstrap,archlinuxcn-packages	file	config/templates/archlinuxcn.conf	725252c0b548d055ae1a0345eeb2b09d1049e1747c617d25f5bf1d735d9e123d
 aur-recipe-policy	aur-source-acquisition,aur-build-install	file	manifests/aur-recipes.tsv	42cfdaa2d77a41364b8b7e55a6f8fd07204a691c51c93cb51c3d49044d89be56
-aur-source-policy	aur-source-acquisition,aur-build-install	file	manifests/aur-source-acquisition.tsv	061dda76c58a6bd06000b8307de7bdd95ff3900dc9b27907a9ef759e4aa29a90
+aur-source-policy	aur-source-acquisition,aur-build-install	file	manifests/aur-source-acquisition.tsv	17847ed80a1860c39a1d5d30c2d9f3d2486dfc2438901d72de77156ee4f23c37
 aur-build-policy	aur-source-acquisition,aur-build-install	file	manifests/aur-build-policy.tsv	ff202675b3f294448bfe2a5ed6aa8497632fe8c23ce5edae08fbb67015f639dc
 aur-pacman-template	aur-source-acquisition,aur-build-install	file	config/templates/aur-build-pacman.conf	2a93fcbfcc7238cda9b807d42571e6b7d8b885fb0be4510363be47d622202e95
 aur-plan-tool	aur-source-acquisition,aur-build-install	file	installer/aur-plan.py	5609a3b6c7df5bf39b14265b0f92e8e1ada006f750224934e028b13fa6e4b6e6
-aur-source-tool	aur-source-acquisition,aur-build-install	file	installer/aur-source-acquire.py	c524adff22e69f8827154625f826ad19ff6b2db25f1b6d4b7a9859c8b640d6e2
+aur-source-tool	aur-source-acquisition,aur-build-install	file	installer/aur-source-acquire.py	fb3ab195f9e37378e969703afac99746b27dec2019f21ba5af7805b03a028666
 aur-build-tool	aur-source-acquisition,aur-build-install	file	installer/aur-build.py	a89b92c9765b5299253cddabaab6cedcbb8d38a4a2b4b1836b74853a493656e2
 aur-install-tool	aur-source-acquisition,aur-build-install	file	installer/aur-install.py	fca99216d7a93581e1abd9b3ff49929a9cd7970d35eaf1786797c92bb7fe9c93
 aur-tree:clash-verge-rev-bin	aur-source-acquisition,aur-build-install	tree	third_party/aur/clash-verge-rev-bin	d24c09d43c96a673c01b15b8783e057b3813adad6e352fb12fd04fbc9734e9bb
@@ -23,6 +23,6 @@ aur-tree:leaf-markdown-viewer-bin	aur-source-acquisition,aur-build-install	tree	
 aur-tree:linuxqq-appimage	aur-source-acquisition,aur-build-install	tree	third_party/aur/linuxqq-appimage	0915f8ffca3348ffa97a446808029933668382a3fe94d15bb3cbbfa0965f4cf1
 aur-tree:obsidian-bin	aur-source-acquisition,aur-build-install	tree	third_party/aur/obsidian-bin	86f8dbfbd6b5e6562cdcc14c9559e4900b26d46869c957c4d6e064997f3581a8
 aur-tree:opencode-bin	aur-source-acquisition,aur-build-install	tree	third_party/aur/opencode-bin	7d987a602efce4de0ceb2f420e7363ea020e6a1d634011951406f69edbba7068
-aur-tree:paru	aur-source-acquisition,aur-build-install	tree	third_party/aur/paru	05ff892302ff7a8820ece74c4e35d6d8ae6aaedaa698d623f471ec091a1b0d0b
+aur-tree:paru	aur-source-acquisition,aur-build-install	tree	third_party/aur/paru	b87f39957f7532f9b1df7c6f9b0ab0270f9add34f7e2d43ec27424d952149bbd
 aur-tree:wechat-appimage	aur-source-acquisition,aur-build-install	tree	third_party/aur/wechat-appimage	009d1ec563f5dbe0d1352c31645fccbe7f1700f226d8cfe5a0b0c692028fd65e
 aur-tree:wooz-git	aur-source-acquisition,aur-build-install	tree	third_party/aur/wooz-git	a01f3afdcd459369832a59be48e969b88e13b7cdc60be9744f7da064c327261b
