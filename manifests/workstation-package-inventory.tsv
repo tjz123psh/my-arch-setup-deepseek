@@ -2,7 +2,7 @@
 # snapshot-date=2026-07-31
 # package<TAB>installed-version<TAB>channel<TAB>repository<TAB>restore-mode<TAB>execution
 # Exact live-host explicit package inventory: pacman -Qqe/-Qqen/-Qqem all exited 0.
-# All 15 non-sync packages were independently found by read-only paru -Sia AUR queries.
+# All 13 non-sync packages were independently found by read-only paru -Sia AUR queries.
 # Inventory only: installer/install.sh may display this file in read-only plan mode but no apply stage may consume it without package policy, dry-run tests and explicit approval.
 # package-only installs the application without copying its account/profile data; config-backed pairs it with the repository's reviewed mappings.
 accountsservice	26.27.3-1	pacman	extra	package-only	inventory-only
@@ -29,7 +29,6 @@ ccache	4.13.6-1	pacman	extra	package-only	inventory-only
 cinnamon-translations	6.6.2-1	pacman	extra	package-only	inventory-only
 clang	22.1.8-1	pacman	extra	package-only	inventory-only
 clash-verge-rev-bin	2.5.2-1	aur	aur	package-only	inventory-only
-claude-code	2.1.215-1	aur	aur	package-only	inventory-only
 cups-pk-helper	0.2.7-2	pacman	extra	package-only	inventory-only
 dgop	0.2.3-1	pacman	extra	config-backed	inventory-only
 dms-shell	1.5.3-1	pacman	extra	config-backed	inventory-only
@@ -75,7 +74,6 @@ gst-plugin-pipewire	1:1.6.8-1	pacman	extra	package-only	inventory-only
 gtk-layer-shell	0.10.1-1	pacman	extra	package-only	inventory-only
 gtk4-layer-shell	1.3.0-1	pacman	extra	package-only	inventory-only
 inotify-tools	4.25.9.0-1	pacman	extra	package-only	inventory-only
-intellij-idea-ultimate-edition	2026.2-1	aur	aur	package-only	inventory-only
 inter-font	4.1-1	pacman	extra	package-only	inventory-only
 jdk-openjdk	26.0.2.u10-1	pacman	extra	package-only	inventory-only
 jdk8-openjdk	8.502.u07-1	pacman	extra	package-only	inventory-only

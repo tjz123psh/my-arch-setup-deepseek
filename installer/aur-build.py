@@ -140,8 +140,8 @@ def load_recipes(project_root: Path) -> dict[str, Recipe]:
         if not HEX64_RE.fullmatch(recipe.tree_sha256):
             raise PlanError(f"invalid recipe tree hash: {recipe.package}")
         recipes[recipe.package] = recipe
-    if len(recipes) != 15:
-        raise PlanError(f"expected 15 build recipes, found {len(recipes)}")
+    if len(recipes) != 13:
+        raise PlanError(f"expected 13 build recipes, found {len(recipes)}")
     return recipes
 
 

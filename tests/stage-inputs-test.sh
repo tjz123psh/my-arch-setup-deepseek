@@ -39,7 +39,7 @@ for number,row in enumerate(csv.reader(lines[2:],delimiter='\t'),3):
  assert actual==digest,(label,actual,digest)
 assert kinds=={'file','tree'}
 assert {'official-update','official-packages','archlinuxcn-bootstrap','archlinuxcn-packages','aur-source-acquisition','aur-build-install'}<=stages_seen
-assert len([x for x in seen if x.startswith('aur-tree:')])==15
+assert len([x for x in seen if x.startswith('aur-tree:')])==13
 PY
 
 # The production plan must close its fingerprint over every declared applicable
@@ -59,7 +59,7 @@ required={
  'stage-input:aur-plan-tool','stage-input:aur-source-tool','stage-input:aur-build-tool','stage-input:aur-install-tool',
 }
 assert required<=inputs.keys()
-assert len([key for key in inputs if key.startswith('stage-input:aur-tree:')])==15
+assert len([key for key in inputs if key.startswith('stage-input:aur-tree:')])==13
 PY
 [[ ! -e $test_root/state ]] || fail 'read-only input-bound plan created state'
 

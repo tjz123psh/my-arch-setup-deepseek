@@ -150,8 +150,8 @@ def load_recipe_policy(path: Path) -> dict[str, RecipePolicy]:
         if any(ord(character) < 32 for character in record.review_note):
             raise PolicyError(f"control character in review note for {record.package}")
         records[record.package] = record
-    if len(records) != 15:
-        raise PolicyError(f"expected 15 executable AUR/bootstrap recipe rows, found {len(records)}")
+    if len(records) != 13:
+        raise PolicyError(f"expected 13 executable AUR/bootstrap recipe rows, found {len(records)}")
     return records
 
 
@@ -172,8 +172,8 @@ def load_workstation_targets(path: Path) -> dict[str, WorkstationTarget]:
             raise PolicyError(f"duplicate executable AUR target: {package}")
         targets[package] = WorkstationTarget(package, acquisition, module)
     roles = {role: sum(target.role == role for target in targets.values()) for role in ROLES}
-    if roles != {"aur-build": 14, "paru-bootstrap": 1}:
-        raise PolicyError(f"expected 14 regular AUR targets plus one Paru bootstrap, found {roles}")
+    if roles != {"aur-build": 12, "paru-bootstrap": 1}:
+        raise PolicyError(f"expected 12 regular AUR targets plus one Paru bootstrap, found {roles}")
     return targets
 
 

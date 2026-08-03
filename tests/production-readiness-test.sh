@@ -39,8 +39,8 @@ with (root / "manifests/aur-recipes.tsv").open(newline="") as handle:
             recipes.append((row[0], row[3]))
 
 unproven = [(package, module) for package, module in recipes if package not in proven]
-assert len(recipes) == 15, recipes
-assert len(unproven) == 12, unproven
+assert len(recipes) == 13, recipes
+assert len(unproven) == 10, unproven
 assert {package for package, _module in recipes if package in proven} == proven
 
 module_availability: dict[str, str] = {}

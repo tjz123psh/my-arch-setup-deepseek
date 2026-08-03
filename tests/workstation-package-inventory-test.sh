@@ -51,13 +51,13 @@ for line_number, parts in enumerate(csv.reader(lines[1:], delimiter="\t"), 2):
         "execution": execution,
     }
 
-if len(records) != 180:
-    raise SystemExit(f"expected the complete 180-package live explicit inventory, got {len(records)}")
+if len(records) != 178:
+    raise SystemExit(f"expected the complete 178-package live explicit inventory, got {len(records)}")
 channel_counts = Counter(record["channel"] for record in records.values())
-if channel_counts != {"pacman": 165, "aur": 15}:
+if channel_counts != {"pacman": 165, "aur": 13}:
     raise SystemExit(f"unexpected install-channel split: {dict(channel_counts)}")
 repository_counts = Counter(record["repository"] for record in records.values())
-if repository_counts != {"extra": 141, "core": 13, "archlinuxcn": 10, "aur": 15, "multilib": 1}:
+if repository_counts != {"extra": 141, "core": 13, "archlinuxcn": 10, "aur": 13, "multilib": 1}:
     raise SystemExit(f"unexpected repository split: {dict(repository_counts)}")
 
 expected_archlinuxcn = {
@@ -66,10 +66,10 @@ expected_archlinuxcn = {
     "supergfxctl", "wl-screenrec-git",
 }
 expected_aur = {
-    "clash-verge-rev-bin", "claude-code", "dsearch-bin",
+    "clash-verge-rev-bin", "dsearch-bin",
     "fcitx5-skin-fluentdark-git", "flclash-bin", "fuzzel-ime-git",
     "google-chrome", "greetd-dms-greeter-git",
-    "intellij-idea-ultimate-edition", "leaf-markdown-viewer-bin",
+    "leaf-markdown-viewer-bin",
     "linuxqq-appimage", "obsidian-bin", "opencode-bin", "wechat-appimage",
     "wooz-git",
 }

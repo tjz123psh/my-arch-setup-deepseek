@@ -565,7 +565,7 @@ without deleting its target, immutable baseline, seed or private evidence.
 Automated selected-package/config/service/session behavior is complete for the
 exact VM scope. Physical ASUS/GPU/outputs, Bluetooth, real audio devices,
 suspend, boot/recovery, privileged group membership, the deferred greeter and
-module-level effects of the 12 recipes behind production-planning module gates
+module-level effects of the 10 recipes behind production-planning module gates
 are not satisfied by this matrix (the recipes themselves passed the low-level
 pipeline in batches 2026-08-03 / 2026-08-03b; see
 [`vm-execution-plan-20260803.md`](vm-execution-plan-20260803.md) and

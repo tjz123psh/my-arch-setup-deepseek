@@ -75,8 +75,8 @@ def load_recipes(project_root: Path) -> dict[str, Recipe]:
         ):
             raise PlanError(f"invalid build-eligible AUR recipe at line {line_number}")
         result[package] = Recipe(package, pkgbase, role, module, pkgver, pkgrel, tree)
-    if len(result) != 15:
-        raise PlanError(f"expected 15 AUR install targets, found {len(result)}")
+    if len(result) != 13:
+        raise PlanError(f"expected 13 AUR install targets, found {len(result)}")
     return result
 
 

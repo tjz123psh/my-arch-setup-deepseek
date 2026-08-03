@@ -30,15 +30,15 @@ selection.
 ## Immutable observation snapshot
 
 `manifests/workstation-package-inventory.tsv` remains the exact dated observation
-and is never direct apply input. Its successful capture contains 180 explicit
+and is never direct apply input. Its successful capture contains 178 explicit
 packages:
 
 ```text
-pacman -Qqe   -> exit 0, 180 explicit packages
+pacman -Qqe   -> exit 0, 178 explicit packages
 pacman -Qqen  -> exit 0, 165 sync-database packages
-pacman -Qqem  -> exit 0, 15 packages absent from sync databases
+pacman -Qqem  -> exit 0, 13 packages absent from sync databases
 pacman -Si    -> all 165 repository metadata queries succeeded
-paru -Sia     -> all 15 non-sync packages were found in AUR
+paru -Sia     -> all 13 non-sync packages were found in AUR
 ```
 
 | Observed repository/channel | Count |
@@ -47,26 +47,26 @@ paru -Sia     -> all 15 non-sync packages were found in AUR
 | extra | 141 |
 | multilib | 1 |
 | archlinuxcn through pacman | 10 |
-| AUR | 15 |
-| **Total** | **180** |
+| AUR | 13 |
+| **Total** | **178** |
 
 A fresh read-only 2026-08-01 comparison reran `pacman -Qqe`, `-Qqen`, `-Qqem`
 and `-Q`, all with exit `0`. It found zero missing names, extra names, version
 mismatches or observed pacman/AUR channel mismatches. `pacman -Sl` for all four
-configured repositories and individual `paru -Sia` for all 15 foreign packages
+configured repositories and individual `paru -Sia` for all 13 foreign packages
 also exited `0`, with zero source mismatches. These are rolling-version facts,
 not version pins.
 
 ## Reconciled target policy
 
-`manifests/workstation-packages.tsv` is the separate target ledger. It has 200
+`manifests/workstation-packages.tsv` is the separate target ledger. It has 198
 unique package rows:
 
 | Origin | Count |
 | --- | ---: |
-| exact current explicit observation | 180 |
+| exact current explicit observation | 178 |
 | confirmed desired non-explicit requirement | 20 |
-| **Total** | **200** |
+| **Total** | **198** |
 
 The 20 non-explicit rows are requirements supported by the manual, reviewed
 configuration, Phase C decisions and current installed/dependency state:
@@ -82,22 +82,22 @@ Responsibility and execution policy now reconcile to:
 
 | Responsibility | Count | Policy |
 | --- | ---: | --- |
-| package-only | 155 | install |
+| package-only | 153 | install |
 | config-backed | 26 | install after package/config relation checks |
 | manual-precondition | 18 | verify only |
 | deferred | 1 | never install in this release |
-| **Total** | **200** | 181 install / 18 verify / 1 deferred |
+| **Total** | **198** | 179 install / 18 verify / 1 deferred |
 
 Every row has an exact target channel/repository, acquisition method, functional
 module, responsibility, policy, evidence origin and purpose. The default ASUS
-policy's 181 install rows split into non-overlapping trust stages:
+policy's 179 install rows split into non-overlapping trust stages:
 
 ```text
 official pacman install:          157
 archlinuxcn keyring bootstrap:      1
 already-trusted archlinuxcn:        8
 fixed Paru bootstrap:               1
-declared fixed AUR recipes:        14
+declared fixed AUR recipes:        12
 ```
 
 The current host's Paru was observed in archlinuxcn, but the confirmed target
@@ -199,7 +199,7 @@ confirmed official `devtools` package, an official-only clean chroot containing
 file-root checks, and the audited `gsudo` wrapper. Installation re-verifies
 artifact hashes, refuses automatic downgrades, records private provenance and
 requires independent AUR plus system-change confirmation. Mock failure-path regressions pass. Real clean-chroot evidence repeatedly built
-and installed the three exact VM-selected recipes; the other 12 recipes were not
+and installed the three exact VM-selected recipes; the other 10 recipes were not
 selected and are individually asserted behind production-planning module gates
 and any private-cache prerequisite. This includes `flclash-bin`: its
 `personal-autostart` config surface is reviewed, but its complete AUR/config

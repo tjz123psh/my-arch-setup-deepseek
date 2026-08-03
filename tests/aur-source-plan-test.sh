@@ -51,17 +51,17 @@ import json, sys
 plan = json.load(open(sys.argv[1]))
 assert plan["overall"]["status"] == "blocked", plan["overall"]
 assert plan["counts"] == {
-    "selected": 15,
-    "aur_build": 14,
+    "selected": 13,
+    "aur_build": 12,
     "paru_bootstrap": 1,
     "ready": 0,
-    "static_ready": 12,
+    "static_ready": 10,
     "blocked": 3,
     "unavailable": 0,
 }, plan["counts"]
 assert not plan["overall"]["unavailable_checks"], plan["overall"]
 records = {record["package"]: record for record in plan["recipes"]}
-assert len(records) == 15
+assert len(records) == 13
 assert records["linuxqq-appimage"]["status"] == "blocked"
 assert records["wechat-appimage"]["status"] == "blocked"
 assert records["paru"]["status"] == "blocked"

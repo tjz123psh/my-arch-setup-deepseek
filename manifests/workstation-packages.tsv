@@ -29,7 +29,6 @@ ccache	pacman	extra	pacman	build-foundation	package-only	install	current-explici
 cinnamon-translations	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Translations for Cinnamon and Nemo
 clang	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	C language family frontend for LLVM
 clash-verge-rev-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Graphical Clash-compatible proxy client
-claude-code	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	Anthropic Claude Code command-line development agent
 coreutils	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	The basic file, shell and text manipulation utilities of the GNU operating system
 cups-pk-helper	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	A helper that makes system-config-printer use PolicyKit
 devtools	pacman	extra	pacman	build-foundation	package-only	install	confirmed-desired	Official Arch clean-chroot tooling for isolated fixed AUR package builds
@@ -80,7 +79,6 @@ gtk-layer-shell	pacman	extra	pacman	recording	package-only	install	current-expli
 gtk4-layer-shell	pacman	extra	pacman	recording	package-only	install	current-explicit	Library to create panels and other desktop components for Wayland
 hyprland	pacman	extra	pacman	wm-hyprland	config-backed	install	confirmed-desired	a highly customizable dynamic tiling Wayland compositor
 inotify-tools	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	inotify-tools is a C library and a set of command-line programs for Linux providing a simple interface to inotify.
-intellij-idea-ultimate-edition	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	IntelliJ IDEA Ultimate development environment
 inter-font	pacman	extra	pacman	fonts	package-only	install	current-explicit	A typeface specially designed for user interfaces
 jdk-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 26 development kit
 jdk8-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 8 development kit

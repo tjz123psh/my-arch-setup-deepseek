@@ -24,19 +24,19 @@ if report["safety"] != {
 }:
     raise SystemExit(f"unexpected package-plan safety boundary: {report['safety']}")
 expected_counts = {
-    "reconciled_packages": 200,
-    "current_explicit": 180,
+    "reconciled_packages": 198,
+    "current_explicit": 178,
     "confirmed_desired": 20,
-    "install": 181,
+    "install": 179,
     "verify": 18,
     "deferred": 1,
-    "package_only": 155,
+    "package_only": 153,
     "config_backed": 26,
     "manual_preconditions": 18,
     "official_install": 157,
     "archlinuxcn_install": 8,
     "archlinuxcn_bootstrap": 1,
-    "aur_install": 14,
+    "aur_install": 12,
     "paru_bootstrap": 1,
 }
 if report["counts"] != expected_counts:
@@ -85,12 +85,12 @@ mkdir -p "$test_root/home"
 HOME="$test_root/home" XDG_STATE_HOME="$test_root/home/.local/state" \
   "$root/installer/install.sh" --profile asus-amd-nvidia --plan \
   >"$test_root/installer-plan.out"
-grep -Fq 'workstation package reconciliation: 200 policy row(s) (180 current + 20 confirmed desired), review only' \
+grep -Fq 'workstation package reconciliation: 198 policy row(s) (178 current + 20 confirmed desired), review only' \
   "$test_root/installer-plan.out" || {
   printf '%s\n' 'installer plan omitted the complete reconciled workstation policy' >&2
   exit 1
 }
-grep -Fq 'workstation install candidates: official=157 archlinuxcn=8 archlinuxcn-bootstrap=1 AUR=14 paru-bootstrap=1' \
+grep -Fq 'workstation install candidates: official=157 archlinuxcn=8 archlinuxcn-bootstrap=1 AUR=12 paru-bootstrap=1' \
   "$test_root/installer-plan.out" || {
   printf '%s\n' 'installer plan omitted trust-domain candidate counts' >&2
   exit 1

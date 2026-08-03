@@ -206,17 +206,17 @@ red-then-green regressions and complete `tests/static-check.sh` successfully.
 
 ## Package policy
 
-The immutable observation remains 180 explicit packages: 165 sync-database and
-15 non-sync/AUR. The separate target policy has 200 unique rows:
+The immutable observation remains 178 explicit packages: 165 sync-database and
+13 non-sync/AUR. The separate target policy has 198 unique rows:
 
 | Responsibility | Rows |
 | --- | ---: |
-| install (`package-only` or `config-backed`) | 181 |
+| install (`package-only` or `config-backed`) | 179 |
 | verify-only manual precondition | 18 |
 | deferred greeter | 1 |
 
 The install rows split into 157 official, one archlinuxcn keyring bootstrap,
-eight archlinuxcn packages, one fixed Paru bootstrap and 14 other fixed AUR
+eight archlinuxcn packages, one fixed Paru bootstrap and 12 other fixed AUR
 recipes. QQ, WeChat, Obsidian and Chrome remain package-only. All 26
 config-backed packages have explicit package/config relations. The only allowed
 observed-to-target source transition is Paru from current archlinuxcn to the
@@ -416,22 +416,25 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
 1. Physical ASUS/hybrid-GPU/output, Bluetooth, real playback/recording,
    suspend/resume, boot/recovery and any Docker/libvirt root-equivalent group
    decision require an explicitly approved real-host plan and human acceptance.
- 2. All twelve non-VM-selected AUR recipes passed real clean-chroot build,
-    install and idempotent rerun in disposable VM batches. The nine
+ 2. All ten non-VM-selected AUR recipes passed real clean-chroot build,
+    install and idempotent rerun in disposable VM batches. The seven
     remote-fixed recipes (clash-verge-rev-bin, google-chrome,
-    leaf-markdown-viewer-bin, obsidian-bin, wooz-git, claude-code,
-    intellij-idea-ultimate-edition, opencode-bin and flclash-bin) passed in
-    batch 2026-08-03. The three local-fixed recipes (linuxqq and wechat
-    AppImages, paru cargo-vendor) then passed in batch 2026-08-03b after
-    their private source caches were acquired and verified against the
-    reviewed manifest (commit `fb3b60b`; paru vendor hash renewed
+    leaf-markdown-viewer-bin, obsidian-bin, wooz-git, opencode-bin and
+    flclash-bin) passed in batch 2026-08-03. The three local-fixed recipes
+    (linuxqq and wechat AppImages, paru cargo-vendor) then passed in batch
+    2026-08-03b after their private source caches were acquired and verified
+    against the reviewed manifest (commit `fb3b60b`; paru vendor hash renewed
     deterministically under cargo 1.97.0, see
     `third_party/aur/paru/REVIEW.md`); batch 2026-08-03b also surfaced and
     fixed a recipe-manifest hash inconsistency (commit `915030e`). See
-    `docs/vm-execution-plan-20260803b.md` for the full record. Every
-    production-planning module still requires its own module selection in
-    the VM matrix before promotion; no recipe-level subset result is
-    generalized to a module.
+    `docs/vm-execution-plan-20260803b.md` for the full record. On 2026-08-04
+    the operator removed `claude-code` and `intellij-idea-ultimate-edition`
+    from the `development-toolchain` module (not used / oversized 1.6 GiB
+    source); those two recipes and their reviewed trees were dropped from
+    `aur-recipes.tsv`, `workstation-packages.tsv` and the private recipe tree
+    (see the batch 2026-08-04 plan document). Every production-planning
+    module still requires its own module selection in the VM matrix before
+    promotion; no recipe-level subset result is generalized to a module.
 3. Greeter/login-manager remains deferred and unavailable; SDDM remains rejected
    as a fallback.
 4. Hyprland automated runtime/session checks pass, but a reliable guest-owned
