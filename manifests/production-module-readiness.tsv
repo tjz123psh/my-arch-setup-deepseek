@@ -7,7 +7,7 @@ wm-hyprland	available	Disposable Niri Hyprland and both-WM candidate plus canoni
 dms-niri-greeter	unavailable	Greeter and login-manager boundary remains explicitly unavailable and deferred
 dms-greetd	unavailable	Greeter and login-manager boundary remains explicitly unavailable and deferred
 personal-scripts	planning	Reviewed config-only restore remains available but this module was not selected in the VM matrix
-personal-autostart	planning	FlClash recipe and autostart effects remain blocked until package-specific VM evidence exists
+personal-autostart	planning	FlClash recipe passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; module-level autostart effects still await a module selection in the VM matrix
 asus-hardware	planning	ASUS package and physical hardware effects remain outside disposable VM acceptance
 personal-user-services	planning	Mapped user units remain disabled and their daemon-reload effect was not selected in the VM matrix
 base-preconditions	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
@@ -15,11 +15,11 @@ archlinuxcn-trust	available	Disposable Niri Hyprland and both-WM candidate plus 
 build-foundation	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 repository-tools	planning	Module remains outside the production-validated disposable VM selection
 fonts	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
-daily-apps	planning	Module remains outside the production-validated disposable VM selection
+daily-apps	planning	Five daily-apps recipes (clash-verge-rev-bin google-chrome leaf-markdown-viewer-bin obsidian-bin wooz-git) passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; linuxqq and wechat remain blocked on private source cache
 desktop-apps	planning	Module remains outside the production-validated disposable VM selection
 input-fcitx-rime	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 cli-tools	planning	Module remains outside the production-validated disposable VM selection
-development-toolchain	planning	Module remains outside the production-validated disposable VM selection
+development-toolchain	planning	Three development-toolchain recipes (claude-code intellij-idea-ultimate-edition opencode-bin) passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; official and archlinuxcn package effects of this module still await a module selection in the VM matrix
 container-tools	planning	Module remains outside the production-validated disposable VM selection
 storage-maintenance	planning	Module remains outside the production-validated disposable VM selection
 virtualization	planning	Module remains outside the production-validated disposable VM selection

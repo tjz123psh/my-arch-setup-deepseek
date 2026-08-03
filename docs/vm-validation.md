@@ -12,7 +12,11 @@ Final Niri, Hyprland and both-WM candidate children, the promoted no-candidate
 canonical matrix and a fresh residue probe are complete. Every child was shut
 down and checked offline before deletion; the immutable baseline digest stayed
 unchanged. The dedicated session pool is now stopped and undefined without
-removing lab files. This evidence authorizes only the exact VM-proven gates and
+removing lab files. The 2026-08-03 batch validated the nine remote-fixed
+non-VM-selected AUR recipes through the low-level pipeline; its command-level
+plan and evidence are in
+[`vm-execution-plan-20260803.md`](vm-execution-plan-20260803.md).
+This evidence authorizes only the exact VM-proven gates and
 never substitutes for physical acceptance.
 
 ## Baseline boundary
