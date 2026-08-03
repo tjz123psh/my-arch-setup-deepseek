@@ -87,9 +87,14 @@ pkgver = $pkgver-$pkgrel
 arch = $arch
 packager = my-archlinux-setup fixed AUR recipe
 EOF
-printf 'fixture artifact\n' >"$work/usr/bin/$pkgname"
 out="$PKGDEST/$pkgname-$pkgver-$pkgrel-$arch.pkg.tar.zst"
-bsdtar -a -C "$work" -cf "$out" .PKGINFO usr
+if [[ ${MOCK_ARTIFACT_SCENARIO:-ready} == with-install-changelog ]]; then
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$work/.INSTALL"
+  printf 'fixture changelog\n' >"$work/.CHANGELOG"
+  bsdtar -a -C "$work" -cf "$out" .PKGINFO .INSTALL .CHANGELOG usr
+else
+  bsdtar -a -C "$work" -cf "$out" .PKGINFO usr
+fi
 MOCK
 chmod 755 "$home/scripts/desktop"/* "$mock_bin"/*
 
@@ -293,6 +298,37 @@ if any(c['command']=='mkarchroot' and c['state']=='missing' for c in p['commands
  assert status==2 and p['overall']['status']=='unavailable' and p['overall']['unavailable_checks']
 else:
  assert status in (0,1)
+PY
+
+# Standard pacman metadata paths (.INSTALL install scriptlet from PKGBUILD
+# install=, .CHANGELOG from changelog=) are legal makepkg outputs and must not
+# be rejected as unexpected metadata. Regression for the 2026-08-03 VM batch
+# where clash-verge-rev-bin/google-chrome/obsidian-bin shipped .INSTALL and
+# leaf-markdown-viewer-bin shipped .CHANGELOG.
+metadata_state="$test_root/install-changelog-state"
+set +e
+HOME="$home" PATH="$mock_bin:/usr/bin" MOCK_CALL_LOG="$test_root/calls" \
+  MOCK_ARTIFACT_SCENARIO=with-install-changelog \
+  XDG_STATE_HOME="$metadata_state" XDG_CACHE_HOME="$test_root/cache" \
+  python "$tool" --packages wooz-git --source-cache "$test_root/cache/my-archlinux-setup/aur-sources" \
+    --build-root "$metadata_state/my-archlinux-setup/builds/aur" \
+    --state-root "$metadata_state/my-archlinux-setup" \
+    --build --confirm-aur --confirm-system-changes --json >"$test_root/install-changelog.json"
+metadata_status=$?
+set -e
+((metadata_status == 0)) || fail "artifact with .INSTALL/.CHANGELOG exited $metadata_status"
+python - "$test_root/install-changelog.json" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1]));assert p['status']=='passed',p
+assert p['results'][0]['status']=='passed',p['results'][0]
+assert p['results'][0]['artifact']['state']=='verified',p['results'][0]['artifact']
+PY
+metadata_artifact_dir=$(find "$metadata_state/my-archlinux-setup/builds/aur/artifacts/wooz-git" -mindepth 1 -maxdepth 1 -type d -print -quit)
+python - "$metadata_artifact_dir/artifact.json" <<'PY'
+import json,sys
+meta=json.load(open(sys.argv[1]));files=meta['files']
+assert '.INSTALL' in files and '.CHANGELOG' in files, files
+assert '.PKGINFO' in files, files
 PY
 
 # Symlinked state/build roots fail closed.

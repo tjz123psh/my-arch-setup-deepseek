@@ -9,7 +9,7 @@ aur-build-policy	aur-source-acquisition,aur-build-install	file	manifests/aur-bui
 aur-pacman-template	aur-source-acquisition,aur-build-install	file	config/templates/aur-build-pacman.conf	2a93fcbfcc7238cda9b807d42571e6b7d8b885fb0be4510363be47d622202e95
 aur-plan-tool	aur-source-acquisition,aur-build-install	file	installer/aur-plan.py	5609a3b6c7df5bf39b14265b0f92e8e1ada006f750224934e028b13fa6e4b6e6
 aur-source-tool	aur-source-acquisition,aur-build-install	file	installer/aur-source-acquire.py	c524adff22e69f8827154625f826ad19ff6b2db25f1b6d4b7a9859c8b640d6e2
-aur-build-tool	aur-source-acquisition,aur-build-install	file	installer/aur-build.py	d95d99ce7ee40e6a0565ea26dc067bae42de6419c8ff6d30fe335e3e96ce1bc0
+aur-build-tool	aur-source-acquisition,aur-build-install	file	installer/aur-build.py	a89b92c9765b5299253cddabaab6cedcbb8d38a4a2b4b1836b74853a493656e2
 aur-install-tool	aur-source-acquisition,aur-build-install	file	installer/aur-install.py	fca99216d7a93581e1abd9b3ff49929a9cd7970d35eaf1786797c92bb7fe9c93
 aur-tree:clash-verge-rev-bin	aur-source-acquisition,aur-build-install	tree	third_party/aur/clash-verge-rev-bin	d24c09d43c96a673c01b15b8783e057b3813adad6e352fb12fd04fbc9734e9bb
 aur-tree:claude-code	aur-source-acquisition,aur-build-install	tree	third_party/aur/claude-code	8f4d40bc5c1b2862f28ba9854881b66263eebf932d444c8aeb7c2c130aa0f2bf

@@ -552,7 +552,10 @@ def verify_artifact(staging: Path, recipe: Recipe, allowed_roots: set[str]) -> d
         if path.is_absolute() or ".." in path.parts:
             raise BuildFailure(1, f"{recipe.package}: artifact contains an unsafe path")
         if name.startswith("."):
-            if name not in {".BUILDINFO", ".MTREE", ".PKGINFO"}:
+            # Legal makepkg metadata: .BUILDINFO/.MTREE/.PKGINFO are always
+            # emitted; .INSTALL comes from a PKGBUILD install= scriptlet and
+            # .CHANGELOG from changelog=, both declared in the reviewed recipe.
+            if name not in {".BUILDINFO", ".MTREE", ".PKGINFO", ".INSTALL", ".CHANGELOG"}:
                 raise BuildFailure(1, f"{recipe.package}: artifact contains unexpected metadata path {name}")
         elif path.parts and path.parts[0] not in allowed_roots:
             raise BuildFailure(1, f"{recipe.package}: artifact writes outside reviewed roots: {path.parts[0]}")
