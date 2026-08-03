@@ -18,7 +18,7 @@
 - Upstream `Cargo.lock` SHA-256: `455f7103a3a6fb757fe970922e4d3d06ab0cb26b4f7ca5846f7daf2e63528532`; it resolves `alpm 4.0.3` and is rejected for libalpm 16.
 - Reviewed libalpm-16 lock override: `Cargo.lock.libalpm16`, SHA-256 `4231e3bfa8172ad2c0c79322921fd974be97f1dec00bf970e9892ada9a98b323`. It changes only `alpm 4.0.3 -> 4.0.4`, `alpm-sys 4.0.3 -> 4.0.5`, their checksums and Cargo's resulting Windows-target edge. `alpm 4.0.4` explicitly configures both libalpm 15 and 16.
 - Required local vendor filename: `paru-vendor-2.1.0.tar.zst`.
-- Required deterministic libalpm-16 vendor archive SHA-256: `08de76ee34cca3c04b5dc4fae14f5f9b0269c5f2b4e3a19b435c984b99cdb587` (51,178,317 bytes in the review run).
+- Required deterministic libalpm-16 vendor archive SHA-256: `18e89a233df4cb6eafca594b072489a4c81b7aa27b5aa043afe58f793fdcb7ea` (51,178,321 bytes, cargo 1.97.0 output; supersedes the review-run `08de76ee…` value).
 
 > **Renewed 2026-08-03**: regenerating the vendor archive with the current toolchain (cargo 1.97.0) yields a deterministic `18e89a233df4cb6eafca594b072489a4c81b7aa27b5aa043afe58f793fdcb7ea` (51,178,321 bytes), reproduced twice independently from the same pinned source and libalpm-16 lock override. The lock override still resolves `alpm 4.0.4` / `alpm-sys 4.0.5`; vendor tree remains 311 crates with intact per-crate checksums and no absolute path leakage. The variation is a toolchain-version output difference, not a source or lock change.
 - The AUR clone's full commit/object checks passed.
@@ -31,7 +31,7 @@ The AUR source recipe used `cargo update`/`cargo fetch` during `prepare()`. The 
 2. verify the source archive, then replace its incompatible upstream lock with the version-controlled libalpm-16 lock override and verify that exact hash;
 3. run `cargo vendor --locked --versioned-dirs` against that fixed lock as the ordinary user in a private temporary directory;
 4. archive the resulting `vendor/` tree with sorted paths, epoch-zero timestamps, numeric owner/group zero, POSIX format with atime/ctime PAX keys removed, then compress with single-threaded Zstandard level 10; and
-5. accept the result only when it matches the fixed vendor archive SHA-256 above.
+5. accept the result only when it matches the fixed vendor archive SHA-256 above (the renewed `18e89a23…` value; the review-run `08de76ee…` archive is no longer the required output).
 
 The review generated the updated archive twice independently from the same vendor tree; both 51,178,317-byte outputs matched byte-for-byte and produced the recorded hash. A different Cargo/vendor result fails closed and requires renewed review; it is not silently accepted. The generated archive is a private source-cache input, not committed to Git.
 
