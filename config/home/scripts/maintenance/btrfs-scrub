@@ -1,0 +1,307 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SELF")"
+# shellcheck source=lib/ui.sh
+. "$SCRIPT_DIR/lib/ui.sh"
+
+ACTION=""
+TARGET=""
+STRICT=0
+ASSUME_YES=0
+
+cancel_status() {
+  if [[ "${TERM_MENU_CHILD:-0}" == "1" ]]; then
+    printf '130'
+  else
+    printf '0'
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+用法: btrfs-scrub [操作] [挂载点] [选项]
+
+  --status            查看所有 Btrfs 文件系统的 scrub、错误计数和定时器状态
+  --start [TARGET]    手动启动一次 scrub
+  --enable [TARGET]   启用对应挂载点的每月 scrub timer
+  --disable [TARGET]  禁用对应挂载点的 scrub timer
+  --strict            状态存在警告或查询失败时返回 1
+  --yes               start/enable/disable 跳过关键词确认
+
+不指定操作时进入交互菜单。相同设备的多个子卷只 scrub 一次。
+EOF
+}
+
+set_action() {
+  local requested="$1"
+  if [[ -n "$ACTION" && "$ACTION" != "$requested" ]]; then
+    ui_err "一次只能指定一个 scrub 操作"
+    exit 2
+  fi
+  ACTION="$requested"
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --status) set_action status; shift ;;
+    --start|--enable|--disable)
+      set_action "${1#--}"
+      shift
+      if [[ $# -gt 0 && "$1" != --* ]]; then TARGET="$1"; shift; fi
+      ;;
+    --strict) STRICT=1; shift ;;
+    --yes) ASSUME_YES=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) ui_err "未知参数: %s" "$1"; usage >&2; exit 2 ;;
+  esac
+done
+
+for cmd in btrfs findmnt systemctl systemd-escape; do
+  command -v "$cmd" >/dev/null 2>&1 || { ui_err "缺少依赖: %s" "$cmd"; exit 127; }
+done
+
+# btrfs scrub 的历史状态保存在 /var/lib/btrfs，普通用户通常可以读取 device
+# stats，却可能无法读取该状态文件。状态页必须把“权限不足”与“没有结果”区分开。
+BTRFS_READ_SUDO=()
+if [[ "$EUID" -ne 0 ]] && command -v sudo >/dev/null 2>&1; then
+  if sudo -n true >/dev/null 2>&1; then
+    BTRFS_READ_SUDO=(sudo -n)
+  elif [[ -t 0 && -t 1 ]]; then
+    ui_info "读取 scrub 历史结果需要管理员权限。"
+    if sudo -v; then
+      BTRFS_READ_SUDO=(sudo)
+    fi
+  fi
+fi
+
+declare -a BTRFS_TARGETS=() BTRFS_SOURCES=()
+discover_filesystems() {
+  local mountpoint source device mounts=""
+  declare -A seen=()
+  if ! mounts="$(findmnt -rn -t btrfs -o TARGET,SOURCE 2>&1)"; then
+    ui_err "Btrfs 挂载查询失败: %s" "${mounts:-无输出}"
+    return 1
+  fi
+  while read -r mountpoint source; do
+    [[ -n "$mountpoint" && -n "$source" ]] || continue
+    device="${source%%\[*}"
+    [[ -z "${seen[$device]:-}" ]] || continue
+    seen[$device]=1
+    BTRFS_TARGETS+=("$mountpoint")
+    BTRFS_SOURCES+=("$device")
+  done <<< "$mounts"
+  ((${#BTRFS_TARGETS[@]} > 0)) \
+    || { ui_err "当前没有已挂载的 Btrfs 文件系统"; return 1; }
+}
+
+unit_instance() {
+  systemd-escape --path "$1"
+}
+
+select_target() {
+  local selected index i
+  if [[ -n "$TARGET" ]]; then
+    [[ "$(findmnt -n -o FSTYPE --target "$TARGET" 2>/dev/null || true)" == "btrfs" ]] \
+      || { ui_err "目标不是已挂载的 Btrfs 文件系统: %s" "$TARGET"; return 1; }
+    TARGET="$(findmnt -n -o TARGET --target "$TARGET")"
+    return 0
+  fi
+  if ((${#BTRFS_TARGETS[@]} == 1)); then
+    TARGET="${BTRFS_TARGETS[0]}"
+    return 0
+  fi
+  if [[ -t 0 && -t 1 ]] && command -v fzf >/dev/null 2>&1; then
+    selected="$(for ((i = 0; i < ${#BTRFS_TARGETS[@]}; i++)); do
+      printf '%s\t%s\n' "${BTRFS_TARGETS[$i]}" "${BTRFS_SOURCES[$i]}"
+    done | fzf --delimiter=$'\t' --with-nth=1,2 --height=80% --layout=reverse \
+      --border=rounded --border-label=' 选择 Btrfs 文件系统 ' --cycle \
+      --header='Enter 选择   ↑↓ 循环移动   Esc 取消' --color="$(ui_fzf_colors)")" || return 130
+    TARGET="${selected%%$'\t'*}"
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    TARGET="${BTRFS_TARGETS[0]}"
+    return 0
+  fi
+  for ((i = 0; i < ${#BTRFS_TARGETS[@]}; i++)); do
+    printf '%d. %s (%s)\n' "$((i + 1))" "${BTRFS_TARGETS[$i]}" "${BTRFS_SOURCES[$i]}"
+  done
+  printf '输入编号: '
+  read -r index
+  [[ "$index" =~ ^[1-9][0-9]*$ ]] && ((index <= ${#BTRFS_TARGETS[@]})) || return 130
+  TARGET="${BTRFS_TARGETS[$((index - 1))]}"
+}
+
+status_one() {
+  local target="$1" source="$2" instance timer service timer_state service_state
+  local stats="" stats_rc=0 scrub="" scrub_rc=0 result="" result_rc=0
+  instance="$(unit_instance "$target")"
+  timer="btrfs-scrub@${instance}.timer"
+  service="btrfs-scrub@${instance}.service"
+
+  ui_panel_open "$target" "$source"
+  timer_state="$(systemctl is-enabled "$timer" 2>/dev/null || true)"
+  service_state="$(systemctl is-active "$service" 2>/dev/null || true)"
+  case "$timer_state" in
+    enabled) ui_panel_stat ok "$timer 已启用" ;;
+    disabled) ui_panel_stat warn "$timer 未启用" ;;
+    *) ui_panel_stat warn "$timer 状态无法确认: ${timer_state:-unknown}" ;;
+  esac
+  case "$service_state" in
+    active|activating) ui_panel_stat info "scrub 正在运行" ;;
+    inactive) ui_panel_stat info "scrub 当前未运行: inactive" ;;
+    failed) ui_panel_stat warn "scrub service 当前处于 failed 状态" ;;
+    *) ui_panel_stat warn "scrub 服务状态无法确认: ${service_state:-unknown}" ;;
+  esac
+  result="$(systemctl show "$service" -p Result --value 2>&1)" || result_rc=$?
+  if [[ "$result_rc" -ne 0 ]]; then
+    ui_panel_stat warn "上次 systemd scrub 结果查询失败"
+    [[ -z "$result" ]] || printf '%s\n' "$result" | ui_panel_raw
+  elif [[ -n "$result" && "$result" != "success" ]]; then
+    ui_panel_stat warn "上次 systemd scrub 结果: $result"
+  fi
+
+  stats="$(LC_ALL=C btrfs device stats -c "$target" 2>&1)" || stats_rc=$?
+  if [[ "$stats_rc" -eq 0 ]]; then
+    ui_panel_stat ok "Btrfs device stats 没有错误计数"
+  elif grep -Eq '[[:space:]][1-9][0-9]*$' <<< "$stats"; then
+    ui_panel_stat warn "Btrfs device stats 存在非零错误"
+    printf '%s\n' "$stats" | ui_panel_raw
+  else
+    ui_panel_stat warn "Btrfs device stats 查询失败"
+    [[ -z "$stats" ]] || printf '%s\n' "$stats" | ui_panel_raw
+  fi
+
+  scrub="$(LC_ALL=C "${BTRFS_READ_SUDO[@]}" btrfs scrub status -R "$target" 2>&1)" || scrub_rc=$?
+  if [[ "$scrub_rc" -ne 0 ]]; then
+    ui_panel_stat warn "scrub 状态查询失败"
+    [[ -z "$scrub" ]] || printf '%s\n' "$scrub" | ui_panel_raw
+  elif grep -q 'no stats available' <<< "$scrub"; then
+    ui_panel_stat info "尚未完成过 scrub；首次定时执行后会显示结果（当前不是故障）"
+  elif grep -Eq 'uncorrectable_errors:[[:space:]]*[1-9]|read_errors:[[:space:]]*[1-9]|csum_errors:[[:space:]]*[1-9]|verify_errors:[[:space:]]*[1-9]' <<< "$scrub"; then
+    ui_panel_stat warn "上次 scrub 检出了错误"
+    printf '%s\n' "$scrub" | ui_panel_raw
+  else
+    ui_panel_stat ok "上次 scrub 未报告读取、校验或不可修复错误"
+    printf '%s\n' "$scrub" | grep -E 'scrub started at|scrub done for|data_bytes_scrubbed|duration|rate' \
+      | ui_panel_raw || true
+  fi
+  ui_panel_close
+}
+
+show_status() {
+  local i
+  ui_tally_reset
+  ui_banner "Btrfs Scrub" "btrfs-scrub · 状态 / 错误计数 / 定时器"
+  ui_panel_open "先了解 Scrub"
+  ui_panel_line "scrub 会读取 Btrfs 数据并核对校验和，用于尽早发现静默损坏。"
+  ui_panel_line "它不会删除文件、不会整理空间，也不会创建或替代 Snapper 快照。"
+  ui_panel_line "「尚未完成过 scrub」在首次运行前是正常信息，不代表磁盘故障。"
+  ui_panel_close
+  ui_working "正在读取 Btrfs scrub 历史、错误计数和 timer 状态"
+  for ((i = 0; i < ${#BTRFS_TARGETS[@]}; i++)); do
+    status_one "${BTRFS_TARGETS[$i]}" "${BTRFS_SOURCES[$i]}"
+  done
+  ui_tally_summary
+  ui_tally_status "$STRICT"
+}
+
+confirm_action() {
+  local prompt="$1" word="$2"
+  [[ "$ASSUME_YES" -eq 1 ]] && return 0
+  [[ -t 0 ]] || { ui_err "非交互操作必须指定 --yes"; return 2; }
+  ui_confirm_word "$prompt" "$word"
+}
+
+mutate_scrub() {
+  local instance timer service confirm_rc=0
+  select_target || return $?
+  instance="$(unit_instance "$TARGET")"
+  timer="btrfs-scrub@${instance}.timer"
+  service="btrfs-scrub@${instance}.service"
+  case "$ACTION" in
+    start)
+      confirm_action "将在 $TARGET 启动一次后台 scrub" "scrub" || confirm_rc=$?
+      if [[ "$confirm_rc" -ne 0 ]]; then
+        [[ "$confirm_rc" -eq 1 ]] && { ui_warn "已取消 scrub"; return "$(cancel_status)"; }
+        return "$confirm_rc"
+      fi
+      ui_maintenance_lock_acquire "启动 Btrfs scrub" || return $?
+      if sudo systemctl start --no-block "$service"; then
+        ui_ok "已启动: %s" "$service"
+        ui_info "可用 btrfs-scrub --status 查看进度和结果。"
+      else
+        ui_err "启动 scrub 失败: %s" "$service"
+        return 1
+      fi
+      ;;
+    enable)
+      confirm_action "将为 $TARGET 启用每月 scrub" "enable scrub" || confirm_rc=$?
+      if [[ "$confirm_rc" -ne 0 ]]; then
+        [[ "$confirm_rc" -eq 1 ]] && { ui_warn "已取消启用"; return "$(cancel_status)"; }
+        return "$confirm_rc"
+      fi
+      ui_maintenance_lock_acquire "启用 Btrfs scrub timer" || return $?
+      if sudo systemctl enable --now "$timer"; then
+        ui_ok "已启用: %s" "$timer"
+      else
+        ui_err "启用 scrub timer 失败: %s" "$timer"
+        return 1
+      fi
+      ;;
+    disable)
+      confirm_action "将禁用 $TARGET 的定期 scrub" "disable scrub" || confirm_rc=$?
+      if [[ "$confirm_rc" -ne 0 ]]; then
+        [[ "$confirm_rc" -eq 1 ]] && { ui_warn "已取消禁用"; return "$(cancel_status)"; }
+        return "$confirm_rc"
+      fi
+      ui_maintenance_lock_acquire "禁用 Btrfs scrub timer" || return $?
+      if sudo systemctl disable --now "$timer"; then
+        ui_ok "已禁用: %s" "$timer"
+      else
+        ui_err "禁用 scrub timer 失败: %s" "$timer"
+        return 1
+      fi
+      ;;
+  esac
+}
+
+choose_action() {
+  local options selected
+  options=$'1\t查看状态\tstatus\t只读查看错误计数、上次结果和每月 timer，不改系统\n2\t立即 scrub\tstart\t后台读取整套文件系统并核对校验和，不删除文件\n3\t启用定时\tenable\t每月自动执行一次，目标磁盘未挂载时不会运行\n4\t禁用定时\tdisable\t停止今后的定时执行，不会取消已经运行的 scrub\n0\t返回\texit\t不执行任何操作，直接回到上一级菜单'
+  if [[ -t 0 && -t 1 ]] && command -v fzf >/dev/null 2>&1; then
+    selected="$(printf '%s\n' "$options" | fzf --delimiter=$'\t' --with-nth=1,2,4 \
+      --height=100% --layout=reverse --border=rounded --border-label=' Btrfs Scrub ' \
+      --list-border=rounded --list-label=' 可用操作 ' --preview-border=rounded \
+      --preview-label=' 功能说明 ' --preview-window='right,48%,wrap' \
+      --preview='printf "\033[1;36m%s\033[0m\n\n%s\n\n\033[2mScrub 是读取校验，不是清理或快照。\033[0m\n" {2} {4}' \
+      --cycle --header='Enter 执行   ↑↓ 循环移动   Esc 返回' --color="$(ui_fzf_colors)")" || return 130
+  else
+    printf '%s\n' "$options" | awk -F '\t' '{printf "%s. %s - %s\n", $1, $2, $4}'
+    printf '选择操作: '
+    read -r selected
+    selected="$(awk -F '\t' -v key="$selected" '$1 == key {print; exit}' <<< "$options")"
+  fi
+  ACTION="$(awk -F '\t' '{print $3}' <<< "$selected")"
+  [[ "$ACTION" != "exit" && -n "$ACTION" ]] || return 130
+}
+
+discover_filesystems
+if [[ -z "$ACTION" ]]; then
+  if [[ -t 0 ]]; then
+    choose_rc=0
+    choose_action || choose_rc=$?
+    if [[ "$choose_rc" -ne 0 ]]; then
+      [[ "$choose_rc" -eq 130 ]] && exit "$(cancel_status)"
+      exit "$choose_rc"
+    fi
+  else
+    ACTION=status
+  fi
+fi
+case "$ACTION" in
+  status) show_status ;;
+  start|enable|disable) mutate_scrub ;;
+esac

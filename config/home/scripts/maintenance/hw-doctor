@@ -1,0 +1,439 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
+# shellcheck source=lib/ui.sh
+. "$UI_LIB"
+
+# 卡片状态包装：进卡片内的徽章行，并累计统计
+ok()   { ui_panel_stat ok   "$*"; }
+warn() { ui_panel_stat warn "$*"; }
+miss() { ui_panel_stat miss "$*"; }
+info() { ui_panel_stat info "$*"; }
+
+HW_QUERY_FAILED=0
+PACKAGE_ROWS=""
+PACKAGE_QUERY_OK=0
+SERVICE_STATE=""
+SERVICE_STATE_RC=0
+
+have() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+pkg_installed() {
+  [[ "$PACKAGE_QUERY_OK" -eq 1 ]] && grep -Fxq -- "$1" <<< "$PACKAGE_ROWS"
+}
+
+# 面板生命周期：打开一个卡片，结束时统一关闭
+_PANEL_OPEN=false
+panel() {
+  [[ "$_PANEL_OPEN" == true ]] && ui_panel_close
+  ui_panel_open "$1" "${2:-}"
+  _PANEL_OPEN=true
+}
+panel_end() {
+  [[ "$_PANEL_OPEN" == true ]] && ui_panel_close
+  _PANEL_OPEN=false
+}
+
+# 把命令原始输出整理进当前卡片
+run_cmd() {
+  local cmd="$1"
+  local output="" rc=0
+  shift
+
+  if have "$cmd"; then
+    output="$("$cmd" "$@" 2>&1)" || rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+      [[ -z "$output" ]] || printf '%s\n' "$output" | ui_panel_raw
+    else
+      warn "$cmd 查询失败（退出码 $rc）"
+      [[ -z "$output" ]] || printf '%s\n' "$output" | ui_panel_raw
+      HW_QUERY_FAILED=1
+    fi
+  else
+    warn "缺少命令: $cmd"
+    HW_QUERY_FAILED=1
+  fi
+}
+
+check_pkg() {
+  local pkg="$1"
+  local why="$2"
+
+  if pkg_installed "$pkg"; then
+    ok "$pkg — $why"
+  elif [[ "$PACKAGE_QUERY_OK" -ne 1 ]]; then
+    info "$pkg — 软件包数据库查询失败，无法判断"
+  else
+    miss "$pkg — $why"
+  fi
+}
+
+check_cmd() {
+  local cmd="$1"
+  local why="$2"
+
+  if have "$cmd"; then
+    ok "$cmd — $why"
+  else
+    miss "$cmd — $why"
+  fi
+}
+
+query_service_state() {
+  local unit="$1" scope="${2:-system}"
+  SERVICE_STATE=""
+  SERVICE_STATE_RC=0
+  if ! have systemctl; then
+    SERVICE_STATE_RC=127
+    HW_QUERY_FAILED=1
+    return 1
+  fi
+  if [[ "$scope" == "user" ]]; then
+    SERVICE_STATE="$(systemctl --user is-active "$unit" 2>&1)" || SERVICE_STATE_RC=$?
+  else
+    SERVICE_STATE="$(systemctl is-active "$unit" 2>&1)" || SERVICE_STATE_RC=$?
+  fi
+  case "$SERVICE_STATE" in
+    active|reloading|inactive|failed|activating|deactivating|maintenance|not-found) return 0 ;;
+  esac
+  HW_QUERY_FAILED=1
+  return 1
+}
+
+check_service() {
+  local unit="$1"
+  local scope="${2:-system}"
+  local label="${3:-$unit}"
+  if ! query_service_state "$unit" "$scope"; then
+    warn "$label 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    [[ -z "$SERVICE_STATE" ]] || printf '%s\n' "$SERVICE_STATE" | ui_panel_raw
+    return
+  fi
+
+  case "$SERVICE_STATE" in
+    active) ok "$label active" ;;
+    inactive|failed) warn "$label $SERVICE_STATE" ;;
+    *) info "$label $SERVICE_STATE" ;;
+  esac
+}
+
+dms_session_running() {
+  # DMS 可以由 Niri/会话配置直接以守护进程方式启动，未必挂在 dms.service 下。
+  # 仅匹配真正的「dms run」主进程，排除 notify-action 等一次性 CLI 子进程。
+  have pgrep || return 1
+  pgrep -u "$UID" -f '(^|/)dms[[:space:]]+run([[:space:]]|$)' >/dev/null 2>&1
+}
+
+check_dms() {
+  if ! query_service_state dms.service user; then
+    warn "DMS 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    [[ -z "$SERVICE_STATE" ]] || printf '%s\n' "$SERVICE_STATE" | ui_panel_raw
+    return
+  fi
+
+  case "$SERVICE_STATE" in
+    active)
+      ok "DMS active"
+      ;;
+    inactive)
+      if dms_session_running; then
+        ok "DMS 正在运行（会话守护方式启动；dms.service inactive）"
+      else
+        warn "DMS inactive；桌面面板、通知或快捷设置可能不可用"
+      fi
+      ;;
+    failed)
+      warn "DMS failed；桌面面板、通知或快捷设置可能不可用"
+      ;;
+    not-found)
+      info "未检测到 DMS 服务（未安装或未配置）"
+      ;;
+    *)
+      info "DMS $SERVICE_STATE"
+      ;;
+  esac
+}
+
+check_tuned() {
+  if ! query_service_state tuned.service system; then
+    warn "tuned 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    return
+  fi
+  case "$SERVICE_STATE" in
+    active) ok "tuned active" ;;
+    *) info "tuned $SERVICE_STATE；首轮迁移按文档暂不启用" ;;
+  esac
+}
+
+check_vmtoolsd() {
+  if ! query_service_state vmtoolsd.service system; then
+    warn "vmtoolsd 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    return
+  fi
+  case "$SERVICE_STATE" in
+    active) warn "vmtoolsd active；实机通常应关闭" ;;
+    inactive|failed|not-found) ok "vmtoolsd $SERVICE_STATE；实机应关闭" ;;
+    *) info "vmtoolsd $SERVICE_STATE" ;;
+  esac
+}
+
+check_display_manager() {
+  local unit target
+  target="$(readlink -f /etc/systemd/system/display-manager.service 2>/dev/null || true)"
+  unit="${target##*/}"
+  if [[ -z "$unit" || "$unit" == "display-manager.service" ]]; then
+    unit="display-manager.service"
+  fi
+  if ! query_service_state "$unit" system; then
+    warn "显示管理器状态查询失败（退出码 $SERVICE_STATE_RC）"
+    return
+  fi
+  case "$SERVICE_STATE" in
+    active) ok "显示管理器 ${unit%.service} active" ;;
+    inactive|failed) warn "显示管理器 ${unit%.service} $SERVICE_STATE" ;;
+    *) info "未检测到启用的显示管理器" ;;
+  esac
+}
+
+main() {
+  local lscpu_out="" lspci_out="" lsmod_out=""
+  local lscpu_rc=127 lspci_rc=127 lsmod_rc=127 package_rc=127
+  local mount_output="" mount_rows="" mount_rc=0
+  local strict=0
+
+  if (( $# > 1 )); then
+    ui_err "参数过多；用法: hw-doctor [--strict]"
+    return 2
+  fi
+  case "${1:-}" in
+    --strict) strict=1 ;;
+    -h|--help) printf '用法: hw-doctor [--strict]\n'; return 0 ;;
+    "") ;;
+    *) ui_err "未知参数: %s" "$1"; return 2 ;;
+  esac
+
+  ui_tally_reset
+  ui_banner "硬件检查" "hw-doctor · 只读诊断"
+  ui_working "正在读取 CPU、PCI、内核模块和软件包状态"
+
+  if have lscpu; then
+    lscpu_rc=0
+    lscpu_out="$(LC_ALL=C lscpu 2>&1)" || lscpu_rc=$?
+  fi
+  if have lspci; then
+    lspci_rc=0
+    lspci_out="$(LC_ALL=C lspci -k 2>&1)" || lspci_rc=$?
+  fi
+  if have lsmod; then
+    lsmod_rc=0
+    lsmod_out="$(lsmod 2>&1)" || lsmod_rc=$?
+  fi
+  if have pacman; then
+    package_rc=0
+    PACKAGE_ROWS="$(pacman -Qq 2>&1)" || package_rc=$?
+    [[ "$package_rc" -ne 0 ]] || PACKAGE_QUERY_OK=1
+  fi
+
+  panel "系统" ""
+  if have uname; then
+    ui_panel_kv "内核" "$(uname -r 2>/dev/null || printf '?')"
+    ui_panel_kv "架构" "$(uname -m 2>/dev/null || printf '?')"
+    ui_panel_kv "主机名" "$(uname -n 2>/dev/null || printf '?')"
+  fi
+  if have timedatectl; then
+    local tz ntp timedate_rc=0
+    tz="$(timedatectl show -p Timezone --value 2>&1)" || timedate_rc=$?
+    ntp="$(timedatectl show -p NTPSynchronized --value 2>&1)" || timedate_rc=$?
+    if [[ "$timedate_rc" -ne 0 ]]; then
+      warn "timedatectl 查询失败（退出码 $timedate_rc）"
+      HW_QUERY_FAILED=1
+    else
+      [[ -n "$tz" ]] && ui_panel_kv "时区" "$tz"
+      case "$ntp" in
+        yes) ui_panel_kv "时间同步" "已同步" ;;
+        no)  ui_panel_kv "时间同步" "未同步" ;;
+      esac
+    fi
+  fi
+  if [[ "$package_rc" -ne 0 ]]; then
+    warn "pacman 软件包数据库查询失败（退出码 $package_rc）"
+    [[ -z "$PACKAGE_ROWS" ]] || printf '%s\n' "$PACKAGE_ROWS" | ui_panel_raw
+    HW_QUERY_FAILED=1
+  fi
+
+  panel "CPU / 微码" ""
+  if [[ "$lscpu_rc" -eq 0 && -n "$lscpu_out" ]]; then
+    local cpu_model cpu_vendor cpu_count
+    cpu_model="$(awk -F: '/Model name/ {gsub(/^[ \t]+/,"",$2); print $2; exit}' <<< "$lscpu_out")"
+    cpu_vendor="$(awk -F: '/Vendor ID/ {gsub(/^[ \t]+/,"",$2); print $2; exit}' <<< "$lscpu_out")"
+    cpu_count="$(awk -F: '/^CPU\(s\)/ {gsub(/^[ \t]+/,"",$2); print $2; exit}' <<< "$lscpu_out")"
+    [[ -n "$cpu_model" ]] && ui_panel_kv "型号" "$cpu_model"
+    [[ -n "$cpu_vendor" ]] && ui_panel_kv "厂商" "$cpu_vendor"
+    [[ -n "$cpu_count" ]] && ui_panel_kv "逻辑核心" "$cpu_count"
+  elif [[ "$lscpu_rc" -eq 127 ]]; then
+    miss "缺少 lscpu"
+    HW_QUERY_FAILED=1
+  else
+    warn "lscpu 查询失败（退出码 $lscpu_rc）"
+    [[ -z "$lscpu_out" ]] || printf '%s\n' "$lscpu_out" | ui_panel_raw
+    HW_QUERY_FAILED=1
+  fi
+  if grep -qi amd <<< "$lscpu_out"; then
+    check_pkg amd-ucode "AMD CPU 微码"
+  elif grep -qi intel <<< "$lscpu_out"; then
+    check_pkg intel-ucode "Intel CPU 微码"
+  else
+    warn "无法判断 CPU 厂商"
+  fi
+
+  panel "图形 / GPU" ""
+  if [[ "$lspci_rc" -eq 0 && -n "$lspci_out" ]]; then
+    awk '
+      BEGIN {show=0}
+      /VGA|3D|Display/ {show=1; print; next}
+      show && /^[[:space:]]/ {print; next}
+      show {show=0}
+    ' <<< "$lspci_out" | ui_panel_raw
+  elif [[ "$lspci_rc" -eq 127 ]]; then
+    miss "lspci — 建议安装 pciutils"
+    HW_QUERY_FAILED=1
+  else
+    warn "lspci 查询失败（退出码 $lspci_rc）"
+    [[ -z "$lspci_out" ]] || printf '%s\n' "$lspci_out" | ui_panel_raw
+    HW_QUERY_FAILED=1
+  fi
+  if [[ "$lsmod_rc" -eq 0 && -n "$lsmod_out" ]]; then
+    local gpu_mods
+    gpu_mods="$(grep -E '^(amdgpu|nvidia|nouveau)\b' <<< "$lsmod_out" | awk '{print $1}' | paste -sd' ' - || true)"
+    [[ -n "$gpu_mods" ]] && ui_panel_kv "已加载模块" "$gpu_mods"
+  elif [[ "$lsmod_rc" -eq 127 ]]; then
+    miss "缺少 lsmod，建议安装 kmod"
+    HW_QUERY_FAILED=1
+  else
+    warn "lsmod 查询失败（退出码 $lsmod_rc）"
+    [[ -z "$lsmod_out" ]] || printf '%s\n' "$lsmod_out" | ui_panel_raw
+    HW_QUERY_FAILED=1
+  fi
+  check_pkg mesa "AMD/Intel 图形用户态驱动"
+  check_pkg mesa-utils "glxinfo 检查工具"
+  check_pkg vulkan-tools "vulkaninfo 检查工具"
+  if grep -qi nvidia <<< "$lspci_out"; then
+    check_pkg nvidia-utils "NVIDIA 用户态工具"
+    check_pkg nvidia-prime "prime-run 混合显卡启动脚本"
+  fi
+
+  panel "网络" ""
+  if [[ "$lspci_rc" -eq 0 && -n "$lspci_out" ]]; then
+    awk '
+      BEGIN {show=0}
+      /Ethernet|Network|Wireless/ {show=1; print; next}
+      show && /^[[:space:]]/ {print; next}
+      show {show=0}
+    ' <<< "$lspci_out" | ui_panel_raw
+  fi
+  if [[ "$lsmod_rc" -eq 0 && -n "$lsmod_out" ]]; then
+    local net_mods
+    net_mods="$(grep -E '^(rtw89|r8169|iwlwifi)\b' <<< "$lsmod_out" | awk '{print $1}' | paste -sd' ' - || true)"
+    [[ -n "$net_mods" ]] && ui_panel_kv "已加载模块" "$net_mods"
+  fi
+  check_service NetworkManager.service system "NetworkManager"
+  if have nmcli; then
+    run_cmd nmcli device status
+  fi
+
+  panel "音频" ""
+  check_service pipewire.service user "pipewire"
+  check_service pipewire-pulse.service user "pipewire-pulse"
+  check_service wireplumber.service user "wireplumber"
+  if have wpctl; then
+    # wpctl status 会吐出 Clients/Video/Streams 等噪声并在 40 行硬切留悬空树枝。
+    # 只保留 PipeWire 版本头 + Audio 段的 Devices/Sinks/Sources（声卡识别/默认收发）。
+    local wpctl_out wpctl_rc=0
+    wpctl_out="$(wpctl status 2>&1)" || wpctl_rc=$?
+    if [[ "$wpctl_rc" -ne 0 ]]; then
+      warn "wpctl 查询失败（退出码 $wpctl_rc）"
+      [[ -z "$wpctl_out" ]] || printf '%s\n' "$wpctl_out" | ui_panel_raw
+      HW_QUERY_FAILED=1
+    else
+      printf '%s\n' "$wpctl_out" | awk '
+      NR==1 { print; next }
+      /^Audio/ { sec=1; print; next }
+      /^[^[:space:]]/ { sec=0; next }
+      sec==0 { next }
+      /[├└]─[[:space:]]*(Devices|Sinks|Sources):/ { keep=1; print; next }
+      /[├└]─[[:space:]]*(Filters|Streams):/ { keep=0; next }
+      keep==1 && /[0-9]/ { print }
+      ' | sed -e 's/[[:space:]]*$//' | ui_panel_raw || true
+    fi
+  else
+    warn "缺少 wpctl"
+  fi
+  if [[ "$PACKAGE_QUERY_OK" -eq 1 ]] && ! pkg_installed sof-firmware; then
+    warn "sof-firmware 未安装；实机声卡异常时优先补它"
+  elif [[ "$PACKAGE_QUERY_OK" -ne 1 ]]; then
+    info "sof-firmware — 软件包数据库查询失败，无法判断"
+  fi
+
+  panel "存储 / Btrfs / 快照" ""
+  # 精简列：去掉最宽的 UUID/FSVER 噪声，保留类型/标签/占用/挂载点，避免卡片右侧溢出
+  run_cmd lsblk -o NAME,FSTYPE,LABEL,SIZE,FSUSE%,MOUNTPOINTS
+  if have findmnt; then
+    # 精简列：默认 OPTIONS 列可达 130 列会撑破卡片，只留挂载点/设备/类型/占用
+    mount_rows="$(printf '%-12s %-28s %-8s %8s %5s\n' TARGET SOURCE FSTYPE SIZE USE%)"
+    for mountpoint in / /home /boot /efi; do
+      [[ -e "$mountpoint" ]] || continue
+      mount_output=""
+      mount_rc=0
+      mount_output="$(findmnt -n -o TARGET,SOURCE,FSTYPE,SIZE,USE% \
+        --target "$mountpoint" 2>&1)" || mount_rc=$?
+      if [[ "$mount_rc" -eq 0 ]]; then
+        mount_rows+=$'\n'"$mount_output"
+      else
+        warn "findmnt 查询失败: $mountpoint（退出码 $mount_rc）"
+        HW_QUERY_FAILED=1
+      fi
+    done
+    printf '%s\n' "$mount_rows" | awk '!seen[$0]++' | ui_panel_raw
+  else
+    miss "缺少 findmnt"
+    HW_QUERY_FAILED=1
+  fi
+  if have snapper; then
+    run_cmd snapper list-configs
+  else
+    warn "缺少 snapper"
+  fi
+  if have smartctl; then
+    info "smartctl 已安装；需要 root 时用: sudo smartctl -a /dev/nvme0"
+  else
+    warn "smartmontools 未安装，无法查 SSD SMART"
+  fi
+
+  panel "桌面服务" ""
+  check_display_manager
+  check_dms
+  check_service dsearch.service user "dsearch"
+  check_service power-profiles-daemon.service system "power-profiles-daemon"
+  check_tuned
+  check_service bluetooth.service system "bluetooth"
+  check_vmtoolsd
+
+  panel "建议补齐的检查工具" ""
+  check_cmd glxinfo "OpenGL 检查"
+  check_cmd vulkaninfo "Vulkan 检查"
+  check_cmd nvidia-smi "NVIDIA 检查"
+  check_cmd prime-run "混合显卡 prime-run"
+  check_cmd btop "终端资源监控"
+  check_cmd powertop "功耗诊断"
+  check_cmd fwupdmgr "固件更新检查"
+
+  panel_end
+  ui_tally_summary
+  [[ "$HW_QUERY_FAILED" -eq 0 ]] || return 1
+  ui_tally_status "$strict"
+}
+
+main "$@"

@@ -1,0 +1,12 @@
+# Local audit, raw model sessions, and installer state must never enter the public repository.
+.audit/
+*.audit-private.md
+/session-ses_*.md
+
+# Release and build outputs.
+dist/
+*.pkg.tar.*
+*.sig
+
+# Editor and OS noise.
+.DS_Store

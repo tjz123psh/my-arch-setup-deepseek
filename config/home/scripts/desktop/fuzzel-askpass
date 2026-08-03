@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# 描述：SUDO_ASKPASS 助手；优先使用 fuzzel，clean-base 时显式回退到 systemd-ask-password。
+# Description: SUDO_ASKPASS helper preferring fuzzel with an explicit systemd fallback for clean bases.
+
+set -euo pipefail
+
+# sudo -A 会把提示语作为第一个参数传进来；没有时用默认提示。
+# sudo -A passes the prompt as $1; fall back to a default prompt.
+PROMPT="${1:-[sudo] password: }"
+SYSTEMD_ASK_PASSWORD=/usr/bin/systemd-ask-password
+
+prompt_with_fuzzel() {
+  local password
+  local status
+
+  # --dmenu + --prompt-only：不等待 stdin，回车后把输入的文本打印到 stdout。
+  # --password：输入内容以 * 掩码显示，不回显明文。
+  # --lines=0：隐藏匹配列表，只保留输入行。
+  # --placeholder=''：覆盖应用启动器的全局搜索占位符。
+  if password=$(
+    fuzzel \
+      --dmenu \
+      --password \
+      --lines=0 \
+      --placeholder='' \
+      --prompt-only="$PROMPT"
+  ); then
+    printf '%s\n' "$password"
+    return 0
+  else
+    status=$?
+    return "$status"
+  fi
+}
+
+if command -v fuzzel >/dev/null 2>&1; then
+  # fuzzel 用户取消或失败时保留其非零退出码，让 sudo 中止；此时不再
+  # 降级到另一种提示界面，避免一次调用出现第二个意外密码提示。
+  prompt_with_fuzzel
+  exit $?
+fi
+
+if [[ -x $SYSTEMD_ASK_PASSWORD && ! -d $SYSTEMD_ASK_PASSWORD ]]; then
+  printf '警告: 未找到 fuzzel；使用 %s 回退密码提示（可能使用终端或 systemd agent）。\n' \
+    "$SYSTEMD_ASK_PASSWORD" >&2
+  exec "$SYSTEMD_ASK_PASSWORD" --echo=no -- "$PROMPT"
+fi
+
+printf '错误: 无可用的密码提示程序: fuzzel 不在 PATH 中，且 %s 不可执行。\n' \
+  "$SYSTEMD_ASK_PASSWORD" >&2
+exit 127

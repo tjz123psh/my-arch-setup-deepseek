@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# 描述：审计式 sudo -A 包装器；密码提示由相邻 helper 选择 fuzzel 或明确的 systemd 回退。
+# Description: Audited sudo -A wrapper; its adjacent helper selects fuzzel or an explicit systemd fallback.
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF_USAGE'
+Usage: gsudo [command [args...]]
+
+通过相邻的 askpass helper 提示密码，再交给 sudo -A 执行命令。
+密码提示优先使用 fuzzel；clean-base 尚未安装 fuzzel 时，helper 会明确告警并尝试 systemd-ask-password。
+
+Options:
+  -h, --help    显示帮助并退出
+
+示例:
+  gsudo systemctl restart nginx
+  gsudo -- pacman -Syu
+
+不带命令时，等价于 sudo -Av：只刷新 sudo 时间戳。
+EOF_USAGE
+}
+
+require_deps() {
+  local missing=()
+  local cmd
+
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    printf '错误: 缺少依赖: %s\n' "${missing[*]}" >&2
+    exit 127
+  fi
+}
+
+# --- 参数解析 ---
+# 只拦截脱离命令的 -h/--help；-- 之后的内容原样交给 sudo。
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "${1:-}" == "--" ]]; then
+  shift
+fi
+
+# sudo 本身是唯一必须在调用前存在的外部命令。fuzzel 由后续 AUR
+# stage 安装，不能成为 clean-base NOPASSWD bootstrap 的前置条件。
+require_deps sudo
+
+# askpass 助手必须与本脚本同目录。这里使用纯 Bash 路径拆分，避免把
+# dirname 变成 clean-base privilege bootstrap 的额外 PATH 依赖。
+script_source=${BASH_SOURCE[0]}
+if [[ $script_source == */* ]]; then
+  script_dir_part=${script_source%/*}
+else
+  script_dir_part=.
+fi
+SCRIPT_DIR=$(cd -- "$script_dir_part" && pwd)
+ASKPASS="$SCRIPT_DIR/fuzzel-askpass"
+
+if [[ ! -x "$ASKPASS" ]]; then
+  printf '错误: 找不到可执行的 askpass 助手: %s\n' "$ASKPASS" >&2
+  exit 1
+fi
+
+# --- 主逻辑 ---
+export SUDO_ASKPASS="$ASKPASS"
+
+if (( $# == 0 )); then
+  # 无命令：仅刷新时间戳。
+  exec sudo -A -v
+fi
+
+exec sudo -A -- "$@"

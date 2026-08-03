@@ -1,0 +1,123 @@
+# =====================================================================
+#  Hyprland 快捷键清单（hypr-keys 速查数据源）
+#  由用户维护。改了 ~/.config/hypr/hyprland.lua 里的键位后，同步此文件。
+#
+#  格式：
+#    以 "# 分类名" 开头的行 = 分类标题
+#    其余行 = <键><TAB><描述>（键与描述之间用一个或多个制表符分隔）
+#    空行和其他 # 注释行会被忽略
+#
+#  说明：尽量对齐 niri 的肌肉记忆。
+#    Super = Win 键（Mod）  Alt / Ctrl / Shift 同名
+# =====================================================================
+
+# DMS 工具
+Ctrl+M	fuzzel 应用启动器
+Super+,	系统设置面板
+Super+M	任务管理器
+Super+N	通知中心
+Super+Shift+N	记事本
+Super+Shift+W	创建窗口规则
+Super+V	剪贴板管理器
+Super+Y	更换壁纸
+Super+X	电源菜单（关机/重启/休眠）
+Super+E	文件管理器（nemo）
+Super+Alt+L	锁定屏幕
+Ctrl+Shift+R	重命名工作区
+Ctrl+Alt+Del	任务管理器
+
+# 应用启动
+Super+O	应用启动器（DMS spotlight，搜索程序/文件）
+Alt+Enter	打开终端（kitty）
+Alt+/	浮动终端（quickterminal）
+Alt+B	B 站视频弹窗播放
+Alt+A	屏幕放大镜（原生缩放，循环 1x→2x→3x→关）
+Alt+F5	录屏菜单（shorin-screenrec-menu，开始/停止）
+Super+Shift+C	维护菜单（term-menu）
+
+# 焦点移动（Alt + Vim / 方向键，滚动布局）
+Alt+H / Alt+←	焦点移到左边一列（滚入视野）
+Alt+J / Alt+↓	同列内焦点下移
+Alt+K / Alt+↑	同列内焦点上移
+Alt+L / Alt+→	焦点移到右边一列（滚入视野）
+
+# 移动窗口 / 列（Alt+Shift + Vim / 方向键，滚动布局）
+Alt+Shift+H / ←	整列左移
+Alt+Shift+J / ↓	同列内窗口下移
+Alt+Shift+K / ↑	同列内窗口上移
+Alt+Shift+L / →	整列右移
+
+# 列操作（滚动布局，对齐 niri）
+Alt+[	当前窗口并入左列 / 单独则弹出
+Alt+]	当前窗口并入右列 / 单独则弹出
+Super+.	把当前窗口弹成独立列
+Super+R	循环切换列宽预设（1/3, 1/2, 2/3, 满宽）
+Super+Ctrl+C	把当前列滚动居中到视野
+
+# 窗口切换
+Alt+Tab	下一个窗口
+Alt+Shift+Tab	上一个窗口
+
+# 工作区
+Alt+1~9	切换到工作区 1~9
+Alt+Shift+1~9	将当前窗口移到工作区 1~9
+Super+I / Super+PgUp	切换到上一个工作区
+Super+U / Super+PgDn	切换到下一个工作区
+Super+Ctrl+I / Super+Ctrl+↑	将当前窗口移到上一个工作区
+Super+Ctrl+U / Super+Ctrl+↓	将当前窗口移到下一个工作区
+
+# 窗口操作
+Alt+Q	关闭当前窗口
+Alt+F4	强制结束当前窗口（SIGKILL）
+Alt+Shift+F4	强制结束整个进程树
+Alt+F	最大化（保留间隙/栏）
+Super+Shift+F	真全屏
+Super+Shift+T	切换浮动 / 平铺
+Super+C	居中窗口（浮动时生效）
+
+# 特殊工作区（scratchpad）
+Super+S	显示 / 隐藏 scratchpad
+Super+Shift+S	将当前窗口移入 scratchpad
+
+# 缩放窗口（滚动布局：列宽 / 列内高度）
+Super+-	列宽减小 10%
+Super+=	列宽增大 10%
+Super+Shift+-	同列内窗口高度减小
+Super+Shift+=	同列内窗口高度增大
+
+# 多显示器
+Super+Ctrl+H / ←	焦点移到左侧显示器
+Super+Ctrl+J / ↓	焦点移到下方显示器
+Super+Ctrl+K / ↑	焦点移到上方显示器
+Super+Ctrl+L / →	焦点移到右侧显示器
+Super+Shift+Ctrl+方向键	将当前窗口移到另一台显示器
+
+# 截图
+Print	框选截图（DMS）
+Alt+Print	当前窗口截图（DMS）
+Ctrl+Print	整个屏幕截图（DMS）
+Super+Print	vellum 框选 + 工具栏
+Super+Shift+Print	vellum 长截图
+Super+Ctrl+Print	vellum 钉图
+
+# 鼠标
+Super+左键拖动	移动窗口
+Super+右键拖动	缩放窗口
+Super+滚轮	左右切换窗口焦点
+Super+Shift+滚轮	上下切换工作区
+
+# 媒体 / 亮度键（锁屏也可用）
+音量↑ / 音量↓	音量 ±3%
+静音	静音切换
+麦静音	麦克风静音切换
+下一曲 / 上一曲	切换曲目
+播放 / 暂停	播放暂停切换
+亮度↑ / 亮度↓	亮度 ±5%
+Ctrl+音量↑	当前播放器音量 +3%（mpris）
+Ctrl+音量↓	当前播放器音量 -3%（mpris）
+
+# 系统
+Super+D	概览：平铺展开当前工作区所有窗口，点选窗口后自动收起
+Super+Shift+E	退出 Hyprland（回到登录界面）
+Super+Shift+P	关闭显示器（待机）
+Super+/	快捷键速查（本面板）

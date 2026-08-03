@@ -1,0 +1,56 @@
+# Based on the public AUR linuxqq-appimage recipe.
+# Maintainer: fengcheng <fengcheng@lidig.com>
+
+_pkgname=linuxqq
+_Pkgname=Linuxqq
+_disname=qq
+_version=3.2.32
+_update_date=2026-07-30
+pkgname="${_pkgname}-appimage"
+pkgver="${_version}_${_update_date//-/}"
+pkgrel=1
+pkgdesc='New Linux QQ based on Electron'
+arch=('x86_64')
+url='https://im.qq.com/linuxqq/'
+license=('custom')
+options=('!strip' '!debug')
+depends=('zlib' 'hicolor-icon-theme' 'fuse2')
+provides=('qq' 'linuxqq')
+conflicts=('linuxqq' 'linuxqq-nt-bwrap')
+
+_appimage="${_Pkgname}-${pkgver}-x86_64.AppImage"
+source_x86_64=("${_appimage}")
+noextract=("${_appimage}")
+sha256sums_x86_64=('719fa8307f569fcfa99f57f321b5c1e2f7bc8450b24bbfcb55fbc46a70b8f07e')
+
+prepare() {
+  chmod +x "${_appimage}"
+  "./${_appimage}" --appimage-extract "${_disname}.desktop"
+  "./${_appimage}" --appimage-extract "${_disname}.png"
+  "./${_appimage}" --appimage-extract LICENSE.electron.txt
+  "./${_appimage}" --appimage-extract usr/share/icons/hicolor/512x512/apps/qq.png
+}
+
+build() {
+  sed -i \
+    -e "s|Exec=AppRun|Exec=env DESKTOPINTEGRATION=false /usr/bin/${_pkgname}|" \
+    -e "s|Icon=.*|Icon=/usr/share/icons/${_pkgname}.png|" \
+    "squashfs-root/${_disname}.desktop"
+  chmod -R a-x+rX squashfs-root/usr
+}
+
+package() {
+  install -Dm755 "${srcdir}/${_appimage}" "${pkgdir}/opt/${pkgname}/${pkgname}.AppImage"
+  install -Dm644 "${srcdir}/squashfs-root/LICENSE.electron.txt" "${pkgdir}/opt/${pkgname}/LICENSE"
+  install -Dm644 "${srcdir}/squashfs-root/${_disname}.desktop" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+
+  install -d "${pkgdir}/usr/share"
+  cp -a "${srcdir}/squashfs-root/usr/share/icons" "${pkgdir}/usr/share/"
+  ln -s "$(realpath "${srcdir}/squashfs-root/${_disname}.png" --relative-to "${srcdir}/squashfs-root/usr/share/icons")" \
+    "${pkgdir}/usr/share/icons/${_pkgname}.png"
+
+  install -d "${pkgdir}/usr/bin" "${pkgdir}/usr/share/licenses/${pkgname}"
+  ln -s "/opt/${pkgname}/${pkgname}.AppImage" "${pkgdir}/usr/bin/${_pkgname}"
+  ln -s "/opt/${pkgname}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

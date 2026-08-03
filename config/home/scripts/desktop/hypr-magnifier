@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+#
+# hypr-magnifier —— Hyprland 原生屏幕放大镜（循环切换倍率）
+#
+# 为什么不用 wooz：wooz 基于 wlr-screencopy 抓帧 + layer-shell 覆盖层显示。
+# 在 Hyprland 上它的覆盖层缺乏正确的 damage 追踪，鼠标一移动就把自己的覆盖
+# 内容反复截进去，形成撕裂 / 拖影 / “橡皮擦”残影。niri 对 screencopy 的合成
+# 处理不同，所以 wooz 在 niri 上正常——因此 niri 侧保留 wooz 不动。
+#
+# Hyprland 自带 GPU 合成阶段的光标缩放（cursor:zoom_factor），完全不走截屏
+# 回环，无撕裂无拖影，且默认跟随光标（cursor:zoom_rigid=false）。本脚本用它
+# 实现单键循环放大镜：1x → 2x → 3x → 关闭。
+#
+# Lua 配置（non-legacy parser）下运行时改配置必须走 hyprctl eval + hl.config，
+# 不能用 hyprctl keyword（会报 "keyword can't work with non-legacy parsers"）。
+# zoomFactor 的动画 leaf 已在 hyprland.lua 启用，切换有平滑过渡。
+
+set -uo pipefail
+
+SIG="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+if [[ -z "$SIG" ]]; then
+	# 从 bash 工具等非会话 shell 调用时补签名（正常键位调用已带此环境变量）
+	# 实例签名是 Hyprland 生成的固定 hex 格式目录名，不含特殊字符，ls 足够。
+	# shellcheck disable=SC2012
+	SIG="$(ls -t /run/user/"$(id -u)"/hypr/ 2>/dev/null | head -1)"
+	export HYPRLAND_INSTANCE_SIGNATURE="$SIG"
+fi
+
+usage() {
+	sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
+	echo
+	echo "用法：hypr-magnifier [--reset|-h]"
+	echo "  无参数    在 1x → 2x → 3x → 1x 之间循环"
+	echo "  --reset   直接关闭放大（回到 1x）"
+	echo "  -h,--help 显示本帮助"
+	exit 0
+}
+
+get_zoom() {
+	hyprctl getoption cursor:zoom_factor 2>/dev/null | awk '/^float:/ {print $2}'
+}
+
+set_zoom() {
+	hyprctl eval "hl.config({ cursor = { zoom_factor = $1 } })" >/dev/null
+}
+
+case "${1:-}" in
+	-h | --help) usage ;;
+	--reset)
+		set_zoom 1.0
+		exit 0
+		;;
+esac
+
+cur="$(get_zoom)"
+if [[ -z "$cur" ]]; then
+	notify-send -a "放大镜" "无法读取缩放状态（Hyprland 未运行？）" 2>/dev/null || true
+	exit 1
+fi
+
+# 当前倍率四舍五入到最近的步进，取下一档；超出末档回到 1.0
+next="1.0"
+cur_int="${cur%.*}"
+case "$cur_int" in
+	1) next="2.0" ;;
+	2) next="3.0" ;;
+	*) next="1.0" ;; # 3x 及以上，或异常值 → 关闭
+esac
+
+set_zoom "$next"

@@ -1,0 +1,204 @@
+# schema=1
+# package<TAB>channel<TAB>repository<TAB>acquisition<TAB>module<TAB>restore-mode<TAB>policy<TAB>origin<TAB>purpose
+# Reconciled ASUS target: 180 exact current-explicit rows plus reviewed confirmed-desired non-explicit requirements.
+# Rolling pacman versions resolve only after full-system refresh; AUR and archlinuxcn retain independent authorization gates.
+accountsservice	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	D-Bus interface for user account query and manipulation
+adobe-source-han-sans-cn-fonts	pacman	extra	pacman	fonts	package-only	install	current-explicit	Adobe Source Han Sans Subset OTF - Simplified Chinese OpenType/CFF fonts
+adw-gtk-theme	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Unofficial GTK 3 port of the libadwaita theme
+alacritty	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A cross-platform, GPU-accelerated terminal emulator
+alsa-firmware	pacman	extra	pacman	audio	package-only	install	current-explicit	Firmware binaries for loader programs in alsa-tools and hotplug firmware loader
+alsa-ucm-conf	pacman	extra	pacman	audio	package-only	install	confirmed-desired	ALSA Use Case Manager configuration (and topologies)
+amd-ucode	pacman	core	pacman	graphics-amd	package-only	install	current-explicit	Microcode update image for AMD CPUs
+archlinuxcn-keyring	pacman	archlinuxcn	archlinuxcn-bootstrap	archlinuxcn-trust	package-only	install	current-explicit	Arch Linux CN PGP keyring
+asusctl	pacman	archlinuxcn	pacman	asus-hardware	package-only	install	current-explicit	A control daemon, CLI tools, and a collection of crates for interacting with ASUS ROG laptops
+base	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Minimal package set to define a basic Arch Linux installation
+base-devel	pacman	core	pacman	build-foundation	package-only	install	current-explicit	Basic tools to build Arch Linux packages
+bash	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	The GNU Bourne Again shell
+bat	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Cat clone with syntax highlighting and git integration
+blueman	pacman	extra	pacman	bluetooth	package-only	install	current-explicit	GTK+ Bluetooth Manager
+blueprint-compiler	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Markup language and compiler for GTK 4 user interfaces
+bluez	pacman	extra	pacman	bluetooth	package-only	install	current-explicit	Daemons for the bluetooth protocol stack
+bluez-utils	pacman	extra	pacman	bluetooth	package-only	install	confirmed-desired	Development and debugging utilities for the bluetooth protocol stack
+btop	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A monitor of system resources, bpytop ported to C++
+btrfs-assistant	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	An application for managing BTRFS subvolumes and Snapper snapshots
+btrfs-progs	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Btrfs filesystem utilities
+cargo-audit	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Audit Cargo.lock for crates with security vulnerabilities
+cava	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Console-based Audio Visualizer with support for multiple backends
+cc-switch	pacman	archlinuxcn	pacman	development-toolchain	package-only	install	current-explicit	All-in-One assistant tool for Claude Code, Codex, OpenCode, openclaw & Gemini CLI
+ccache	pacman	extra	pacman	build-foundation	package-only	install	current-explicit	Compiler cache that speeds up recompilation by caching previous compilations
+cinnamon-translations	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Translations for Cinnamon and Nemo
+clang	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	C language family frontend for LLVM
+clash-verge-rev-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Graphical Clash-compatible proxy client
+claude-code	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	Anthropic Claude Code command-line development agent
+coreutils	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	The basic file, shell and text manipulation utilities of the GNU operating system
+cups-pk-helper	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	A helper that makes system-config-printer use PolicyKit
+devtools	pacman	extra	pacman	build-foundation	package-only	install	confirmed-desired	Official Arch clean-chroot tooling for isolated fixed AUR package builds
+dgop	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	System monitoring CLI + REST API
+dms-shell	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A Quickshell-based desktop shell with Material 3 design principles
+dnsmasq	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Lightweight, easy to configure DNS forwarder and DHCP server
+docker	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Pack, ship and run any application as a lightweight container
+docker-compose	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Fast, isolated development environments using Docker
+dosfstools	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	DOS filesystem utilities
+downgrade	pacman	archlinuxcn	pacman	repository-tools	package-only	install	current-explicit	Bash script for downgrading one or more packages to a version in your cache or the A.L.A.
+dsearch-bin	aur	aur	aur-build	desktop-shared	config-backed	install	current-explicit	Dank desktop search application
+edk2-ovmf	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Firmware for Virtual Machines (x86_64, i686 on x86_64)
+efibootmgr	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Linux user-space application to modify the EFI Boot Manager
+evtest	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	Input device event monitor and query tool
+exfat-utils	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Utilities for exFAT file system
+eza	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A modern replacement for ls (community fork of exa)
+fastfetch	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A feature-rich and performance oriented neofetch like system information tool
+fcitx5	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	Next generation of fcitx, cross-platform input method framework
+fcitx5-configtool	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	Configuration Tool for Fcitx5
+fcitx5-gtk	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	Fcitx5 gtk im module and glib based dbus client library
+fcitx5-qt	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	Fcitx5 Qt Library (Qt5 & Qt6 integrations)
+fcitx5-rime	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	RIME support for Fcitx5
+fcitx5-skin-fluentdark-git	aur	aur	aur-build	input-fcitx-rime	config-backed	install	current-explicit	Fluent Dark theme for Fcitx5 classic UI
+fd	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Simple, fast and user-friendly alternative to find
+ffmpeg	pacman	extra	pacman	recording	package-only	install	confirmed-desired	Complete solution to record, convert and stream audio and video
+ffmpegthumbnailer	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Lightweight video thumbnailer that can be used by file managers
+file-roller	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Create and modify archives
+fish	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Smart and user friendly shell intended mostly for interactive use
+flatpak	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Linux application sandboxing and distribution framework (formerly xdg-app)
+flclash-bin	aur	aur	aur-build	personal-autostart	config-backed	install	current-explicit	Graphical multi-platform proxy client with reviewed autostart entry
+fprintd	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	D-Bus service to access fingerprint readers
+fuzzel-ime-git	aur	aur	aur-build	desktop-shared	config-backed	install	current-explicit	Wayland application launcher with input-method support
+fwupd	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	Simple daemon to allow session software to update firmware
+fzf	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-line fuzzy finder
+gawk	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	GNU version of awk
+git	pacman	extra	pacman	build-foundation	package-only	install	current-explicit	the fast distributed version control system
+git-delta	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Syntax-highlighting pager for git and diff output
+github-cli	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	The GitHub CLI
+gitleaks	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Audit Git repos for secrets and keys
+go	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Core compiler tools for the Go programming language
+google-chrome	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Google Chrome web browser without profile migration
+greetd-dms-greeter-git	aur	aur	deferred	dms-greetd	deferred	deferred	current-explicit	Observed rolling DMS greeter retained only as deferred evidence
+grim	pacman	extra	pacman	recording	package-only	install	current-explicit	Screenshot utility for Wayland
+grub	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	GNU GRand Unified Bootloader (2)
+grub-btrfs	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	Include btrfs snapshots in GRUB boot options
+gst-plugin-pipewire	pacman	extra	pacman	audio	package-only	install	current-explicit	Multimedia graph framework - pipewire plugin
+gtk-layer-shell	pacman	extra	pacman	recording	package-only	install	current-explicit	Library to create Wayland desktop components using the Layer Shell protocol
+gtk4-layer-shell	pacman	extra	pacman	recording	package-only	install	current-explicit	Library to create panels and other desktop components for Wayland
+hyprland	pacman	extra	pacman	wm-hyprland	config-backed	install	confirmed-desired	a highly customizable dynamic tiling Wayland compositor
+inotify-tools	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	inotify-tools is a C library and a set of command-line programs for Linux providing a simple interface to inotify.
+intellij-idea-ultimate-edition	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	IntelliJ IDEA Ultimate development environment
+inter-font	pacman	extra	pacman	fonts	package-only	install	current-explicit	A typeface specially designed for user interfaces
+jdk-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 26 development kit
+jdk8-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 8 development kit
+jq	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-line JSON processor
+khal	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	CLI calendar application built around CalDAV
+kimageformats	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Image format plugins for Qt 6
+kitty	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A modern, hackable, featureful, OpenGL-based terminal emulator
+leaf-markdown-viewer-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Markdown document viewer application
+lib32-nvidia-utils	pacman	multilib	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA drivers utilities (32-bit)
+libnotify	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Library for sending desktop notifications
+libpulse	pacman	extra	pacman	audio	package-only	install	current-explicit	A featureful, general-purpose sound server (client library)
+libva-nvidia-driver	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	VA-API implementation that uses NVDEC as a backend
+libva-utils	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	Intel VA-API Media Applications and Scripts for libva
+libvirt	pacman	extra	pacman	virtualization	package-only	install	current-explicit	API for controlling virtualization engines (openvz,kvm,qemu,virtualbox,xen,etc)
+linux	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	The Linux kernel and modules
+linux-firmware	pacman	core	pacman	hardware-tools	package-only	install	current-explicit	Firmware files for Linux - Default set
+linux-headers	pacman	core	pacman	kernel-support	package-only	install	current-explicit	Headers and scripts for building modules for the Linux kernel
+linux-zen	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	The Linux ZEN kernel and modules
+linux-zen-headers	pacman	extra	pacman	kernel-support	package-only	install	current-explicit	Headers and scripts for building modules for the Linux ZEN kernel
+linuxqq-appimage	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	QQ desktop application without account or profile migration
+lsof	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Lists open files for running Unix processes
+lua-language-server	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Lua Language Server coded by Lua
+matugen	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A material you color generation tool
+mesa	pacman	extra	pacman	graphics-amd	package-only	install	confirmed-desired	Open-source OpenGL drivers
+mesa-utils	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Essential Mesa utilities
+meson	pacman	extra	pacman	build-foundation	package-only	install	current-explicit	High productivity build system
+mission-center	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Monitor your CPU, Memory, Disk, Network and GPU usage
+mkinitcpio	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Modular initramfs image creation utility
+mpv	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	a free, open source, and cross-platform media player
+nemo	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	File manager for Cinnamon (Nautilus fork)
+nemo-fileroller	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	File archiver extension for Nemo
+neovide	pacman	extra	pacman	developer-editor	config-backed	install	current-explicit	No Nonsense Neovim Client in Rust
+neovim	pacman	extra	pacman	developer-editor	config-backed	install	current-explicit	Fork of Vim aiming to improve user experience, plugins, and GUIs
+networkmanager	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Network connection manager and user applications
+ninja	pacman	extra	pacman	build-foundation	package-only	install	current-explicit	Small build system with a focus on speed
+niri	pacman	extra	pacman	wm-niri	config-backed	install	current-explicit	A scrollable-tiling Wayland compositor
+nodejs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Evented I/O for V8 javascript ("Current" release)
+noto-fonts	pacman	extra	pacman	fonts	package-only	install	current-explicit	Google Noto TTF fonts
+noto-fonts-emoji	pacman	extra	pacman	fonts	package-only	install	current-explicit	Google Noto Color Emoji font
+npm	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	JavaScript package manager
+nvidia-open-dkms	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA open kernel modules - module sources
+nvidia-prime	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA Prime Render Offload configuration and utilities
+nvidia-settings	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	Tool for configuring the NVIDIA graphics driver
+nvidia-utils	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA drivers utilities
+obsidian-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Obsidian desktop application without vault or profile migration
+opencode-bin	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	OpenCode command-line development agent
+os-prober	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Utility to detect other OSes on a set of drives
+pacman-contrib	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	Contributed scripts and tools for pacman systems
+paru	aur	aur	paru-bootstrap	repository-tools	package-only	install	current-explicit	Feature packed AUR helper
+pipewire	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor
+pipewire-alsa	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor - ALSA configuration
+pipewire-audio	pacman	extra	pacman	audio	package-only	install	confirmed-desired	Low-latency audio/video router and processor - Audio support
+pipewire-jack	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor - JACK replacement
+pipewire-pulse	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor - PulseAudio replacement
+power-profiles-daemon	pacman	extra	pacman	power	package-only	install	current-explicit	Makes power profiles handling available over D-Bus
+powertop	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	A tool to diagnose issues with power consumption and power management
+python-gobject	pacman	extra	pacman	recording	package-only	install	confirmed-desired	Python bindings for GLib/GObject/GIO/GTK
+python-linkify-it-py	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Links recognition library with full unicode support
+python-markdown-it-py	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Python port of markdown-it. Markdown parsing, done right!
+python-opencv	pacman	extra	pacman	recording	package-only	install	current-explicit	Python bindings for OpenCV
+python-pillow	pacman	extra	pacman	recording	package-only	install	current-explicit	Python Imaging Library (PIL) fork
+python-pygments	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Python syntax highlighter
+qemu-desktop	pacman	extra	pacman	virtualization	package-only	install	current-explicit	A QEMU setup for desktop environments
+quickshell	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Flexible toolkit for making desktop shells with QtQuick
+reflector	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	A Python 3 module and script to retrieve and filter the latest Pacman mirror list.
+rime-ice-git	pacman	archlinuxcn	pacman	input-fcitx-rime	config-backed	install	current-explicit	Rime 配置：雾凇拼音 | 长期维护的简体词库
+rime-wanxiang-gram-zh-hans	pacman	archlinuxcn	pacman	input-fcitx-rime	config-backed	install	current-explicit	万象词库中文语法模型
+ripgrep	pacman	extra	pacman	developer-editor	package-only	install	confirmed-desired	A search tool that combines the usability of ag with the raw speed of grep
+rog-control-center	pacman	archlinuxcn	pacman	asus-hardware	config-backed	install	current-explicit	App to control asusctl
+rsync	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	A fast and versatile file copying tool for remote and local files
+rustup	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	The Rust toolchain installer
+sed	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	GNU stream editor
+shellcheck	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Shell script analysis tool
+slurp	pacman	extra	pacman	recording	package-only	install	current-explicit	Select a region in a Wayland compositor
+smartmontools	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	Control and monitor S.M.A.R.T. enabled ATA and SCSI Hard Drives
+snapper	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	A tool for managing BTRFS and LVM snapshots
+socat	pacman	extra	pacman	wm-hyprland	package-only	install	current-explicit	Multipurpose relay
+sof-firmware	pacman	extra	pacman	audio	package-only	install	current-explicit	Sound Open Firmware
+sound-theme-freedesktop	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Freedesktop sound theme
+starship	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	The cross-shell prompt for astronauts
+strace	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A diagnostic, debugging and instructional userspace tracer
+stylua	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Deterministic code formatter for Lua
+sudo	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Give certain users the ability to run some commands as root
+supergfxctl	pacman	archlinuxcn	pacman	asus-hardware	package-only	install	current-explicit	A utility for Linux graphics switching on Intel/AMD iGPU + nVidia dGPU laptops
+tesseract	pacman	extra	pacman	ocr	package-only	install	current-explicit	An OCR program
+tesseract-data-chi_sim	pacman	extra	pacman	ocr	package-only	install	current-explicit	Tesseract OCR data (chi_sim)
+tesseract-data-eng	pacman	extra	pacman	ocr	package-only	install	current-explicit	Tesseract OCR data (eng)
+tmux	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Terminal multiplexer
+ttf-fira-code	pacman	extra	pacman	fonts	package-only	install	current-explicit	Monospaced font with programming ligatures
+ttf-jetbrains-mono-nerd	pacman	extra	pacman	fonts	package-only	install	confirmed-desired	Patched font JetBrains Mono from nerd fonts library
+tumbler	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Thumbnail service implementing the thumbnail management D-Bus specification
+udiskie	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Removable disk automounter using udisks
+udisks2	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Daemon, tools and libraries to access and manipulate disks, storage devices and technologies
+unzip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	For extracting and viewing files in .zip archives
+uv	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	An extremely fast Python package installer and resolver written in Rust
+vhs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A tool for recording terminal GIFs
+virt-manager	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Desktop user interface for managing virtual machines
+vulkan-mesa-layers	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Mesa's explicit Vulkan layers
+vulkan-radeon	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Open-source Vulkan driver for AMD GPUs
+vulkan-tools	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Vulkan tools and utilities
+webkitgtk-6.0	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Web content engine for GTK
+wechat-appimage	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	WeChat desktop application without account or profile migration
+wf-recorder	pacman	extra	pacman	recording	package-only	install	confirmed-desired	Screen recorder for wlroots-based compositors such as sway
+wget	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Network utility to retrieve files from the web
+wireplumber	pacman	extra	pacman	audio	package-only	install	current-explicit	Session / policy manager implementation for PipeWire
+wl-clipboard	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Command-line copy/paste utilities for Wayland
+wl-screenrec-git	pacman	archlinuxcn	pacman	recording	package-only	install	current-explicit	High performance hardware accelerated wlroots screen recorder
+wooz-git	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Wayland screen magnifier utility
+wpa_supplicant	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	A utility providing key negotiation for WPA wireless networks
+wtype	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	xdotool type for wayland
+xclip	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Command line interface to the X11 clipboard
+xdg-desktop-portal	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Desktop integration portals for sandboxed apps
+xdg-desktop-portal-gnome	pacman	extra	pacman	wm-niri	package-only	install	current-explicit	Backend implementation for xdg-desktop-portal for the GNOME desktop environment
+xdg-desktop-portal-gtk	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	A backend implementation for xdg-desktop-portal using GTK
+xdg-desktop-portal-hyprland	pacman	extra	pacman	wm-hyprland	package-only	install	confirmed-desired	xdg-desktop-portal backend for hyprland
+xorg-server-xvfb	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Virtual framebuffer X server
+xwayland-satellite	pacman	extra	pacman	wm-niri	package-only	install	current-explicit	Xwayland outside your Wayland
+yazi	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Blazing fast terminal file manager written in Rust, based on async I/O
+yt-dlp	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A youtube-dl fork with additional features and fixes
+zoxide	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A smarter cd command for your terminal
+zram-generator	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Systemd unit generator for zram devices

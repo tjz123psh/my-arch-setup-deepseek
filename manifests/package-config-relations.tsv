@@ -1,0 +1,29 @@
+# schema=1
+# package<TAB>module<TAB>relation<TAB>target-prefix<TAB>purpose
+# Every config-backed package has an explicit relation to at least one same-module reviewed target; prefixes ending in / match only descendants.
+alacritty	desktop-shared	owner	.config/alacritty/	Owns the reviewed Alacritty terminal configuration
+cava	desktop-shared	owner	.config/cava/	Owns the reviewed Cava visualizer themes
+dgop	desktop-shared	consumer	.config/dgop/	Consumes the reviewed DMS-aligned DGOP colors
+dms-shell	desktop-shared	owner	.config/DankMaterialShell/	Owns the shared DMS user settings and plugin bundle
+dsearch-bin	desktop-shared	owner	.config/danksearch/	Owns the reviewed Danksearch configuration
+fcitx5	input-fcitx-rime	owner	.config/fcitx5/	Owns the reviewed Fcitx5 framework configuration
+fcitx5-configtool	input-fcitx-rime	optional-enhancement	.config/fcitx5/	Edits the same reviewed Fcitx5 configuration through a graphical tool
+fcitx5-gtk	input-fcitx-rime	runtime-dependency	.config/fcitx5/	Provides GTK integration consumed by the selected Fcitx5 profile
+fcitx5-qt	input-fcitx-rime	runtime-dependency	.config/fcitx5/	Provides Qt integration consumed by the selected Fcitx5 profile
+fcitx5-rime	input-fcitx-rime	runtime-dependency	.local/share/fcitx5/rime/	Loads the reviewed Rime schema customizations under Fcitx5
+fcitx5-skin-fluentdark-git	input-fcitx-rime	consumer	.config/fcitx5/conf/classicui.conf	Provides the FluentDark theme selected by the reviewed classic UI configuration
+fish	desktop-shared	owner	.config/fish/	Owns the reviewed interactive Fish shell configuration
+flclash-bin	personal-autostart	consumer	.config/autostart/FlClash.desktop	Provides the application launched by the reviewed personal autostart entry
+fuzzel-ime-git	desktop-shared	owner	.config/fuzzel/	Provides the selected IME-capable Fuzzel launcher for the reviewed configuration
+hyprland	wm-hyprland	owner	.config/hypr/	Owns the reviewed plain-Hyprland session configuration
+kitty	desktop-shared	owner	.config/kitty/	Owns the reviewed Kitty terminal configuration
+matugen	desktop-shared	owner	.config/matugen/	Owns the reviewed DMS and Fuzzel color-generation templates
+mpv	desktop-shared	owner	.config/mpv/	Owns the reviewed MPV player configuration
+neovide	developer-editor	consumer	.config/nvim/	Consumes the reviewed Neovim configuration and GUI-specific options
+neovim	developer-editor	owner	.config/nvim/	Owns the reviewed editor configuration
+niri	wm-niri	owner	.config/niri/	Owns the reviewed Niri session configuration
+quickshell	desktop-shared	runtime-dependency	.config/DankMaterialShell/	Provides the runtime used by the reviewed DMS QML configuration
+rime-ice-git	input-fcitx-rime	runtime-dependency	.local/share/fcitx5/rime/	Provides the Rime Ice schema referenced by reviewed customizations
+rime-wanxiang-gram-zh-hans	input-fcitx-rime	runtime-dependency	.local/share/fcitx5/rime/rime_ice.custom.yaml	Provides the language model selected by the reviewed Rime Ice customization
+rog-control-center	asus-hardware	owner	.config/rog/rog-control-center.cfg	Owns the reviewed same-ASUS ROG control-center configuration
+starship	desktop-shared	owner	.config/starship.toml	Owns the reviewed shell prompt configuration

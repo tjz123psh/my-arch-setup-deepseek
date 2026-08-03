@@ -1,0 +1,49 @@
+# Maintainer: Dee.H.Y <dongfengweixiao AT hotmail DOT com>
+# Maintainer: zxp19821005 <zxp19821005 at 163 dot com>
+
+pkgname=flclash-bin
+_pkgname=FlClash
+pkgver=0.8.94
+pkgrel=1
+pkgdesc='A multi-platform proxy client based on ClashMeta, simple and easy to use, open-source and ad-free.'
+arch=('x86_64')
+url='https://github.com/chen08209/FlClash'
+license=('GPL-3.0-only')
+conflicts=('flclash')
+provides=("flclash=${pkgver}")
+depends=('libayatana-appindicator' 'ayatana-ido' 'libdbusmenu-glib' 'libkeybinder3')
+options=('!strip' '!debug')
+source=('flclash.sh')
+source_x86_64=(
+  "flclash-${pkgver}-x86_64.deb::${url}/releases/download/v${pkgver}/${_pkgname}-${pkgver}-linux-amd64.deb"
+  'libquickjs_c_bridge_plugin.so.base64::https://gist.githubusercontent.com/dongfengweixiao/bbddee34d6456326200fac3463761296/raw/c18484d78449d0e3b376a6e2a49852486305ff1e/libquickjs_c_bridge_plugin.so.base64'
+)
+sha256sums=('efe4503308a1e4e44b892065b6fb8f582bd2f7d01e3f0232e4d86539101ebbb5')
+sha256sums_x86_64=(
+  'e3d7ad04d6918cbe40d69a146c214ab3674cfb8ce4494d6ab5ae5d8105fea643'
+  '367033ae3a8bd11f37e398f38c5de0acd8985b62b93b966eb43648fba6bd9094'
+)
+
+prepare() {
+  sed -i \
+    -e 's/@appname@/flclash/g' \
+    -e "s/@runname@/${_pkgname}/g" \
+    "${srcdir}/flclash.sh"
+  bsdtar -xf "${srcdir}"/data.tar.*
+  sed -i \
+    -e "s/Exec=${_pkgname}/Exec=flclash/g" \
+    -e "s/Icon=${_pkgname}/Icon=flclash/g" \
+    -e '5i\Categories=Network;' \
+    -e '10i\StartupWMClass=com.follow.clash' \
+    "${srcdir}/usr/share/applications/${_pkgname}.desktop"
+}
+
+package() {
+  install -Dm755 "${srcdir}/flclash.sh" "${pkgdir}/usr/bin/flclash"
+  install -d "${pkgdir}/usr/lib/flclash"
+  cp -Pr --no-preserve=ownership "${srcdir}/usr/share/${_pkgname}/"* "${pkgdir}/usr/lib/flclash/"
+  base64 -d "${srcdir}/libquickjs_c_bridge_plugin.so.base64" > "${pkgdir}/usr/lib/flclash/lib/libquickjs_c_bridge_plugin.so"
+  install -Dm644 "${srcdir}/usr/share/applications/${_pkgname}.desktop" "${pkgdir}/usr/share/applications/flclash.desktop"
+  install -Dm644 "${srcdir}/usr/share/icons/hicolor/128x128/apps/${_pkgname}.png" "${pkgdir}/usr/share/icons/hicolor/128x128/apps/flclash.png"
+  install -Dm644 "${srcdir}/usr/share/icons/hicolor/256x256/apps/${_pkgname}.png" "${pkgdir}/usr/share/icons/hicolor/256x256/apps/flclash.png"
+}

@@ -1,0 +1,12 @@
+/*
+ * GTK3 用户样式入口
+ * ------------------------------------------------------------
+ * 本文件由用户维护（原为指向 dank-colors.css 的软链，现改为真文件）。
+ * DMS matugen 钩子只重写 dank-colors.css，不会覆盖本文件。
+ *   - dank-colors.css : DMS 动态生成的配色（随壁纸/主题变）
+ *   - nemo.css        : Nemo 文件管理器专属精修（仅作用于 .nemo-window）
+ * 还原方法：rm gtk.css nemo.css && ln -s dank-colors.css gtk.css
+ * 备份见 /tmp/gtk3-gtk.css.bak
+ */
+@import url("dank-colors.css");
+@import url("nemo.css");

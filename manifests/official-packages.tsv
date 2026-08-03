@@ -1,0 +1,37 @@
+# schema=2
+# profile<TAB>module<TAB>package<TAB>purpose
+# Only official Arch repository packages belong here. Dependencies are resolved by pacman.
+asus-amd-nvidia	wm-niri	niri	Niri user session
+asus-amd-nvidia	wm-hyprland	hyprland	Hyprland user session
+asus-amd-nvidia	desktop-shared	alacritty	Terminal emulator
+asus-amd-nvidia	desktop-shared	kitty	Terminal emulator
+asus-amd-nvidia	desktop-shared	fish	Interactive shell
+asus-amd-nvidia	desktop-shared	starship	Shell prompt
+asus-amd-nvidia	desktop-shared	fcitx5	Input method framework
+asus-amd-nvidia	desktop-shared	fcitx5-rime	Rime input method support
+asus-amd-nvidia	desktop-shared	wl-clipboard	Wayland clipboard provider
+asus-amd-nvidia	desktop-shared	mpv	Media player
+asus-amd-nvidia	desktop-shared	cava	Audio visualizer
+asus-amd-nvidia	developer-editor	neovim	Editor runtime
+asus-amd-nvidia	developer-editor	git	Plugin bootstrap and source control
+asus-amd-nvidia	developer-editor	ripgrep	Editor live grep support
+asus-amd-nvidia	developer-editor	fd	Editor file discovery support
+desktop-amd	wm-niri	niri	Niri user session
+desktop-amd	wm-hyprland	hyprland	Optional Hyprland user session
+desktop-amd	desktop-shared	alacritty	Terminal emulator
+desktop-amd	desktop-shared	kitty	Terminal emulator
+desktop-amd	desktop-shared	fish	Interactive shell
+desktop-amd	desktop-shared	starship	Shell prompt
+desktop-amd	desktop-shared	fcitx5	Input method framework
+desktop-amd	desktop-shared	fcitx5-rime	Rime input method support
+desktop-amd	desktop-shared	wl-clipboard	Wayland clipboard provider
+desktop-amd	desktop-shared	mpv	Media player
+desktop-amd	desktop-shared	cava	Audio visualizer
+desktop-amd	developer-editor	neovim	Editor runtime
+desktop-amd	developer-editor	git	Plugin bootstrap and source control
+desktop-amd	developer-editor	ripgrep	Editor live grep support
+desktop-amd	developer-editor	fd	Editor file discovery support
+vm	wm-niri	niri	Niri compositor regression target
+vm	desktop-shared	alacritty	Terminal emulator
+vm	desktop-shared	wl-clipboard	Wayland clipboard provider
+vm	desktop-shared	git	Installer bootstrap prerequisite

@@ -1,0 +1,614 @@
+#!/bin/bash
+# shellcheck disable=SC2329
+# 描述： 清理系统
+# Description: Clean system
+
+# 【功能说明】
+# 1. 移除孤儿软件包与无主 debug 符号包 (Orphans & orphaned debug packages)
+# 2. 清理软件包缓存 (默认保留安装包，all 模式下完全清空)
+# 3. 清理残留的下载目录 (download-*)
+# 4. 清理 Systemd 日志 (只保留最近 2 周)
+# 5. 清空用户回收站 (Trash) 和缩略图缓存 (Thumbnails)
+# 6. 移除未使用的 Flatpak 运行时
+# 7. 清理截图与录屏目录 (Screenshots, wf-recorder & shorin-screenrec)
+# 8. 清理旧 Btrfs 快照，并检查但不自动删除来源不明的恢复备份子卷
+
+set -euo pipefail
+
+# ===============================================================
+# Arch Linux 系统清理助手
+# ===============================================================
+
+UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
+# shellcheck source=lib/ui.sh
+. "$UI_LIB"
+CONFIG_LIB="$(dirname "$UI_LIB")/config.sh"
+# shellcheck source=lib/config.sh
+. "$CONFIG_LIB"
+maintenance_config_load || exit 2
+CLEAN_JOURNAL_RETENTION="$(maintenance_config_get JOURNAL_RETENTION 2weeks CLEAN_JOURNAL_RETENTION)"
+
+# ------------------------------
+# 1. 默认参数
+# ------------------------------
+SKIP_CONFIRM=false
+CLEAN_ALL=false
+
+# ------------------------------
+# 2. 参数解析
+# ------------------------------
+usage() {
+  cat <<EOF
+用法: $(basename "$0") [选项]
+
+选项:
+  all, --all         深度清理（清空全部包缓存与更多快照）
+  --yes, -y          跳过确认（非交互）
+  --help, -h         显示帮助并退出
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  all | --all) CLEAN_ALL=true && shift ;;
+  --yes | -y) SKIP_CONFIRM=true && shift ;;
+  --help | -h) usage; exit 0 ;;
+  *) echo "未知参数: $1"; usage; exit 1 ;;
+  esac
+done
+
+# ------------------------------
+# 3. 文案（纯中文）
+# ------------------------------
+declare -A MSG
+MSG[DESC_TITLE]="本脚本将执行以下清理操作："
+MSG[DESC_1]="1. 删除孤儿软件包与无主 debug 符号包"
+MSG[DESC_2]="2. 清理软件包缓存 (仅保留已安装版本)"
+MSG[DESC_3]="3. 清理 systemd 日志 (保留最近2周)"
+MSG[DESC_4]="4. 清空回收站、缩略图和剪贴板缓存"
+MSG[DESC_5]="5. 删除未使用的 Flatpak 运行时"
+MSG[DESC_6]="6. 按 Snapper 配额清理旧 Btrfs 快照"
+
+MSG[DESC_ALL_1]="* [深度清理] 完全清空所有软件包与 AUR 缓存，清完后无法从本地缓存降级"
+MSG[DESC_ALL_2]="* [深度清理] 清空 Screenshots 截图目录和 wf-recorder/shorin 录屏目录"
+MSG[DESC_ALL_3]="* [深度清理] 删除所有 Btrfs 快照 (保留 Before 节点)"
+MSG[DESC_ALL_4]="* [深度清理] 检查 btrfs-assistant 风格的恢复备份子卷；来源不明时保留"
+
+MSG[ASK_CONFIRM]="是否继续执行清理？"
+MSG[ABORT]="用户已取消清理。"
+MSG[DONE]="系统清理完成！"
+
+MSG[NO_HELPER]="未找到受支持的包管理器 (需要 paru, yay 或 pacman)"
+MSG[HELPER_USE]="使用包管理器：%s"
+MSG[STEP_ORPHAN]="正在检查孤儿软件包..."
+MSG[ORPHAN_FOUND]="发现孤儿软件包，准备清理..."
+MSG[ORPHAN_DEBUG_FOUND]="发现无主包的 debug 符号包，准备清理..."
+MSG[ORPHAN_CLEAN]="已删除孤儿软件包。"
+MSG[ORPHAN_SKIP]="孤儿软件包卸载被中止或失败，已跳过，继续后续清理。"
+MSG[ORPHAN_NONE]="未发现孤儿软件包。"
+
+MSG[STEP_CACHE]="正在清理软件包缓存..."
+MSG[CACHE_DONE]="软件包缓存已清理。"
+MSG[STEP_CACHE_ALL]="正在完全清空所有软件包缓存与 AUR 源码树..."
+MSG[CACHE_ALL_DONE]="所有软件包及 AUR 缓存已彻底清空。"
+MSG[CACHE_WARN]="部分软件包缓存清理失败；已保留现场并继续后续步骤。"
+
+MSG[STEP_BROKEN]="正在清理残留下载目录..."
+MSG[BROKEN_DONE]="残留目录已清理。"
+MSG[BROKEN_WARN]="部分残留下载目录清理失败，已跳过。"
+MSG[STEP_LOG]="正在清理 systemd 日志..."
+MSG[LOG_DONE]="系统日志已清理。"
+MSG[LOG_WARN]="systemd 日志清理失败，已跳过。"
+MSG[CLIP_DONE]="剪贴板缓存已清理。"
+MSG[STEP_TRASH]="正在清理回收站和缩略图..."
+MSG[TRASH_DONE]="回收站已清空。"
+MSG[THUMB_DONE]="缩略图已清理。"
+MSG[STEP_FLATPAK]="正在检查未使用的 Flatpak 运行时..."
+MSG[FLATPAK_DONE]="未使用的 Flatpak 运行时已删除。"
+MSG[FLATPAK_WARN]="Flatpak 未使用运行时清理失败，已跳过。"
+MSG[STEP_MEDIA]="正在清理截图和屏幕录制文件..."
+MSG[MEDIA_DONE]="截图和录屏文件已清理。"
+
+MSG[STEP_SNAP]="正在清理超出配额的旧 Btrfs 快照..."
+MSG[SNAP_DONE]="旧快照已按配额自动清理完成。"
+MSG[STEP_CLEAR_SNAP]="正在利用 snapper 清空所有快照 (保留 Before 节点)..."
+MSG[CLEAR_SNAP_DONE]="所有指定的 Btrfs 快照已彻底清理。"
+MSG[STEP_BTRFS_BA]="正在检查 btrfs-assistant 风格的恢复备份子卷..."
+MSG[BTRFS_BA_NONE]="未发现疑似恢复备份子卷。"
+
+# ------------------------------
+# 4. 颜色与日志（接入 ui.sh）
+# ------------------------------
+_info()    { ui_info "$@"; }
+_success() { ui_ok   "$@"; }
+_warn()    { ui_warn "$@"; }
+_error()   { ui_die  "$@"; }
+
+# 次级明细行：步骤下的逐条结果，缩进 + 项目符，标签用 sky 色（与 ui_panel_kv 键色一致）
+#   _item "标签" "内容"
+_item() {
+  printf "  ${UI_C_SUBTLE}·${UI_RESET} ${UI_C_SKY}%s${UI_RESET} %s\n" "$1" "$2"
+}
+
+clear_aur_cache_dir() {
+  local path="$1" cache_root_real path_real
+  [[ -e "$path" || -L "$path" ]] || return 0
+  cache_root_real="$(realpath -m "$HOME/.cache")" || return 1
+  path_real="$(realpath -m "$path")" || return 1
+  if [[ -L "$path" || "$path_real" != "$cache_root_real/"* || ! -d "$path" ]]; then
+    _warn "拒绝清理越界或符号链接缓存目录：$path"
+    return 1
+  fi
+  find "$path" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+}
+
+# ------------------------------
+# 5. Check Helper (paru > yay > pacman)
+# ------------------------------
+if command -v paru >/dev/null 2>&1; then PKG_MNGR=paru
+elif command -v yay >/dev/null 2>&1; then PKG_MNGR=yay
+elif command -v pacman >/dev/null 2>&1; then PKG_MNGR=pacman
+else _error "${MSG[NO_HELPER]}"; fi
+
+# ------------------------------
+# 6. Introduction & Confirmation
+# ------------------------------
+if [[ "$CLEAN_ALL" == true ]]; then
+  ui_banner "系统清理" "clean · 深度清理模式"
+else
+  ui_banner "系统清理" "clean · 常规清理"
+fi
+
+if [[ "$SKIP_CONFIRM" == false ]]; then
+  ui_panel_open "清理内容"
+  ui_panel_line "${MSG[DESC_1]}"
+  ui_panel_line "${MSG[DESC_2]}"
+  ui_panel_line "${MSG[DESC_3]}"
+  ui_panel_line "${MSG[DESC_4]}"
+  ui_panel_line "${MSG[DESC_5]}"
+  ui_panel_line "${MSG[DESC_6]}"
+
+  if [[ "$CLEAN_ALL" == true ]]; then
+    ui_panel_line "${UI_RED}${MSG[DESC_ALL_1]}${UI_RESET}"
+    ui_panel_line "${UI_RED}${MSG[DESC_ALL_2]}${UI_RESET}"
+    ui_panel_line "${UI_RED}${MSG[DESC_ALL_3]}${UI_RESET}"
+    ui_panel_line "${UI_RED}${MSG[DESC_ALL_4]}${UI_RESET}"
+  fi
+  ui_panel_close
+
+  printf "\n"
+  if [[ "$CLEAN_ALL" == true ]]; then
+    confirm_ok=0
+    ui_confirm_word "深度清理会删除全部包/AUR 缓存、截图录屏和大部分历史快照。" "clean all" && confirm_ok=1
+  else
+    confirm_ok=0
+    ui_confirm "${MSG[ASK_CONFIRM]}" n && confirm_ok=1
+  fi
+  if [[ "$confirm_ok" -ne 1 ]]; then
+    printf "%s\n" "${MSG[ABORT]}"
+    exit 0
+  fi
+fi
+
+# ------------------------------
+# 7. Execution
+# ------------------------------
+ui_maintenance_lock_acquire "系统清理" || exit $?
+_info "${MSG[HELPER_USE]}" "$PKG_MNGR"
+CLEAN_FAILED=0
+SNAP_SEP=$'\037'
+
+# Keep Sudo Alive
+if sudo -v; then
+  (
+    # 后台保活绝不能继承维护锁，否则主脚本退出后孤儿 sleep 会继续持锁，
+    # 导致紧接着运行 quicksave 被误判为“另一项维护正在运行”。
+    if [[ "${UI_MAINTENANCE_LOCK_FD:-}" =~ ^[0-9]+$ ]]; then
+      exec {UI_MAINTENANCE_LOCK_FD}>&-
+    fi
+    while true; do sudo -n true; sleep 60; done
+  ) </dev/null >/dev/null 2>&1 &
+  SUDO_PID=$!
+  stop_sudo_keepalive() {
+    pkill -TERM -P "$SUDO_PID" 2>/dev/null || true
+    kill "$SUDO_PID" 2>/dev/null || true
+    wait "$SUDO_PID" 2>/dev/null || true
+  }
+  trap stop_sudo_keepalive EXIT
+else
+  _error "sudo 授权失败。"
+fi
+
+# [1] Orphans & 孤儿 debug 包 (利用 mapfile 与 Bash 数组处理)
+_info "${MSG[STEP_ORPHAN]}"
+
+# 收集传统孤儿包。pacman 在“没有匹配项”时返回 1 且 stderr 为空；
+# 其它非零状态必须作为查询失败报告，不能伪装成“没有孤儿包”。
+ORPHANS=""
+orphan_query_status=0
+orphan_query_error="$(mktemp)"
+ORPHANS="$(pacman -Qtdq 2> "$orphan_query_error")" || orphan_query_status=$?
+if [[ "$orphan_query_status" -ne 0 ]] \
+    && ! { [[ "$orphan_query_status" -eq 1 && -z "$ORPHANS" && ! -s "$orphan_query_error" ]]; }; then
+  _warn "孤儿包查询失败（退出码：$orphan_query_status），未执行孤儿包删除。"
+  [[ ! -s "$orphan_query_error" ]] || sed 's/^/  /' "$orphan_query_error"
+  CLEAN_FAILED=1
+  ORPHANS=""
+fi
+rm -f -- "$orphan_query_error"
+
+# 一次性读取已安装包，避免把单次 pacman -Qi 查询错误误判为“主包不存在”。
+ORPHAN_DEBUGS=""
+installed_query_status=0
+installed_query_error="$(mktemp)"
+installed_packages="$(pacman -Qq 2> "$installed_query_error")" || installed_query_status=$?
+if [[ "$installed_query_status" -ne 0 ]]; then
+  _warn "已安装包查询失败（退出码：$installed_query_status），未检查无主 debug 包。"
+  [[ ! -s "$installed_query_error" ]] || sed 's/^/  /' "$installed_query_error"
+  CLEAN_FAILED=1
+else
+  declare -A installed_package_set=()
+  while IFS= read -r installed_pkg; do
+    [[ -n "$installed_pkg" ]] && installed_package_set["$installed_pkg"]=1
+  done <<< "$installed_packages"
+  while IFS= read -r dbg_pkg; do
+    [[ "$dbg_pkg" == *-debug ]] || continue
+    base="${dbg_pkg%-debug}"
+    [[ -n "$base" && -z "${installed_package_set[$base]:-}" ]] || continue
+    ORPHAN_DEBUGS="${ORPHAN_DEBUGS:+$ORPHAN_DEBUGS$'\n'}$dbg_pkg"
+  done <<< "$installed_packages"
+fi
+rm -f -- "$installed_query_error"
+
+# 合并两类孤儿包并一次性清理
+ALL_ORPHANS=""
+if [[ -n "$ORPHANS" ]]; then
+  _warn "${MSG[ORPHAN_FOUND]}"
+  ALL_ORPHANS="$ORPHANS"
+fi
+if [[ -n "$ORPHAN_DEBUGS" ]]; then
+  _warn "${MSG[ORPHAN_DEBUG_FOUND]}"
+  ALL_ORPHANS="${ALL_ORPHANS:+$ALL_ORPHANS$'\n'}$ORPHAN_DEBUGS"
+fi
+
+if [[ -n "$ALL_ORPHANS" ]]; then
+  mapfile -t ORPHAN_ARR <<< "$ALL_ORPHANS"
+  # 卸载失败（依赖冲突 / 用户取消）不应中断后续清理步骤，故吞掉退出码后按结果提示
+  if $PKG_MNGR -Rns "${ORPHAN_ARR[@]}"; then
+    _success "${MSG[ORPHAN_CLEAN]}"
+  else
+    _warn "${MSG[ORPHAN_SKIP]}"
+    CLEAN_FAILED=1
+  fi
+else
+  _success "${MSG[ORPHAN_NONE]}"
+fi
+
+# [2] Cache (彻底修复清理不净的问题)
+if [[ "$CLEAN_ALL" == true ]]; then
+  _info "${MSG[STEP_CACHE_ALL]}"
+  cache_failed=0
+
+  # 1. 使用 sudo 清理 pacman 官方仓库缓存 (彻底)
+  sudo pacman -Scc --noconfirm >/dev/null 2>&1 || cache_failed=1
+
+  # 2. 清理 AUR 助手缓存并暴力铲除本地 git 源码克隆
+  if command -v yay >/dev/null 2>&1; then
+    yay -Scc --aur --noconfirm >/dev/null 2>&1 || cache_failed=1
+    clear_aur_cache_dir "$HOME/.cache/yay" || cache_failed=1
+  fi
+  if command -v paru >/dev/null 2>&1; then
+    paru -Scc --aur --noconfirm >/dev/null 2>&1 || cache_failed=1
+    clear_aur_cache_dir "$HOME/.cache/paru/clone" || cache_failed=1
+  fi
+
+  if [[ "$cache_failed" -eq 0 ]]; then
+    _success "${MSG[CACHE_ALL_DONE]}"
+  else
+    _warn "${MSG[CACHE_WARN]}"
+    CLEAN_FAILED=1
+  fi
+else
+  _info "${MSG[STEP_CACHE]}"
+  cache_failed=0
+
+  # 1. 使用 sudo 清理 pacman 官方仓库缓存 (仅限未安装版本)
+  sudo pacman -Sc --noconfirm >/dev/null 2>&1 || cache_failed=1
+
+  # 2. 清理 AUR 助手的对应缓存
+  if [[ "$PKG_MNGR" == "yay" ]]; then
+    yay -Sc --aur --noconfirm >/dev/null 2>&1 || cache_failed=1
+  elif [[ "$PKG_MNGR" == "paru" ]]; then
+    paru -Sc --aur --noconfirm >/dev/null 2>&1 || cache_failed=1
+  fi
+
+  if [[ "$cache_failed" -eq 0 ]]; then
+    _success "${MSG[CACHE_DONE]}"
+  else
+    _warn "${MSG[CACHE_WARN]}"
+    CLEAN_FAILED=1
+  fi
+fi
+
+# [3] Broken Downloads (化繁为简：find 一行流删除)
+TARGET_DIR="/var/cache/pacman/pkg"
+if [[ -d "$TARGET_DIR" ]]; then
+  _info "${MSG[STEP_BROKEN]}"
+  if sudo find "$TARGET_DIR" -maxdepth 1 -type d -name "download-*" -exec rm -rf {} + 2>/dev/null; then
+    _success "${MSG[BROKEN_DONE]}"
+  else
+    _warn "${MSG[BROKEN_WARN]}"
+    CLEAN_FAILED=1
+  fi
+fi
+
+# [4] Journal
+_info "${MSG[STEP_LOG]}"
+if sudo journalctl --vacuum-time="$CLEAN_JOURNAL_RETENTION" >/dev/null 2>&1; then
+  _success "${MSG[LOG_DONE]}"
+else
+  _warn "${MSG[LOG_WARN]}"
+  CLEAN_FAILED=1
+fi
+
+# [5] Trash & Thumbnails
+_info "${MSG[STEP_TRASH]}"
+TRASH_DIR="$HOME/.local/share/Trash"
+THUMB_DIR="$HOME/.cache/thumbnails"
+CLIP_DIR="$HOME/.cache/shorinclip"
+
+if [[ ! -d "$TRASH_DIR" ]] || find "$TRASH_DIR" -mindepth 1 -delete 2>/dev/null; then
+  _success "${MSG[TRASH_DONE]}"
+else
+  _warn "回收站未能完全清空。"
+  CLEAN_FAILED=1
+fi
+
+if [[ ! -d "$THUMB_DIR" ]] || find "$THUMB_DIR" -type f -atime +30 -delete 2>/dev/null; then
+  _success "${MSG[THUMB_DONE]}"
+else
+  _warn "部分缩略图未能删除。"
+  CLEAN_FAILED=1
+fi
+
+if [[ ! -d "$CLIP_DIR" ]] || find "$CLIP_DIR" -type f -atime +30 -delete 2>/dev/null; then
+  _success "${MSG[CLIP_DONE]}"
+else
+  _warn "部分剪贴板缓存未能删除。"
+  CLEAN_FAILED=1
+fi
+
+# [6] Flatpak
+if command -v flatpak >/dev/null 2>&1; then
+  _info "${MSG[STEP_FLATPAK]}"
+  if flatpak uninstall --unused -y >/dev/null 2>&1; then
+    _success "${MSG[FLATPAK_DONE]}"
+  else
+    _warn "${MSG[FLATPAK_WARN]}"
+    CLEAN_FAILED=1
+  fi
+fi
+
+# [7] Screenshots, wf-recorder & shorin-screenrec（仅 all 模式）
+if [[ "$CLEAN_ALL" == true ]]; then
+  _info "${MSG[STEP_MEDIA]}"
+  SCREENSHOTS_DIR="$HOME/Pictures/Screenshots"
+  RECORDS_DIR="$HOME/Videos/wf-recorder"
+  SHORIN_RECORDS_DIR="$HOME/Videos/shorin-screenrec-menu"
+
+  media_failed=0
+  for media_dir in "$SCREENSHOTS_DIR" "$RECORDS_DIR" "$SHORIN_RECORDS_DIR"; do
+    [[ ! -d "$media_dir" ]] || find "$media_dir" -mindepth 1 -delete 2>/dev/null || media_failed=1
+  done
+  if [[ "$media_failed" -eq 0 ]]; then
+    _success "${MSG[MEDIA_DONE]}"
+  else
+    _warn "部分截图或录屏文件未能删除。"
+    CLEAN_FAILED=1
+  fi
+fi
+
+# [8] Btrfs Snapshots & Backup Subvolumes
+ROOT_FSTYPE=""
+if ! ROOT_FSTYPE="$(findmnt -f -n -o FSTYPE / 2>/dev/null)"; then
+  _warn "根文件系统类型查询失败，未执行快照清理。"
+  CLEAN_FAILED=1
+elif [[ "$ROOT_FSTYPE" == "btrfs" ]] && ! command -v btrfs >/dev/null 2>&1; then
+  _warn "根文件系统是 Btrfs，但缺少 btrfs 命令，未执行快照清理。"
+  CLEAN_FAILED=1
+fi
+
+if [[ "$ROOT_FSTYPE" == "btrfs" ]] && command -v btrfs >/dev/null 2>&1; then
+
+  # 8.1 Snapper Snapshots
+  if command -v snapper >/dev/null 2>&1; then
+    if [[ "$CLEAN_ALL" == true ]]; then
+      _info "${MSG[STEP_CLEAR_SNAP]}"
+      snap_delete_failed=0
+      snap_config_count=0
+      snap_config_rows=""
+      if ! snap_config_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" list-configs 2>/dev/null)"; then
+        _warn "Snapper 配置查询失败，未执行深度快照清理。"
+        CLEAN_FAILED=1
+      fi
+
+      while IFS="$SNAP_SEP" read -r conf _subvolume; do
+        [[ "$conf" == "config" || -z "$conf" ]] && continue
+        snap_config_count=$((snap_config_count + 1))
+        snap_rows=""
+        if ! snap_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" -c "$conf" list --columns number,description 2>/dev/null)"; then
+          _warn "快照列表查询失败：[$conf]"
+          snap_delete_failed=1
+          continue
+        fi
+
+        while IFS="$SNAP_SEP" read -r snap_id snap_desc; do
+          [[ ! "$snap_id" =~ ^[0-9]+$ ]] && continue
+          # 0 永远是指向当前系统的节点，绝不能删除
+          [[ "$snap_id" == "0" ]] && continue
+
+          # 【核心逻辑】：如果描述以 Before 或 before 开头，则保留该节点
+          if [[ "${snap_desc,,}" == before* ]]; then
+            continue
+          fi
+
+          # 调用原生 snapper delete 批量移除符合条件的废弃快照并打印炫酷日志
+          if sudo snapper -c "$conf" delete "$snap_id" >/dev/null 2>&1; then
+            # 兼容空描述的情况，防止日志错位
+            [[ -z "$snap_desc" ]] && snap_desc="N/A"
+            _item "已删除快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "$snap_id" 4) ${UI_DIM}$snap_desc${UI_RESET}"
+          else
+            snap_delete_failed=1
+            _warn "快照删除失败：[$conf] ID $snap_id"
+          fi
+        done <<< "$snap_rows"
+
+      done <<< "$snap_config_rows"
+      if [[ "$snap_config_count" -eq 0 ]]; then
+        _warn "没有读取到 Snapper 配置，未清理快照。"
+        CLEAN_FAILED=1
+      elif [[ "$snap_delete_failed" -eq 0 ]]; then
+        _success "${MSG[CLEAR_SNAP_DONE]}"
+      else
+        _warn "部分快照删除失败；请检查上方列表。"
+        CLEAN_FAILED=1
+      fi
+
+    else
+      # 普通模式执行内置自动清理规则
+      _info "${MSG[STEP_SNAP]}"
+      snap_cleanup_failed=0
+      snap_config_count=0
+      snap_config_rows=""
+      if ! snap_config_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" list-configs 2>/dev/null)"; then
+        _warn "Snapper 配置查询失败，未执行快照配额清理。"
+        CLEAN_FAILED=1
+      fi
+      while IFS="$SNAP_SEP" read -r conf _subvolume; do
+        [[ "$conf" == "config" || -z "$conf" ]] && continue
+        snap_config_count=$((snap_config_count + 1))
+        if sudo snapper -c "$conf" cleanup number >/dev/null 2>&1 && sudo snapper -c "$conf" cleanup timeline >/dev/null 2>&1; then
+           _item "已执行自动清理" "[$conf]"
+        else
+           snap_cleanup_failed=1
+           _warn "Snapper 自动清理失败：[$conf]"
+        fi
+      done <<< "$snap_config_rows"
+      if [[ "$snap_config_count" -eq 0 ]]; then
+        _warn "没有读取到 Snapper 配置，未清理快照。"
+        CLEAN_FAILED=1
+      elif [[ "$snap_cleanup_failed" -eq 0 ]]; then
+        _success "${MSG[SNAP_DONE]}"
+      else
+        _warn "部分配置的 Snapper 自动清理失败。"
+        CLEAN_FAILED=1
+      fi
+    fi
+  else
+    _warn "根文件系统是 Btrfs，但缺少 snapper 命令，未执行 Snapper 清理。"
+    CLEAN_FAILED=1
+  fi
+
+  # 8.2 btrfs-assistant backups。恢复工具留下的备份子卷具有回滚价值，
+  # 普通清理不应碰它们；仅在已强确认的深度清理中处理。
+  if [[ "$CLEAN_ALL" == true ]]; then
+  _info "${MSG[STEP_BTRFS_BA]}"
+  BTRFS_ROOT_DEV=$(findmnt -n -o SOURCE / | cut -d'[' -f1)
+  MNT_DIR=$(mktemp -d /tmp/btrfs_clean_XXXX)
+  BTRFS_CLEAN_MOUNTED=0
+  BTRFS_CANDIDATE_FILE=""
+  BTRFS_ENUM_ERROR_FILE=""
+  cleanup_btrfs_mount() {
+    if [[ "${BTRFS_CLEAN_MOUNTED:-0}" -eq 1 ]]; then
+      sudo umount "$MNT_DIR" >/dev/null 2>&1 || true
+    fi
+    [[ -n "${BTRFS_CANDIDATE_FILE:-}" ]] && rm -f -- "$BTRFS_CANDIDATE_FILE" 2>/dev/null || true
+    [[ -n "${BTRFS_ENUM_ERROR_FILE:-}" ]] && rm -f -- "$BTRFS_ENUM_ERROR_FILE" 2>/dev/null || true
+    rmdir "$MNT_DIR" >/dev/null 2>&1 || true
+  }
+  trap 'cleanup_btrfs_mount; stop_sudo_keepalive' EXIT
+
+  if sudo mount -t btrfs -o subvolid=5 "$BTRFS_ROOT_DEV" "$MNT_DIR" 2>/dev/null; then
+    BTRFS_CLEAN_MOUNTED=1
+    found_backups=0
+    backup_enumeration_failed=0
+    declare -A active_top_subvols=()
+    mounted_sources=""
+    if ! mounted_sources="$(findmnt -rn -t btrfs -o SOURCE 2>/dev/null)"; then
+      _warn "无法查询当前挂载的 Btrfs 子卷，未删除恢复备份子卷。"
+      CLEAN_FAILED=1
+    fi
+    while IFS= read -r mounted_source; do
+      if [[ "$mounted_source" =~ \[/([^]/]+) ]]; then
+        active_top_subvols["${BASH_REMATCH[1]}"]=1
+      fi
+    done <<< "$mounted_sources"
+
+    # btrfs-assistant 2.x 通常使用 <原子卷>_backup_<17位时间戳>，但名称不是
+    # 可信来源证明。这里只枚举候选项；没有工具写入的持久标记时绝不自动删除。
+    BTRFS_CANDIDATE_FILE="$(mktemp)"
+    BTRFS_ENUM_ERROR_FILE="$(mktemp)"
+    # shellcheck disable=SC2024 # 当前 shell 必须先打开文件，避免 root 触发 fs.protected_regular。
+    if ! sudo find "$MNT_DIR" -maxdepth 1 -type d -regextype posix-extended \
+        -regex '.+_backup_[0-9]{17}' -print0 \
+        > "$BTRFS_CANDIDATE_FILE" 2> "$BTRFS_ENUM_ERROR_FILE"; then
+      _warn "无法枚举 Btrfs 顶级备份子卷。"
+      [[ ! -s "$BTRFS_ENUM_ERROR_FILE" ]] || sed 's/^/  /' "$BTRFS_ENUM_ERROR_FILE"
+      backup_enumeration_failed=1
+      CLEAN_FAILED=1
+    fi
+    rm -f -- "$BTRFS_ENUM_ERROR_FILE"
+    BTRFS_ENUM_ERROR_FILE=""
+    while IFS= read -r -d '' subvol_dir; do
+      subvol_name="$(basename "$subvol_dir")"
+      if [[ ! "$subvol_name" =~ ^(.+)_backup_[0-9]{17}$ ]]; then
+        continue
+      fi
+      base_name="${BASH_REMATCH[1]}"
+      if [[ -z "${active_top_subvols[$base_name]:-}" ]]; then
+        _warn "跳过无法归属到当前挂载子卷的候选项：$subvol_name"
+        continue
+      fi
+      if ! sudo btrfs subvolume show "$subvol_dir" >/dev/null 2>&1; then
+        _warn "候选项不是可读取的 Btrfs 子卷：$subvol_name"
+        CLEAN_FAILED=1
+        continue
+      fi
+      _item "发现疑似恢复备份" "$subvol_name"
+      found_backups=1
+    done < "$BTRFS_CANDIDATE_FILE"
+    rm -f -- "$BTRFS_CANDIDATE_FILE"
+    BTRFS_CANDIDATE_FILE=""
+
+    if sudo umount "$MNT_DIR"; then
+      BTRFS_CLEAN_MOUNTED=0
+      rmdir "$MNT_DIR" || { _warn "临时挂载目录未能删除：$MNT_DIR"; CLEAN_FAILED=1; }
+    else
+      _warn "Btrfs 顶级子卷卸载失败，退出时将再次尝试：$MNT_DIR"
+      CLEAN_FAILED=1
+    fi
+
+    if [[ "$backup_enumeration_failed" -ne 0 ]]; then
+      _warn "恢复备份子卷检查未完成。"
+    elif [[ $found_backups -eq 1 ]]; then
+      _warn "候选子卷没有可信的 btrfs-assistant 来源标记，已全部保留。"
+      _warn "请先在恢复工具中确认用途，再人工处理这些候选项。"
+      CLEAN_FAILED=1
+    else
+      _success "${MSG[BTRFS_BA_NONE]}"
+    fi
+  else
+    rmdir "$MNT_DIR" || true
+    _warn "无法挂载 Btrfs 顶级子卷，未检查恢复备份。"
+    CLEAN_FAILED=1
+  fi
+  fi
+fi
+
+printf "\n"
+if [[ "$CLEAN_FAILED" -eq 0 ]]; then
+  _success "${MSG[DONE]}"
+  exit 0
+fi
+_warn "系统清理已完成，但至少一个步骤失败；请检查上方警告。"
+exit 1

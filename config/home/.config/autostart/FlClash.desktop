@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=FlClash
+Comment=FlClash startup script
+Exec=/usr/lib/flclash/FlClash
+StartupNotify=false
+Terminal=false

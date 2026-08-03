@@ -1,0 +1,722 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || realpath "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s\n' "${BASH_SOURCE[0]}")"
+readonly SELF
+readonly CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}/paru-ui"
+readonly INDEX_CACHE="$CACHE_ROOT/package-index.tsv"
+readonly AUR_PACKAGE_LIST_CACHE="$CACHE_ROOT/aur-packages.txt"
+readonly INDEX_MAX_AGE="${PARU_UI_INDEX_MAX_AGE:-3600}"
+readonly AUR_INDEX_MAX_AGE="${PARU_UI_AUR_INDEX_MAX_AGE:-86400}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$SELF")" && pwd -P)"
+readonly SCRIPT_DIR
+readonly MODEL_CACHE="$CACHE_ROOT/opencode_model"
+readonly DEFAULT_OPENCODE_MODEL="opencode/deepseek-v4-flash-free"
+
+REVIEW_ONLY=false
+OPENCODE_MODEL="${PARU_UI_OPENCODE_MODEL:-${PAC_OPENCODE_MODEL:-$DEFAULT_OPENCODE_MODEL}}"
+SESSION_CACHE_TO_CLEAN=""
+if [[ -r "$MODEL_CACHE" ]]; then
+  read -r cached_model <"$MODEL_CACHE" || true
+  if [[ -n "${cached_model:-}" && -z "${PARU_UI_OPENCODE_MODEL:-}${PAC_OPENCODE_MODEL:-}" ]]; then
+    OPENCODE_MODEL="$cached_model"
+  fi
+fi
+
+cleanup_session_cache() {
+  if [[ -n "${SESSION_CACHE_TO_CLEAN:-}" ]]; then
+    rm -rf -- "$SESSION_CACHE_TO_CLEAN"
+  fi
+}
+
+AUR_REVIEW_PROMPT=""
+for candidate in \
+  "$SCRIPT_DIR/share/prompts/aur-review.md" \
+  "$SCRIPT_DIR/aur-review.md" \
+  "$SCRIPT_DIR/../share/prompts/aur-review.md" \
+  "/usr/share/shorin-contrib/prompts/aur-review.md"
+do
+  if [[ -f "$candidate" ]]; then
+    AUR_REVIEW_PROMPT="$candidate"
+    break
+  fi
+done
+
+deps=(fzf paru pacman awk sed mktemp curl gzip)
+missing=()
+for cmd in "${deps[@]}"; do
+  command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+done
+if (( ${#missing[@]} > 0 )); then
+  printf 'paru-ui: 缺少依赖: %s\n' "${missing[*]}" >&2
+  exit 127
+fi
+
+cache_dir() {
+  if [[ -n "${PARU_UI_SESSION_CACHE_DIR:-}" ]]; then
+    printf '%s\n' "$PARU_UI_SESSION_CACHE_DIR"
+  else
+    printf '%s\n' "$CACHE_ROOT/previews"
+  fi
+}
+
+cache_key() {
+  local ref="$1"
+  printf '%s' "$ref" | sed 's#[^[:alnum:]._-]#_#g'
+}
+
+cache_file_for() {
+  local ref="$1"
+  printf '%s/%s.txt\n' "$(cache_dir)" "$(cache_key "$ref")"
+}
+
+ensure_cache_dir() {
+  mkdir -p -- "$(cache_dir)"
+}
+
+build_preview_content() {
+  local ref="$1"
+  local source="${ref%%/*}"
+  local pkg="${ref#*/}"
+  local available installed
+
+  if [[ -z "$ref" || -z "$pkg" ]]; then
+    printf '没有可预览的包\n'
+    return 0
+  fi
+
+  if [[ "$source" == "aur" ]]; then
+    available="$(paru -Si --color=never --aur -- "$pkg" 2>/dev/null || true)"
+  else
+    available="$(pacman -Si -- "$pkg" 2>/dev/null || true)"
+    if [[ -z "$available" && "$source" == "$ref" ]]; then
+      available="$(paru -Si --color=never -- "$pkg" 2>/dev/null || true)"
+    fi
+  fi
+
+  installed="$(pacman -Qi -- "$pkg" 2>/dev/null || true)"
+
+  if [[ -n "$available" ]]; then
+    printf '\033[1;36m== Available ==\033[0m\n%s\n' "$available"
+  fi
+
+  if [[ -n "$installed" ]]; then
+    if [[ -n "$available" ]]; then
+      printf '\n'
+    fi
+    printf '\033[1;33m== Installed ==\033[0m\n%s\n' "$installed"
+  fi
+
+  if [[ -z "$available" && -z "$installed" ]]; then
+    printf '无法读取包信息: %s\n' "$pkg"
+  fi
+}
+
+prime_preview_cache() {
+  local ref="$1"
+  local cache_file tmp_file
+
+  ensure_cache_dir
+  cache_file="$(cache_file_for "$ref")"
+
+  if [[ -s "$cache_file" ]]; then
+    printf '%s\n' "$cache_file"
+    return 0
+  fi
+
+  tmp_file="$(mktemp "$(cache_dir)/.tmp.XXXXXX")"
+  build_preview_content "$ref" >"$tmp_file"
+  mv -- "$tmp_file" "$cache_file"
+  printf '%s\n' "$cache_file"
+}
+
+clear_preview_cache() {
+  local dir file
+  dir="$(cache_dir)"
+
+  rm -f -- "$INDEX_CACHE"
+  rm -f -- "$AUR_PACKAGE_LIST_CACHE"
+  rm -rf -- "$CACHE_ROOT/review"
+
+  if [[ ! -d "$dir" ]]; then
+    return 0
+  fi
+
+  shopt -s nullglob dotglob
+  for file in "$dir"/*; do
+    rm -f -- "$file"
+  done
+  shopt -u nullglob dotglob
+
+}
+
+aur_package_list() {
+  local tmp_file
+
+  mkdir -p -- "$CACHE_ROOT"
+
+  if cache_is_fresh "$AUR_PACKAGE_LIST_CACHE" "$AUR_INDEX_MAX_AGE"; then
+    cat -- "$AUR_PACKAGE_LIST_CACHE"
+    return 0
+  fi
+
+  tmp_file="$(mktemp "$CACHE_ROOT/aur-packages.XXXXXX")"
+  if curl -fsSL https://aur.archlinux.org/packages.gz | gzip -dc >"$tmp_file"; then
+    mv -- "$tmp_file" "$AUR_PACKAGE_LIST_CACHE"
+    cat -- "$AUR_PACKAGE_LIST_CACHE"
+    return 0
+  fi
+
+  rm -f -- "$tmp_file"
+  if [[ -s "$AUR_PACKAGE_LIST_CACHE" ]]; then
+    printf 'paru-ui: AUR package index refresh failed; using stale cache\n' >&2
+    cat -- "$AUR_PACKAGE_LIST_CACHE"
+    return 0
+  fi
+
+  printf 'paru-ui: AUR package index refresh failed; falling back to paru completion cache\n' >&2
+  paru -P --complete | awk '$2 == "AUR" { print $1 }'
+}
+
+strip_ansi_file() {
+  sed $'s/\033\\[[0-9;]*[a-zA-Z]//g' "$1"
+}
+
+extract_review_report() {
+  local log_file="$1"
+  local report_file="$2"
+
+  strip_ansi_file "$log_file" | awk '
+    /<system-reminder>/ { skip = 1; next }
+    /<\/system-reminder>/ { skip = 0; next }
+    skip { next }
+    /^The final line of the response MUST be/ { next }
+    /^PAC_DECISION:/ { next }
+    /^## PKGBUILD意图/ {
+      capture = 1
+      report = $0 "\n"
+      next
+    }
+    capture {
+      report = report $0 "\n"
+    }
+    END {
+      if (report != "") {
+        printf "%s", report
+      }
+    }
+  ' >"$report_file"
+}
+
+review_decision_value() {
+  local key="$1"
+  local log_file="$2"
+  strip_ansi_file "$log_file" | sed -nE "s/^PAC_DECISION:.*\"$key\"[[:space:]]*:[[:space:]]*\"([^\"]+)\".*/\\1/p" | tail -n 1
+}
+
+review_is_risky() {
+  local report_file="$1"
+  local log_file="$2"
+  local risk
+
+  risk="$(review_decision_value risk "$log_file")"
+  [[ "$risk" == "medium" || "$risk" == "high" ]] && return 0
+
+  grep -Fq '审查结果：中风险' "$report_file" || \
+  grep -Fq '审查结果：高风险' "$report_file" || \
+  grep -Fq '## 🟡' "$report_file" || \
+  grep -Fq '## 🔴' "$report_file"
+}
+
+review_default_allows_install() {
+  local log_file="$1"
+  [[ "$(review_decision_value install_default "$log_file")" == "yes" ]]
+}
+
+select_review_model() {
+  local selected
+
+  selected="$(opencode models 2>/dev/null | fzf \
+    --height=80% \
+    --layout=reverse \
+    --border=rounded \
+    --header='选择 opencode 审查模型  Enter 选择  Esc 取消')" || return 1
+
+  if [[ -n "$selected" ]]; then
+    OPENCODE_MODEL="$selected"
+    mkdir -p -- "$CACHE_ROOT"
+    printf '%s\n' "$OPENCODE_MODEL" >"$MODEL_CACHE"
+    printf '\033[36mparu-ui: 已选择审查模型：\033[0m %s\n' "$OPENCODE_MODEL"
+  fi
+}
+
+aur_build_root() {
+  printf '%s/review/%s' "$CACHE_ROOT" "$1"
+}
+
+fetch_aur_build_dir() {
+  local pkg="$1"
+  local build_root="$2"
+  local pkgbuild
+
+  rm -rf -- "$build_root"
+  mkdir -p -- "$build_root"
+
+  if ! (cd "$build_root" && paru --aur --redownload -G -- "$pkg" >&2); then
+    return 1
+  fi
+
+  shopt -s nullglob
+  for pkgbuild in "$build_root"/PKGBUILD "$build_root"/*/PKGBUILD; do
+    if [[ -f "$pkgbuild" ]]; then
+      dirname -- "$pkgbuild"
+      shopt -u nullglob
+      return 0
+    fi
+  done
+  shopt -u nullglob
+
+  return 1
+}
+
+run_aur_review() {
+  local pkg="$1"
+  local build_root build_dir review_log review_report review_message review_status
+
+  if ! command -v opencode >/dev/null 2>&1; then
+    printf '\033[33mparu-ui: 未找到 opencode，无法执行 AUR 审查。\033[0m\n' >&2
+    return 2
+  fi
+
+  if [[ -z "$AUR_REVIEW_PROMPT" ]]; then
+    printf '\033[33mparu-ui: 未找到 AUR 审查提示词，无法执行 AUR 审查。\033[0m\n' >&2
+    return 2
+  fi
+
+  mkdir -p -- "$CACHE_ROOT/review"
+  build_root="$(aur_build_root "$pkg")"
+
+  printf '\n\033[35m>> 正在获取 AUR 构建文件：\033[0m %s\n' "$pkg"
+  build_dir="$(fetch_aur_build_dir "$pkg" "$build_root")" || {
+    printf '\033[31mparu-ui: AUR 构建文件获取失败：%s\033[0m\n' "$pkg" >&2
+    return 1
+  }
+  if [[ ! -d "$build_dir" ]]; then
+    printf '\033[31mparu-ui: AUR 构建目录无效：%s\033[0m\n' "$build_dir" >&2
+    return 1
+  fi
+
+  review_log="$CACHE_ROOT/review-${pkg}.log"
+  review_report="$CACHE_ROOT/review-${pkg}.report"
+  review_message="AUR_HELPER=paru
+PKG=${pkg}
+AUR_BUILD_DIR=${build_dir}"
+
+  printf '\n\033[35m>> 正在审查 AUR 包：\033[0m %s\n' "$pkg"
+  printf '%s\n' '----------------------------------------'
+
+  set +e
+  opencode run -m "$OPENCODE_MODEL" \
+    -f "$AUR_REVIEW_PROMPT" \
+    --dir "$build_dir" \
+    -- \
+    "$review_message" 2>&1 | tee "$review_log" | awk '
+      BEGIN {
+        gray="\033[90m"; cyan="\033[1;36m"; yellow="\033[1;33m";
+        green="\033[1;32m"; red="\033[1;31m"; reset="\033[0m"; report=0
+      }
+      /<system-reminder>/ { skip=1; next }
+      /<\/system-reminder>/ { skip=0; next }
+      skip { next }
+      /^The final line of the response MUST be/ { next }
+      /^PAC_DECISION:/ { next }
+      /^## PKGBUILD意图/ { report=1 }
+      !report { print gray $0 reset; next }
+      /^## PKGBUILD意图/ { print cyan $0 reset; next }
+      /^## 具体风险/ { print yellow $0 reset; next }
+      /^## 🔴/ { print red $0 reset; next }
+      /^## 🟡/ { print yellow $0 reset; next }
+      /^## 🟢/ { print green $0 reset; next }
+      { print }
+    '
+  review_status=${PIPESTATUS[0]}
+  set -e
+
+  if [[ $review_status -ne 0 ]]; then
+    printf '\033[31mparu-ui: AUR 审查失败：%s\033[0m\n' "$pkg" >&2
+    return 1
+  fi
+
+  extract_review_report "$review_log" "$review_report"
+  if [[ ! -s "$review_report" ]]; then
+    printf '\033[31mparu-ui: AUR 审查报告解析失败：%s\033[0m\n' "$pkg" >&2
+    return 1
+  fi
+
+  if review_default_allows_install "$review_log" && ! review_is_risky "$review_report" "$review_log"; then
+    return 0
+  fi
+
+  return 3
+}
+
+confirm_aur_install_after_review() {
+  local pkg="$1"
+  local answer review_status
+
+  if ! command -v opencode >/dev/null 2>&1 || [[ -z "$AUR_REVIEW_PROMPT" ]]; then
+    printf '\033[33mparu-ui: AUR 审查不可用，将按普通 paru 安装流程继续。\033[0m\n' >&2
+    return 0
+  fi
+
+  printf '\n\033[35m检测到 AUR 包：%s\033[0m\n' "$pkg"
+  while true; do
+    printf '\033[90m当前审查模型：%s\033[0m\n' "$OPENCODE_MODEL"
+    printf '是否先进行 PKGBUILD 审查? [Y/n/m] '
+    read -r answer || answer="n"
+    case "${answer:-Y}" in
+      y|Y|yes|YES) break ;;
+      m|M) select_review_model || true ;;
+      *) return 0 ;;
+    esac
+  done
+
+  set +e
+  run_aur_review "$pkg"
+  review_status=$?
+  set -e
+
+  case "$review_status" in
+    0)
+      printf '\n审查未给出中高风险默认阻断。继续安装? [Y/n] '
+      read -r answer || answer="n"
+      case "${answer:-Y}" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    3)
+      printf '\n审查结果建议谨慎或取消。仍然安装? [y/N] '
+      read -r answer || answer="n"
+      case "$answer" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    *)
+      printf '\n审查失败。仍然安装? [y/N] '
+      read -r answer || answer="n"
+      case "$answer" in
+        y|Y|yes|YES) return 0 ;;
+        *) return 1 ;;
+      esac
+      ;;
+  esac
+}
+
+cache_is_fresh() {
+  local file="$1"
+  local max_age="$2"
+  local now file_time
+
+  [[ -s "$file" ]] || return 1
+  now="$(date +%s)"
+  file_time="$(stat -c %Y -- "$file" 2>/dev/null || printf 0)"
+  (( now - file_time < max_age ))
+}
+
+pacman_state_newer_than() {
+  local file="$1"
+
+  if [[ -n "$(find /var/lib/pacman/sync -type f -name '*.db' -newer "$file" -print -quit 2>/dev/null)" ]]; then
+    return 0
+  fi
+
+  if [[ -n "$(find /var/lib/pacman/local -mindepth 1 -maxdepth 1 -type d -newer "$file" -print -quit 2>/dev/null)" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
+index_cache_is_valid() {
+  cache_is_fresh "$INDEX_CACHE" "$INDEX_MAX_AGE" || return 1
+  ! pacman_state_newer_than "$INDEX_CACHE"
+}
+
+build_package_index_uncached() {
+  {
+    pacman -Qq | awk '{ print "installed\t" $0 }'
+    pacman -Sl | awk '{ print "repo\t" $1 "\t" $2 }'
+    aur_package_list | awk '{ print "aur\t" $0 }'
+  } | awk -F '\t' '
+    $1 == "installed" {
+      installed[$2] = 1
+      next
+    }
+
+    $1 == "repo" {
+      source = $2
+      pkg = $3
+      if (pkg == "" || source == "") {
+        next
+      }
+
+      ref = source "/" pkg
+      state = installed[pkg] ? "[installed]" : ""
+      printf "%-34s\t%-12s\t%-12s\t%s\n", ref, source, state, "package index"
+      next
+    }
+
+    $1 == "aur" {
+      pkg = $2
+      if (pkg == "") {
+        next
+      }
+
+      state = installed[pkg] ? "[installed]" : ""
+      printf "%-34s\t%-12s\t%-12s\t%s\n", "aur/" pkg, "AUR", state, "package index"
+    }
+  '
+}
+
+build_package_index() {
+  local tmp_file
+
+  mkdir -p -- "$CACHE_ROOT"
+
+  if index_cache_is_valid; then
+    cat -- "$INDEX_CACHE"
+    return 0
+  fi
+
+  tmp_file="$(mktemp "$CACHE_ROOT/package-index.XXXXXX")"
+  build_package_index_uncached >"$tmp_file"
+  mv -- "$tmp_file" "$INDEX_CACHE"
+  cat -- "$INDEX_CACHE"
+}
+
+preview_package() {
+  local ref="${1:-}"
+  local pkg="${ref#*/}"
+  local cache_file
+
+  if [[ -z "$ref" || -z "$pkg" ]]; then
+    printf '没有可预览的包\n'
+    exit 0
+  fi
+
+  cache_file="$(prime_preview_cache "$ref")"
+  cat -- "$cache_file"
+}
+
+install_selected() {
+  local ref="$1"
+  local pkg="${ref#*/}"
+
+  if [[ -z "$pkg" ]]; then
+    printf 'paru-ui: 无效包引用: %s\n' "$ref" >&2
+    return 1
+  fi
+
+  if [[ "$ref" == aur/* ]]; then
+    confirm_aur_install_after_review "$pkg" || {
+      printf 'paru-ui: 已取消安装: %s\n' "$pkg" >&2
+      return 1
+    }
+  fi
+
+  paru -S --skipreview -- "$pkg"
+}
+
+install_refs() {
+  local refs=("$@")
+  local install_args=()
+  local ref pkg
+
+  for ref in "${refs[@]}"; do
+    pkg="${ref#*/}"
+    if [[ -z "$pkg" || "$pkg" == "$ref" ]]; then
+      printf 'paru-ui: 无效包引用: %s\n' "$ref" >&2
+      continue
+    fi
+
+    if [[ "$ref" == aur/* ]]; then
+      confirm_aur_install_after_review "$pkg" || {
+        printf 'paru-ui: 已跳过安装: %s\n' "$pkg" >&2
+        continue
+      }
+      install_args+=("$pkg")
+    else
+      install_args+=("$ref")
+    fi
+  done
+
+  if (( ${#install_args[@]} == 0 )); then
+    printf 'paru-ui: 没有需要安装的包。\n' >&2
+    return 1
+  fi
+
+  paru -S --skipreview -- "${install_args[@]}"
+}
+
+review_selected() {
+  local ref="$1"
+  local pkg="${ref#*/}"
+  local review_status
+
+  if [[ "$ref" != aur/* ]]; then
+    printf 'paru-ui: 仅 AUR 包需要审查，已跳过: %s\n' "$ref" >&2
+    return 0
+  fi
+
+  set +e
+  run_aur_review "$pkg"
+  review_status=$?
+  set -e
+
+  case "$review_status" in
+    0|3)
+      printf '\nparu-ui: 审查完成，未执行安装。\n'
+      return 0
+      ;;
+    *)
+      return "$review_status"
+      ;;
+  esac
+}
+
+review_refs() {
+  local status=0
+  local ref
+
+  for ref in "$@"; do
+    review_selected "$ref" || status=1
+  done
+
+  return "$status"
+}
+
+launch_ui() {
+  local initial_query="$*"
+  local header index_cmd preview_cmd result session_cache
+  local refs=()
+
+  if [[ "$REVIEW_ONLY" == true ]]; then
+    header='输入关键词本地过滤  Tab 多选  Enter 审查 AUR  Ctrl-R 重建索引/刷新预览  Esc 退出'
+  else
+    header='输入关键词本地过滤  Tab 多选  Enter 安装  Ctrl-R 重建索引/刷新预览  Esc 退出'
+  fi
+  index_cmd="$SELF --index"
+  preview_cmd="$SELF --preview {1}"
+  mkdir -p -- "$CACHE_ROOT"
+  session_cache="$(mktemp -d "$CACHE_ROOT/session.XXXXXX")"
+  SESSION_CACHE_TO_CLEAN="$session_cache"
+  export PARU_UI_SESSION_CACHE_DIR="$session_cache"
+  trap cleanup_session_cache EXIT
+
+  result="$(
+    "$SELF" --index |
+    fzf \
+      --ansi \
+      --exact \
+      --height=95% \
+      --layout=reverse \
+      --border=rounded \
+      --margin=1 \
+      --padding=1 \
+      --prompt='paru > ' \
+      --pointer='▶' \
+      --marker='◆' \
+      --multi \
+      --info='right' \
+      --header="$header" \
+      --header-first \
+      --delimiter=$'\t' \
+      --with-nth=1,2,3,4 \
+      --preview="$preview_cmd" \
+      --preview-window='down,62%,border-top,wrap' \
+      --preview-label=' Package Details ' \
+      --bind="ctrl-r:execute-silent($SELF --clear-cache)+reload($index_cmd)+refresh-preview" \
+      --bind='enter:accept' \
+      --query="$initial_query"
+  )" || return $?
+
+  mapfile -t refs < <(printf '%s\n' "$result" | awk -F '\t' '
+    {
+      ref = $1
+      sub(/[[:space:]]+$/, "", ref)
+      if (ref ~ /^[^[:space:]]+\/[^[:space:]]+$/) {
+        print ref
+      }
+    }
+  ')
+
+  if (( ${#refs[@]} == 0 )); then
+    return 0
+  fi
+
+  if [[ "$REVIEW_ONLY" == true ]]; then
+    review_refs "${refs[@]}"
+  else
+    install_refs "${refs[@]}"
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+Usage: paru-ui [options] [query]
+
+Options:
+  -h, --help            Show this help and exit
+  -c, --check [query]   Review selected AUR package only; do not install
+  -y, --refresh [query] Rebuild caches before opening the UI
+  --ai-model <model>    Set opencode model for AUR review
+  --index               Print cached package index
+  --clear-cache         Rebuild package index and preview cache on next run
+
+Plain queries open the fzf package UI. Official repo packages install normally.
+Use Tab to select multiple packages. AUR packages can be reviewed with opencode and aur-review.md before install.
+EOF
+}
+
+case "${1:-}" in
+  --help|-h)
+    usage
+    ;;
+  --preview)
+    shift
+    preview_package "${1:-}"
+    ;;
+  --clear-cache)
+    clear_preview_cache
+    ;;
+  --refresh|-y)
+    shift
+    clear_preview_cache
+    launch_ui "$@"
+    ;;
+  --index)
+    build_package_index
+    ;;
+  --install)
+    shift
+    install_selected "${1:?missing package name}"
+    ;;
+  --check|-c)
+    shift
+    REVIEW_ONLY=true
+    launch_ui "$@"
+    ;;
+  --ai-model)
+    shift
+    OPENCODE_MODEL="${1:?missing model name}"
+    mkdir -p -- "$CACHE_ROOT"
+    printf '%s\n' "$OPENCODE_MODEL" >"$MODEL_CACHE"
+    shift
+    launch_ui "$@"
+    ;;
+  *)
+    launch_ui "$@"
+    ;;
+esac

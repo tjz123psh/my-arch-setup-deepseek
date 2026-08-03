@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+UI_LIB="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/ui.sh"
+# shellcheck source=lib/ui.sh
+. "$UI_LIB"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+host_name() {
+  if have hostname; then
+    hostname
+  elif [[ -r /proc/sys/kernel/hostname ]]; then
+    cat /proc/sys/kernel/hostname
+  else
+    printf 'unknown'
+  fi
+}
+
+md_section() {
+  printf '\n## %s\n\n' "$1"
+}
+
+md_code_block() {
+  local content="$1"
+
+  printf '```text\n'
+  printf '%s\n' "$content"
+  printf '```\n'
+}
+
+REPORT_QUERY_FAILED=0
+
+capture_command() {
+  local output_var="$1"
+  local error_var="$2"
+  shift 2
+  local captured_output captured_error error_file rc=0
+
+  error_file="$(mktemp)"
+  captured_output="$("$@" 2> "$error_file")" || rc=$?
+  captured_error="$(< "$error_file")"
+  rm -f -- "$error_file"
+  printf -v "$output_var" '%s' "$captured_output"
+  printf -v "$error_var" '%s' "$captured_error"
+  return "$rc"
+}
+
+print_query_error_md() {
+  local command_label="$1"
+  local rc="$2"
+  local error="$3"
+
+  REPORT_QUERY_FAILED=1
+  printf -- "- ERROR: \`%s\` 查询失败（退出码 %s）\n" "$command_label" "$rc"
+  if [[ -n "$error" ]]; then
+    md_code_block "$error"
+  fi
+}
+
+print_failed_units_md() {
+  local scope="$1"
+  local label="$2"
+  local output error rc=0
+
+  md_section "$label"
+  if [[ "$scope" == "user" ]]; then
+    capture_command output error systemctl --user --failed --no-legend --no-pager || rc=$?
+  else
+    capture_command output error systemctl --failed --no-legend --no-pager || rc=$?
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    print_query_error_md "systemctl${scope:+ ($scope)} --failed" "$rc" "$error"
+    return 0
+  fi
+  if [[ -z "$output" ]]; then
+    printf -- '- OK: 没有 failed unit\n'
+  else
+    md_code_block "$output"
+  fi
+}
+
+print_journal_errors_md() {
+  local scope="$1"
+  local label="$2"
+  local lines="${3:-80}"
+  local output error rc=0
+
+  md_section "$label"
+  if [[ "$scope" == "user" ]]; then
+    capture_command output error journalctl --user -p 3 -b --no-pager -n "$lines" || rc=$?
+  else
+    capture_command output error journalctl -p 3 -b --no-pager -n "$lines" || rc=$?
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    print_query_error_md "journalctl${scope:+ ($scope)}" "$rc" "$error"
+    return 0
+  fi
+  output="$(
+    printf '%s\n' "$output" |
+      sed -E 's/([[:alnum:]_.@-]+)\[[0-9]+\]/\1[PID]/g' |
+      awk '!seen[$0]++'
+  )"
+
+  if [[ -z "$output" || "$output" == "-- No entries --" ]]; then
+    printf -- '- OK: 本次启动没有 error 级别日志\n'
+  else
+    md_code_block "$output"
+  fi
+}
+
+print_unit_hint_md() {
+  local unit="$1"
+  [[ -n "$unit" ]] || return 0
+
+  md_section "失败服务详情提示"
+  printf -- "%s\n" "- 查看系统服务: \`systemctl status $unit\`"
+  printf -- "%s\n" "- 查看系统日志: \`journalctl -u $unit -b --no-pager\`"
+}
+
+generate_report() {
+  local first_failed
+
+  printf '# 日志检查报告\n\n'
+  printf -- '- 生成时间: %s\n' "$(date '+%F %T %z')"
+  printf -- '- 主机名: %s\n' "$(host_name)"
+  printf -- '- 内核: %s\n' "$(uname -r 2>/dev/null || printf 'unknown')"
+  printf -- '- 范围: 本次启动，error 级别日志，每类最近 80 条\n'
+
+  print_failed_units_md system "系统失败服务"
+  print_failed_units_md user "用户失败服务"
+  print_journal_errors_md system "系统错误日志"
+  print_journal_errors_md user "用户错误日志"
+
+  first_failed="$(systemctl --failed --no-legend --no-pager 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
+  print_unit_hint_md "${first_failed:-}"
+}
+
+main() {
+  local report
+
+  if (( $# > 1 )); then
+    ui_err "参数过多；用法: log-check"
+    return 2
+  fi
+  case "${1:-}" in
+    -h|--help)
+      printf '用法: log-check\n生成本次启动的 failed 服务和 error 日志 Markdown 报告。\n'
+      return 0
+      ;;
+    "") ;;
+    *) ui_err "未知参数: %s" "$1"; return 2 ;;
+  esac
+
+  ui_banner "日志检查" "log-check · 生成 Markdown 报告"
+
+  if ! have systemctl || ! have journalctl; then
+    ui_panel_open "依赖检查"
+    ui_panel_stat miss "缺少 systemctl 或 journalctl"
+    ui_panel_close
+    exit 1
+  fi
+
+  report="${LOG_CHECK_REPORT:-$HOME/log-check-$(date '+%Y%m%d-%H%M%S').md}"
+  ui_working "正在读取本次启动的系统和用户日志"
+  generate_report > "$report"
+
+  ui_panel_open "报告"
+  if [[ "$REPORT_QUERY_FAILED" -eq 0 ]]; then
+    ui_panel_stat ok "日志检查报告已生成"
+  else
+    ui_panel_stat warn "报告已生成，但至少一项系统查询失败"
+  fi
+  ui_panel_kv "路径" "$report"
+  ui_panel_close
+  [[ "$REPORT_QUERY_FAILED" -eq 0 ]]
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

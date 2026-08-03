@@ -1,0 +1,53 @@
+# Based on the public AUR wechat-appimage recipe.
+# Maintainer: fengcheng <fengcheng@lidig.com>
+
+_pkgname=wechat
+_Pkgname=WechatLinux
+_disname=wechat
+_version=4.1.1
+_last_modified=1783692407
+pkgname="${_pkgname}-appimage"
+pkgver="${_version}"
+pkgrel=4
+pkgdesc='Wechat for Linux'
+arch=('x86_64')
+url='https://linux.weixin.qq.com'
+license=('custom')
+options=('!strip' '!debug')
+depends=('zlib' 'hicolor-icon-theme' 'fuse2' 'xcb-util-renderutil' 'xcb-util-image' 'xcb-util-wm')
+provides=('wechat')
+
+_appimage="${_Pkgname}-${_last_modified}-x86_64.AppImage"
+source=('LICENSE' 'wechat')
+source_x86_64=("${_appimage}")
+noextract=("${_appimage}")
+sha256sums=(
+  '4348aee67f0c40bd29ec370fff75e24384907514a76104b43354d395c436f0f2'
+  'c18843571e9626fddadec48f24389da44a3ee29d7d5439db7b51182d73a15019'
+)
+sha256sums_x86_64=('457dba02b91b031cdd4412eee074fbbffb9d9d06b1e50fc1822d34870e114990')
+
+prepare() {
+  chmod +x "${_appimage}"
+  "./${_appimage}" --appimage-extract "${_disname}.desktop"
+  "./${_appimage}" --appimage-extract "${_disname}.png"
+}
+
+build() {
+  sed -i \
+    -e "s|Exec=AppRun|Exec=env DESKTOPINTEGRATION=false /usr/bin/${_pkgname}|" \
+    -e "s|Icon=.*|Icon=/usr/share/icons/${_pkgname}.png|" \
+    "squashfs-root/${_disname}.desktop"
+}
+
+package() {
+  install -Dm755 "${srcdir}/${_appimage}" "${pkgdir}/opt/${pkgname}/${pkgname}.AppImage"
+  install -Dm644 "${srcdir}/LICENSE" "${pkgdir}/opt/${pkgname}/LICENSE"
+  install -Dm644 "${srcdir}/squashfs-root/${_disname}.desktop" \
+    "${pkgdir}/usr/share/applications/${_pkgname}.desktop"
+  install -Dm644 "${srcdir}/squashfs-root/${_disname}.png" \
+    "${pkgdir}/usr/share/icons/${_pkgname}.png"
+  install -Dm755 "${srcdir}/wechat" "${pkgdir}/usr/bin/${_pkgname}"
+  install -d "${pkgdir}/usr/share/licenses/${pkgname}"
+  ln -s "/opt/${pkgname}/LICENSE" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

@@ -1,0 +1,66 @@
+# shellcheck shell=bash
+# Maintainer: Klaus Alexander Seiﬆrup
+
+_pkgname=leaf-markdown-viewer
+pkgname="${_pkgname}-bin"
+pkgver=1.26.2
+pkgrel=1
+pkgdesc='Leaf is a text-based markdown previewer for your terminal (pre-compiled)'
+arch=('x86_64')
+url='https://github.com/RivoLink/leaf'
+license=('MIT')
+changelog="${_pkgname}.changelog"
+depends=('glibc' 'libgcc')
+provides=('leaf' 'leaf-markdown-viewer')
+conflicts=('leaf' 'leaf-markdown-viewer')
+options=('!strip' '!debug')
+_upstream_commit=0c037dba12e2396f798878654b11b668f3b07929
+_rawurl="https://raw.githubusercontent.com/RivoLink/leaf/${_upstream_commit}"
+source=(
+  "leaf-${pkgver}-x86_64.bin::${url}/releases/download/${pkgver}/leaf-linux-x86_64"
+  "LICENSE-MIT.txt::${_rawurl}/LICENSE"
+  "CHANGELOG-${pkgver}.md::${_rawurl}/CHANGELOG.md"
+  "CONTRIBUTING-${pkgver}.md::${_rawurl}/CONTRIBUTING.md"
+  "README-${pkgver}.md::${_rawurl}/README.md"
+  "SECURITY-${pkgver}.md::${_rawurl}/SECURITY.md"
+  "TESTING-${pkgver}.md::${_rawurl}/TESTING.md"
+)
+sha256sums=(
+  '246fef2b941faa3d47e925700e978f34df0832c32b855a586d32c9441c06eebb'
+  '98c9cd0ac4bcc0b30d8cbb7c09a311196dea27b158c65d6caadfb073c090af71'
+  '8bfbf9d687f89b7daaf0efa3598aeed135cd648fb0146e49631ac9b63351b600'
+  '6228b8facfc55f0d4e8349cb59b9b7c59c05af9aa47dc8f1683b2b1a8c6e5f2c'
+  'b2a2433f6e92344491047f2c46dd5738f079fff606111a08529c1a67ef2812e7'
+  'd9c360ad6d357e48abdefb3c064d57acaaea1ef9b5c945265f84746d81a751e9'
+  'd6b142fe737b75cd2f4592e6d9c2e5ae37a21e5e92de9bef56cb1f3ba4fc3004'
+)
+
+build() {
+  ln -sf "leaf-${pkgver}-x86_64.bin" leaf
+  chmod +x leaf
+
+  local shell_name
+  for shell_name in bash fish zsh; do
+    ./leaf --auto-complete "${shell_name}:dump" > "_completions.${shell_name}"
+  done
+}
+
+package() {
+  install -Dm0755 "leaf-${pkgver}-x86_64.bin" "${pkgdir}/usr/bin/leaf"
+  install -Dm0644 LICENSE-MIT.txt "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+
+  local doc_name
+  for doc_name in CHANGELOG CONTRIBUTING README SECURITY TESTING; do
+    install -Dm0644 "${doc_name}-${pkgver}.md" "${pkgdir}/usr/share/doc/${pkgname}/${doc_name}.md"
+  done
+
+  install -Dm0644 _completions.bash "${pkgdir}/usr/share/bash-completion/completions/leaf"
+  install -Dm0644 _completions.fish "${pkgdir}/usr/share/fish/vendor_completions.d/leaf.fish"
+  install -Dm0644 _completions.zsh "${pkgdir}/usr/share/zsh/site-functions/_leaf"
+
+  local share_dir
+  for share_dir in doc licenses; do
+    cd "${pkgdir}/usr/share/${share_dir}" || return 1
+    ln -sr "${pkgname}" "${_pkgname}"
+  done
+}

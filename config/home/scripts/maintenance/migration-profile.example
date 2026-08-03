@@ -1,0 +1,24 @@
+# migration-pack v2 配置档。
+# 每行只能是：include|exclude|secret <相对 HOME 路径>。
+# 不能使用绝对路径、.. 或 shell 语法。默认选定内容会原样归档；secret 仅用于
+# 明确要求“不归档内容、只记录引用”的例外路径。
+
+# 完整桌面与应用配置（包含已选定配置中的凭据、依赖和状态）。
+include .config
+
+# 个人重建资料与 SSH 身份材料。
+include .ssh
+include obsidian
+include Projects
+include Pictures/背景图片
+include Pictures/archlinux头像
+include scripts
+include md
+include .local/bin
+include .local/share/applications
+
+# 如有明确不想迁移的内容，再按需添加排除规则；默认不省略 .config 或 Projects 的子内容。
+# exclude Projects/**/build/**
+
+# 如有内容只想在新机器手动重新配置、不想写入迁移包，再按需添加引用规则。
+# secret .config/example/credentials.json

@@ -1,0 +1,2 @@
+-- Add this to ~/.config/hypr/conf/monitors.lua after replacing the output name.
+hl.monitor({ output = "REPLACE_WITH_OUTPUT_NAME", mode = "preferred", position = "auto", scale = 1 })

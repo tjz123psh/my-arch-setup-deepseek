@@ -1,0 +1,7 @@
+// Copy to ~/.config/niri/dms/outputs.kdl only after replacing the output name.
+// Discover names with `niri msg outputs` in the target session.
+output "REPLACE_WITH_OUTPUT_NAME" {
+    mode "preferred"
+    scale 1
+    position x=0 y=0
+}

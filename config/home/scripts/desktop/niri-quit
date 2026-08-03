@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# 描述：用 term-menu 同款 fzf 界面确认退出 Niri 会话
+# Description: Confirm ending the Niri session with the term-menu UI.
+
+set -euo pipefail
+
+SCRIPT_PATH="$(readlink -f "$0")"
+MAINTENANCE_DIR="$HOME/scripts/maintenance"
+UI_LIB="$MAINTENANCE_DIR/lib/ui.sh"
+
+if [[ ! -r "$UI_LIB" ]]; then
+  notify-send "Niri 退出" "找不到维护菜单 UI 库：$UI_LIB" 2>/dev/null || true
+  exit 1
+fi
+
+# shellcheck source=../maintenance/lib/ui.sh
+. "$UI_LIB"
+
+usage() {
+  cat <<'EOF'
+用法: niri-quit
+
+说明:
+  打开与 term-menu 同款的退出确认界面。
+  默认选中“取消”；必须主动选择“退出 Niri 会话”并按 Enter。
+EOF
+}
+
+window_count() {
+  local count
+  if ! command -v jq >/dev/null 2>&1 || ! command -v niri >/dev/null 2>&1; then
+    printf '未知'
+    return 0
+  fi
+
+  count="$(niri msg --json windows 2>/dev/null | jq -r 'length' 2>/dev/null || true)"
+  [[ "$count" =~ ^[0-9]+$ ]] && printf '%s' "$count" || printf '未知'
+}
+
+print_preview() {
+  local action="${1:-}" count
+  local c_title=$'\033[1;35m' c_accent=$'\033[1;36m'
+  local c_warn=$'\033[1;33m' c_dim=$'\033[2m' c_reset=$'\033[0m'
+
+  case "$action" in
+    quit)
+      count="$(window_count)"
+      printf '%s退出 Niri 会话%s\n' "$c_title" "$c_reset"
+      printf '%s────────────────────────────────────────%s\n\n' "$c_dim" "$c_reset"
+      printf '%s动作%s  关闭当前 Niri 桌面会话，返回登录界面。\n' "$c_accent" "$c_reset"
+      printf '%s影响%s  当前打开的 %s 个窗口都会结束。\n\n' "$c_accent" "$c_reset" "$count"
+      printf '%s请先保存未完成的工作，再按 Enter 执行。%s\n' "$c_warn" "$c_reset"
+      ;;
+    cancel|*)
+      printf '%s取消退出%s\n' "$c_title" "$c_reset"
+      printf '%s────────────────────────────────────────%s\n\n' "$c_dim" "$c_reset"
+      printf '%s不会修改当前会话。按 Esc 或选择本项即可关闭此窗口。%s\n' "$c_accent" "$c_reset"
+      ;;
+  esac
+}
+
+pause_after_failure() {
+  ui_wait_key "按任意键关闭"
+}
+
+run_menu() {
+  local items selected action footer status
+
+  if ! command -v fzf >/dev/null 2>&1; then
+    ui_err "未找到 fzf，无法打开退出菜单。"
+    pause_after_failure
+    return 127
+  fi
+
+  # 把取消放在第一项，保证 fzf 初始焦点就是安全动作。
+  items=$'00\t取消\tcancel\t保持当前 Niri 会话不变\n01\t退出 Niri 会话\tquit\t关闭桌面并返回登录界面'
+  footer="$(ui_status_line)"
+
+  set +e
+  selected="$(
+    printf '%s\n' "$items" |
+      fzf \
+        --delimiter=$'\t' \
+        --with-nth=1,2 \
+        --height=100% \
+        --min-height=20 \
+        --layout=reverse \
+        --style=full \
+        --border=rounded \
+        --border-label='╢  退出 Niri 会话 ╟' \
+        --border-label-pos=3 \
+        --list-border=rounded \
+        --list-label=' 操作选择 ' \
+        --list-label-pos=3 \
+        --input-border=rounded \
+        --input-label=' 筛选 ' \
+        --input-label-pos=3 \
+        --header-border=rounded \
+        --header-label=' 操作 ' \
+        --header-first \
+        --footer-border=rounded \
+        --footer-label='   系统状态 ' \
+        --footer="$footer" \
+        --prompt='  ' \
+        --pointer='▶' \
+        --marker='✓' \
+        --highlight-line \
+        --cycle \
+        --scroll-off=2 \
+        --gap=0 \
+        --info=inline-right \
+        --bind='home:first,end:last,ctrl-p:up,ctrl-n:down' \
+        --header='  Enter 执行   ↑↓/Ctrl+P/N 移动   Esc 取消' \
+        --preview-window='right,56%,border-rounded,wrap' \
+        --preview-label=' 操作说明 ' \
+        --preview="bash '$SCRIPT_PATH' --preview {3}" \
+        --color="$(ui_fzf_colors)"
+  )"
+  status=$?
+  set -e
+  [[ "$status" -eq 0 ]] || return 0
+
+  IFS=$'\t' read -r _ _ action _ <<< "$selected"
+  case "$action" in
+    cancel|"")
+      return 0
+      ;;
+    quit)
+      clear
+      ui_banner "退出 Niri 会话" "niri-quit · 返回登录界面"
+      ui_panel_open "退出请求" "$UI_ICON_WARN"
+      ui_panel_kv "当前会话" "Niri"
+      ui_panel_kv "打开窗口" "$(window_count)"
+      ui_panel_stat warn "即将关闭当前桌面会话，未保存内容可能丢失。"
+      ui_panel_close
+      printf '\n'
+      if niri msg action quit --skip-confirmation; then
+        return 0
+      fi
+      ui_err "退出 Niri 失败，请检查 niri IPC 状态。"
+      pause_after_failure
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  --preview)
+    print_preview "${2:-cancel}"
+    exit 0
+    ;;
+  -h|--help)
+    usage
+    exit 0
+    ;;
+  "")
+    ;;
+  *)
+    ui_err "未知参数: %s" "$1"
+    usage >&2
+    exit 2
+    ;;
+esac
+
+# 快捷键从 Niri 直接 spawn 时没有终端；沿用 niri-keys 模式自动打开 kitty。
+if [[ "${NIRI_QUIT_KITTY:-0}" != "1" ]]; then
+  if ! command -v kitty >/dev/null 2>&1; then
+    notify-send "Niri 退出" "未找到 kitty，无法打开退出菜单。" 2>/dev/null || true
+    exit 127
+  fi
+  exec env NIRI_QUIT_KITTY=1 kitty \
+    --class=niri-quit \
+    --title="退出 Niri 会话" \
+    --override initial_window_width=820 \
+    --override initial_window_height=500 \
+    "$SCRIPT_PATH"
+fi
+
+# 同一时间只保留一个退出菜单，避免重复按快捷键打开多个确认窗口。
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp}"
+exec 9>"$RUNTIME_DIR/niri-quit.lock"
+flock -n 9 2>/dev/null || exit 0
+
+run_menu

@@ -1,0 +1,25 @@
+pkgbase = wechat-appimage
+	pkgdesc = Wechat for Linux
+	pkgver = 4.1.1
+	pkgrel = 4
+	url = https://linux.weixin.qq.com
+	arch = x86_64
+	license = custom
+	depends = zlib
+	depends = hicolor-icon-theme
+	depends = fuse2
+	depends = xcb-util-renderutil
+	depends = xcb-util-image
+	depends = xcb-util-wm
+	provides = wechat
+	noextract = WechatLinux-1783692407-x86_64.AppImage
+	options = !strip
+	options = !debug
+	source = LICENSE
+	source = wechat
+	sha256sums = 4348aee67f0c40bd29ec370fff75e24384907514a76104b43354d395c436f0f2
+	sha256sums = c18843571e9626fddadec48f24389da44a3ee29d7d5439db7b51182d73a15019
+	source_x86_64 = WechatLinux-1783692407-x86_64.AppImage
+	sha256sums_x86_64 = 457dba02b91b031cdd4412eee074fbbffb9d9d06b1e50fc1822d34870e114990
+
+pkgname = wechat-appimage

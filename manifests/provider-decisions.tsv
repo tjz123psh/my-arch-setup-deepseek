@@ -1,0 +1,9 @@
+# schema=1
+# capability<TAB>candidate-package<TAB>channel<TAB>repository<TAB>decision<TAB>exclusive-group<TAB>replacement<TAB>reason
+fuzzel-launcher	fuzzel-ime-git	aur	aur	selected	fuzzel-provider	-	Preserve the current input-method-capable launcher; changed AUR recipe or unavailable source blocks rather than falling back
+fuzzel-launcher	fuzzel	pacman	extra	rejected	fuzzel-provider	fuzzel-ime-git	Official Fuzzel lacks the confirmed current IME behavior and must not be installed as a guessed fallback
+notification-owner	dms-shell	pacman	extra	selected	notification-owner	-	The current shared DMS desktop owns notifications in both selected compositor sessions
+notification-owner	mako	pacman	extra	rejected	notification-owner	dms-shell	Mako is absent on the golden host and survives only as stale starter history, not a target package
+login-manager	greetd	pacman	extra	manual-deferred	login-manager	-	Current greetd state is physical-host evidence but login-manager changes remain outside the executable restore path
+login-manager	sddm	pacman	extra	rejected	login-manager	greetd	The superseded SDDM fallback must never be installed or enabled automatically
+dms-greeter	greetd-dms-greeter-git	aur	aur	observed-rejected	dms-greeter	fixed-source-unresolved	The observed rolling greeter package violates the fixed-source requirement and is never installed by this release

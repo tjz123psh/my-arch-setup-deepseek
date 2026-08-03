@@ -1,0 +1,15 @@
+[Unit]
+Description=Penpot MCP and local plugin servers
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pang/.config/opencode/node_modules/@penpot/mcp
+Environment=PATH=/home/pang/.config/opencode/node_modules/.bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/home/pang/.config/opencode/node_modules/.bin/corepack pnpm run start
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

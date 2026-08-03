@@ -1,0 +1,135 @@
+/*
+ * Nemo 文件管理器精修样式
+ * ---------------------------------------------------------------
+ * 作用域全部限定在 .nemo-window 下，只影响 Nemo，不动其它 GTK 应用。
+ * 颜色全部引用 DMS matugen 动态色变量（@accent_bg_color 等），
+ * 随壁纸/主题自动变化，与桌面配色保持一致。
+ * 由 ~/.config/gtk-3.0/gtk.css 通过 @import 加载。
+ * 备份见 /tmp/gtk3-gtk.css.bak；删除本文件即可完全还原。
+ * nemo 仍是 GTK3 应用，无法做到 libadwaita 的胶囊侧栏等现代外观，
+ * 此处只在 GTK3 框架内提升精致度：圆角、强调色选中、悬停反馈、间距。
+ */
+
+/* ===== 侧边栏（我的电脑 / 书签 / 设备 / 网络）===== */
+.nemo-window .nemo-places-sidebar.frame,
+.nemo-window .sidebar.frame {
+  border-width: 0;               /* 去掉侧栏与主区之间的生硬分隔线 */
+}
+
+/* 侧边栏行距加大，避免条目拥挤 */
+.nemo-window .sidebar .cell,
+.nemo-window .places-treeview .cell {
+  padding: 4px 2px;
+}
+
+/* 侧边栏悬停：柔和背景 + 左侧强调条 */
+.nemo-window .places-treeview.view:hover,
+.nemo-window .places-treeview.view.cell:hover {
+  background-color: alpha(@accent_bg_color, 0.14);
+}
+
+/* 侧边栏选中项：强调色背景 + 前景，圆角 */
+.nemo-window .places-treeview.view:selected,
+.nemo-window .places-treeview.view.cell:selected {
+  background-color: @accent_bg_color;
+  color: @accent_fg_color;
+  border-radius: 8px;
+}
+
+/* 侧边栏磁盘占用条配色跟随主题 */
+.nemo-window .places-treeview {
+  -NemoPlacesTreeView-disk-full-bg-color: alpha(@window_fg_color, 0.2);
+  -NemoPlacesTreeView-disk-full-fg-color: @accent_bg_color;
+  -NemoPlacesTreeView-disk-full-bar-width: 3px;
+  -NemoPlacesTreeView-disk-full-bar-radius: 2px;
+}
+
+/* ===== 顶部工具栏 ===== */
+/* 工具栏图标按钮：圆角 + 悬停/按下反馈 */
+.nemo-window .primary-toolbar button.image-button,
+.nemo-window .primary-toolbar toolbutton button,
+.nemo-window .primary-toolbar button {
+  border-radius: 8px;
+  padding: 4px 6px;
+}
+
+.nemo-window .primary-toolbar button:hover {
+  background-color: alpha(@accent_bg_color, 0.16);
+}
+
+.nemo-window .primary-toolbar button:active,
+.nemo-window .primary-toolbar button:checked {
+  background-color: alpha(@accent_bg_color, 0.28);
+}
+
+/* ===== 路径栏（面包屑按钮）===== */
+.nemo-window .nemo-pathbar-button,
+.nemo-window NemoPathbarButton,
+.nemo-window .primary-toolbar .path-bar button {
+  border-radius: 8px;
+  padding: 2px 10px;
+}
+
+.nemo-window .nemo-pathbar-button:hover,
+.nemo-window .primary-toolbar .path-bar button:hover {
+  background-color: alpha(@accent_bg_color, 0.16);
+}
+
+.nemo-window .nemo-pathbar-button:checked,
+.nemo-window .primary-toolbar .path-bar button:checked {
+  background-color: alpha(@accent_bg_color, 0.24);
+  color: @window_fg_color;
+}
+
+/* ===== 主视图：图标 / 列表选中态 ===== */
+/* 图标视图条目选中：圆角高亮 */
+.nemo-window .nemo-canvas-item:selected,
+.nemo-canvas-item:selected {
+  background-color: alpha(@accent_bg_color, 0.85);
+  color: @accent_fg_color;
+  border-radius: 8px;
+}
+
+.nemo-window .nemo-canvas-item:hover {
+  border-radius: 8px;
+}
+
+/* 列表视图行选中 */
+.nemo-window .view:selected,
+.nemo-window treeview.view:selected {
+  background-color: @accent_bg_color;
+  color: @accent_fg_color;
+}
+
+/* ===== 搜索/重命名输入框 ===== */
+.nemo-window .nemo-window-pane widget.entry,
+.nemo-window entry {
+  border-radius: 8px;
+  padding: 3px 8px;
+}
+
+.nemo-window entry:focus {
+  border-color: @accent_bg_color;
+}
+
+/* ===== 滚动条变细，观感更清爽 ===== */
+.nemo-window scrollbar {
+  background-color: transparent;
+}
+
+.nemo-window scrollbar slider {
+  min-width: 8px;
+  min-height: 8px;
+  border-radius: 8px;
+  background-color: alpha(@window_fg_color, 0.28);
+}
+
+.nemo-window scrollbar slider:hover {
+  background-color: alpha(@window_fg_color, 0.45);
+}
+
+/* ===== 底部状态栏 ===== */
+.nemo-window .nemo-status-bar,
+.nemo-window statusbar {
+  padding: 2px 8px;
+}

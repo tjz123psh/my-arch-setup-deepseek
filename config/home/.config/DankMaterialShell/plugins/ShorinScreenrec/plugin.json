@@ -1,0 +1,16 @@
+{
+  "id": "shorinScreenrec",
+  "name": "Shorin Screen Recorder",
+  "description": "顶栏录屏状态与控制：空闲显示相机图标，录制时显示红点与计时；点击弹出全屏/区域/GIF/停止/设置菜单。",
+  "version": "1.0.0",
+  "author": "pang",
+  "type": "widget",
+  "capabilities": ["dankbar-widget"],
+  "component": "./ShorinScreenrecWidget.qml",
+  "icon": "screen_record",
+  "settings": "./ShorinScreenrecSettings.qml",
+  "startupCheck": "./StartupCheck.qml",
+  "requires_dms": ">=0.1.18",
+  "dependencies": ["shorin-screenrec-menu"],
+  "permissions": ["settings_read", "settings_write", "process"]
+}

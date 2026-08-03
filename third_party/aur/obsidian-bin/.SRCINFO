@@ -1,0 +1,27 @@
+pkgbase = obsidian
+	pkgdesc = A powerful knowledge base over a local folder of plain text Markdown files (official bundled-Electron binary)
+	pkgver = 1.12.7
+	pkgrel = 1
+	url = https://github.com/obsidianmd/obsidian-releases
+	install = obsidian-bin.install
+	arch = x86_64
+	license = custom
+	depends = gtk3
+	depends = libnotify
+	depends = nss
+	depends = libxss
+	depends = libxtst
+	depends = xdg-utils
+	depends = at-spi2-core
+	depends = util-linux-libs
+	depends = libsecret
+	optdepends = libappindicator: tray icon support
+	provides = obsidian
+	conflicts = obsidian
+	options = !strip
+	source = obsidian-bin
+	source = obsidian_1.12.7_amd64.deb::https://github.com/obsidianmd/obsidian-releases/releases/download/v1.12.7/obsidian_1.12.7_amd64.deb
+	sha256sums = a94e20705d4b67501f225d74f4460b746a258e52aa6bc522aed1e26ac42dbef9
+	sha256sums = 3644e3ef19bcd23db4d17f7c73311b5245429391a2a48b361da93375f59712b0
+
+pkgname = obsidian-bin

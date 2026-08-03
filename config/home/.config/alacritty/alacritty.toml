@@ -1,0 +1,66 @@
+# =============================================================================
+# Alacritty 配置 — 参照 kitty 外观
+# =============================================================================
+
+[general]
+# 导入颜色主题（从 kitty dank-theme.conf 移植）
+import = ["~/.config/alacritty/dank-theme.toml"]
+live_config_reload = true
+
+# =============================================================================
+# 窗口
+# =============================================================================
+[window]
+padding = { x = 5, y = 5 }                 # 对应 kitty window_padding_width 5
+opacity = 0.8                               # 对应 kitty background_opacity 0.8
+decorations = "None"                        # 对应 kitty hide_window_decorations yes
+
+# =============================================================================
+# 滚动
+# =============================================================================
+[scrolling]
+history = 3000                              # 对应 kitty scrollback_lines 3000
+
+# =============================================================================
+# 字体 — JetBrainsMono Nerd Font 15pt
+# =============================================================================
+[font]
+size = 12.0
+normal = { family = "JetBrainsMono Nerd Font", style = "Regular" }
+bold = { family = "JetBrainsMono Nerd Font", style = "Bold" }
+italic = { family = "JetBrainsMono Nerd Font", style = "Italic" }
+bold_italic = { family = "JetBrainsMono Nerd Font", style = "Bold Italic" }
+
+# =============================================================================
+# 终端
+# =============================================================================
+[terminal]
+shell = { program = "/usr/bin/fish" }       # 对应 kitty shell /usr/bin/fish
+
+# =============================================================================
+# 选择
+# =============================================================================
+[selection]
+save_to_clipboard = true                    # 对应 kitty copy_on_select yes
+
+# =============================================================================
+# 光标
+# =============================================================================
+[cursor]
+style = { shape = "Block", blinking = "Off" }  # 对应 kitty cursor_shape block
+blink_interval = 1000                          # 对应 kitty cursor_blink_interval 1（秒→毫秒）
+
+# =============================================================================
+# 键盘快捷键
+# =============================================================================
+[keyboard]
+bindings = [
+  # kitty: ctrl+shift+n → new_window
+  { key = "N", mods = "Control|Shift", action = "CreateNewWindow" },
+
+  # 字体大小调整（kitty: ctrl+plus/minus/0）
+  # Alacritty 默认使用 Ctrl+Shift+= / - / 0，这里额外添加 Ctrl 版本以匹配 kitty 习惯
+  { key = "Plus",  mods = "Control", action = "IncreaseFontSize" },
+  { key = "Minus", mods = "Control", action = "DecreaseFontSize" },
+  { key = "Key0",  mods = "Control", action = "ResetFontSize" },
+]

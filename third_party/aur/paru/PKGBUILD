@@ -1,0 +1,63 @@
+# Maintainer: Morgan <morganamilo@archlinux.org>
+# Local fixed bootstrap recipe: pinned upstream source plus an offline Cargo vendor archive.
+
+pkgname=paru
+pkgver=2.1.0
+pkgrel=5
+pkgdesc='Feature packed AUR helper'
+arch=('x86_64')
+url='https://github.com/Morganamilo/paru'
+license=('GPL-3.0-or-later')
+makedepends=('cargo')
+depends=('git' 'pacman' 'libalpm.so>=14')
+optdepends=('bat: colored PKGBUILD printing' 'devtools: build in chroot and downloading PKGBUILDs')
+backup=('etc/paru.conf')
+options=('!debug')
+source=(
+  "paru-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz"
+  'Cargo.lock.libalpm16'
+  "paru-vendor-${pkgver}.tar.zst"
+)
+sha256sums=(
+  'eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727'
+  '4231e3bfa8172ad2c0c79322921fd974be97f1dec00bf970e9892ada9a98b323'
+  '08de76ee34cca3c04b5dc4fae14f5f9b0269c5f2b4e3a19b435c984b99cdb587'
+)
+
+prepare() {
+  install -Dm644 "${srcdir}/Cargo.lock.libalpm16" "${srcdir}/paru-${pkgver}/Cargo.lock"
+  install -d "${srcdir}/paru-${pkgver}/.cargo"
+  cat > "${srcdir}/paru-${pkgver}/.cargo/config.toml" <<EOF
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "${srcdir}/vendor"
+EOF
+}
+
+build() {
+  cd "${srcdir}/paru-${pkgver}" || return 1
+
+  local -a feature_args=()
+  if pacman -T pacman-git >/dev/null 2>&1; then
+    feature_args=(--features git)
+  fi
+
+  cargo build --frozen --offline "${feature_args[@]}" --release --target-dir target
+  ./scripts/mkmo locale/
+}
+
+package() {
+  cd "${srcdir}/paru-${pkgver}" || return 1
+
+  install -Dm755 target/release/paru "${pkgdir}/usr/bin/paru"
+  install -Dm644 paru.conf "${pkgdir}/etc/paru.conf"
+  install -Dm644 man/paru.8 "${pkgdir}/usr/share/man/man8/paru.8"
+  install -Dm644 man/paru.conf.5 "${pkgdir}/usr/share/man/man5/paru.conf.5"
+  install -Dm644 completions/bash "${pkgdir}/usr/share/bash-completion/completions/paru.bash"
+  install -Dm644 completions/fish "${pkgdir}/usr/share/fish/vendor_completions.d/paru.fish"
+  install -Dm644 completions/zsh "${pkgdir}/usr/share/zsh/site-functions/_paru"
+  install -d "${pkgdir}/usr/share"
+  cp -r locale "${pkgdir}/usr/share/"
+}

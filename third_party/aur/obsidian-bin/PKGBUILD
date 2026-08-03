@@ -1,0 +1,40 @@
+# Maintainer: NekoLOvO <nekolyin@qq.com>
+# Local x86_64-only fixed recipe derived from the reviewed obsidian split pkgbase.
+
+pkgbase=obsidian
+pkgname=obsidian-bin
+pkgver=1.12.7
+pkgrel=1
+pkgdesc='A powerful knowledge base over a local folder of plain text Markdown files (official bundled-Electron binary)'
+arch=('x86_64')
+url='https://github.com/obsidianmd/obsidian-releases'
+license=('custom')
+depends=('gtk3' 'libnotify' 'nss' 'libxss' 'libxtst' 'xdg-utils' 'at-spi2-core' 'util-linux-libs' 'libsecret')
+optdepends=('libappindicator: tray icon support')
+conflicts=('obsidian')
+provides=('obsidian')
+options=('!strip')
+install=obsidian-bin.install
+source=(
+  'obsidian-bin'
+  "obsidian_${pkgver}_amd64.deb::${url}/releases/download/v${pkgver}/obsidian_${pkgver}_amd64.deb"
+)
+sha256sums=(
+  'a94e20705d4b67501f225d74f4460b746a258e52aa6bc522aed1e26ac42dbef9'
+  '3644e3ef19bcd23db4d17f7c73311b5245429391a2a48b361da93375f59712b0'
+)
+
+package() {
+  local data_archives=("${srcdir}"/data.tar.*)
+  if (( ${#data_archives[@]} != 1 )) || [[ ! -f ${data_archives[0]} ]]; then
+    error 'expected exactly one data.tar.* payload from the pinned Debian package'
+    return 1
+  fi
+  bsdtar -xf "${data_archives[0]}" -C "${pkgdir}/"
+  sed -i 's|/opt/Obsidian/obsidian|obsidian|' "${pkgdir}/usr/share/applications/obsidian.desktop"
+  install -Dm755 "${srcdir}/obsidian-bin" "${pkgdir}/usr/bin/obsidian"
+  install -Dm644 "${pkgdir}/opt/Obsidian/LICENSE.electron.txt" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.electron.txt"
+  install -Dm644 "${pkgdir}/opt/Obsidian/LICENSES.chromium.html" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSES.chromium.html"
+}

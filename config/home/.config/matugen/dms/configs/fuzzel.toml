@@ -1,0 +1,6 @@
+# DMS matugen plugin config (written verbatim into the merged matugen run).
+# This dir bypasses DMS's naive section extraction, so the fuzzel template is
+# picked up reliably. Paths must be absolute. See ~/md/linux.
+[templates.fuzzel]
+input_path = '/home/pang/.config/matugen/templates/fuzzel.ini'
+output_path = '/home/pang/.config/fuzzel/colors.ini'

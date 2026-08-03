@@ -1,0 +1,34 @@
+# schema=1
+# module<TAB>availability<TAB>kind<TAB>requires-all<TAB>requires-any<TAB>purpose
+desktop-shared	available	selectable	-	-	Shared desktop applications and personal workstation configuration
+developer-editor	available	selectable	-	-	Neovim and reviewed editor tooling/configuration
+wm-niri	available	selectable	desktop-shared	-	Niri user session packages and compositor-specific configuration
+wm-hyprland	available	selectable	desktop-shared	-	Hyprland user session packages and compositor-specific configuration
+dms-niri-greeter	unavailable	dependency	-	-	Niri compositor runtime for the DMS greeter, not a Niri user session
+dms-greetd	unavailable	selectable	desktop-shared,dms-niri-greeter	wm-niri,wm-hyprland	Future fixed-source DMS and greetd login foundation
+personal-scripts	available	selectable	-	-	Reviewed personal maintenance/package/media helper scripts for same-user restore
+personal-autostart	available	selectable	-	-	Reviewed personal autostart entries for same-user graphical session restore
+asus-hardware	available	selectable	archlinuxcn-trust	-	Reviewed same-ASUS user-level hardware configuration
+personal-user-services	available	selectable	-	-	Reviewed user systemd unit files restored without enabling services
+base-preconditions	available	selectable	-	-	Manual base, boot, network and core-runtime preconditions verified without taking ownership
+archlinuxcn-trust	available	dependency	-	-	Pinned keyring and exact repository trust required by selected archlinuxcn packages
+build-foundation	available	selectable	-	-	Official build and source-control foundation required before declared third-party builds
+repository-tools	planning	selectable	build-foundation,archlinuxcn-trust	-	Reviewed package maintenance and repository tooling
+fonts	available	selectable	-	-	Fonts required by the reviewed desktop and editor configuration
+daily-apps	planning	selectable	-	-	Personal daily applications installed without account or profile migration
+desktop-apps	planning	selectable	desktop-shared	-	Shared graphical applications and file-management utilities
+input-fcitx-rime	available	selectable	desktop-shared,archlinuxcn-trust	-	Chinese Fcitx5 and Rime packages plus reviewed input configuration
+cli-tools	planning	selectable	-	-	Command-line workstation utilities used by the user and reviewed scripts
+development-toolchain	planning	selectable	build-foundation,archlinuxcn-trust	-	Language runtimes, compilers and development diagnostics
+container-tools	planning	selectable	-	-	Docker container runtime and compose tooling
+storage-maintenance	planning	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
+virtualization	planning	selectable	-	-	KVM, libvirt and graphical virtual-machine tooling
+kernel-support	planning	selectable	base-preconditions	-	Matching headers for manually selected kernels
+audio	available	selectable	-	-	PipeWire, WirePlumber, firmware and audio compatibility packages
+bluetooth	planning	selectable	desktop-shared	-	BlueZ diagnostics and one-session Blueman integration
+power	planning	selectable	-	-	Selected power-profiles policy owner
+graphics-amd	planning	selectable	base-preconditions	-	AMD microcode, Mesa and RADV graphics baseline
+graphics-nvidia	planning	selectable	kernel-support,graphics-amd	-	Hardware-gated NVIDIA open DKMS and user-space graphics stack
+hardware-tools	planning	selectable	-	-	Firmware and physical hardware inspection utilities
+recording	planning	selectable	desktop-shared,archlinuxcn-trust	-	Wayland screenshot and dual-engine recording dependencies
+ocr	planning	selectable	-	-	Chinese and English OCR tooling

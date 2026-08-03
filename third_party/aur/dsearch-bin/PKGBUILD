@@ -1,0 +1,35 @@
+# Maintainer: Avenge Media <avengemediallc at gmail dot com>
+
+pkgname=dsearch-bin
+_pkgname=dsearch
+pkgver=0.3.2
+pkgrel=1
+pkgdesc='Fast filesystem search service'
+arch=('x86_64')
+url='https://github.com/AvengeMedia/danksearch'
+license=('MIT')
+provides=('dsearch')
+conflicts=('dsearch')
+options=('!strip' '!debug')
+_upstream_commit=1269b4688cc94cbd271e1cbbf19a6e7caa2293de
+_rawurl="https://raw.githubusercontent.com/AvengeMedia/danksearch/${_upstream_commit}"
+
+source=(
+  "LICENSE-${pkgver}::${_rawurl}/LICENSE"
+  "README-${pkgver}.md::${_rawurl}/README.md"
+  'dsearch.service'
+)
+source_x86_64=("dsearch-x86_64-${pkgver}.gz::${url}/releases/download/v${pkgver}/dsearch-linux-amd64.gz")
+sha256sums=(
+  '4cee96286c5b7da9763a4694868bb1853b33bb1558821e0c609ad2eabd426bfa'
+  '6a4cb2d57168eff67f565dc45b71cf118b6c02f69c3fa35184fd670196c54306'
+  '6908e1e996cf4c457543dbf108e70c9dda7b03229dd11badd3a28598373e5b4b'
+)
+sha256sums_x86_64=('2c9e433f82948c77488543d25955a170835755a39d29ecc2240a8e4d74be63fd')
+
+package() {
+  install -Dm755 "${srcdir}/dsearch-${CARCH}-${pkgver}" "${pkgdir}/usr/bin/dsearch"
+  install -Dm644 "${srcdir}/dsearch.service" "${pkgdir}/usr/lib/systemd/user/dsearch.service"
+  install -Dm644 "${srcdir}/LICENSE-${pkgver}" "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 "${srcdir}/README-${pkgver}.md" "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

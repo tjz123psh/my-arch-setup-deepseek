@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
+# shellcheck source=lib/ui.sh
+. "$UI_LIB"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+_PANEL_OPEN=false
+panel() {
+  [[ "$_PANEL_OPEN" == true ]] && ui_panel_close
+  ui_panel_open "$1" "${2:-}"
+  _PANEL_OPEN=true
+}
+panel_end() {
+  [[ "$_PANEL_OPEN" == true ]] && ui_panel_close
+  _PANEL_OPEN=false
+}
+
+# 卡片内的说明行（次要文本，跟在状态行下面）
+reason_line() {
+  ui_panel_line "${UI_DIM}    $1${UI_RESET}"
+}
+
+declare -A INSTALLED_PKGS=()
+RECOMMEND_QUERY_FAILED=0
+
+load_installed_pkgs() {
+  local pkg output
+
+  if ! output="$(pacman -Qq 2>&1)"; then
+    ui_err "pacman 已安装包查询失败: %s" "$output"
+    return 1
+  fi
+  while IFS= read -r pkg; do
+    [[ -n "$pkg" ]] && INSTALLED_PKGS["$pkg"]=1
+  done <<< "$output"
+}
+
+pkg_installed() { [[ -n "${INSTALLED_PKGS[$1]:-}" ]]; }
+
+first_gpu_line() {
+  if have lspci; then
+    LC_ALL=C lspci | awk '/VGA|3D|Display/ {print; exit}'
+  fi
+}
+
+cpu_vendor() {
+  if have lscpu; then
+    LC_ALL=C lscpu | awk -F: '/Vendor ID/ {gsub(/^[ \t]+/, "", $2); print $2; exit}'
+  fi
+}
+
+has_bluetooth_controller() {
+  [[ -d /sys/class/bluetooth ]] && find /sys/class/bluetooth -mindepth 1 -maxdepth 1 2>/dev/null | grep -q .
+}
+
+unique_join() {
+  if [ "$#" -eq 0 ]; then
+    return 0
+  fi
+  printf '%s\n' "$@" | awk 'NF && !seen[$0]++' | paste -sd' ' -
+}
+
+install_pkgs=()
+conditional_pkgs=()
+optional_pkgs=()
+
+record_missing() {
+  local pkg="$1"
+  local level="$2"
+
+  case "$level" in
+    必要|推荐) install_pkgs+=("$pkg") ;;
+    条件) conditional_pkgs+=("$pkg") ;;
+    可选) optional_pkgs+=("$pkg") ;;
+  esac
+}
+
+check_item() {
+  local pkg="$1"
+  local cmd="$2"
+  local level="$3"
+  local label="$4"
+  local reason="$5"
+  local prefix
+
+  prefix="[$level] $pkg — $label"
+
+  if pkg_installed "$pkg"; then
+    ui_panel_stat ok "$prefix"
+    reason_line "$reason"
+    return 0
+  fi
+
+  if [[ -n "$cmd" ]] && have "$cmd"; then
+    ui_panel_stat warn "$prefix 未显式安装，但命令已可用: $cmd"
+    reason_line "$reason"
+    return 0
+  fi
+
+  case "$level" in
+    必要) ui_panel_stat miss "$prefix" ;;
+    推荐|条件) ui_panel_stat warn "$prefix" ;;
+    可选) ui_panel_stat info "$prefix" ;;
+    *) ui_panel_stat warn "$prefix" ;;
+  esac
+  reason_line "$reason"
+  record_missing "$pkg" "$level"
+}
+
+check_group() {
+  local title="$1"
+  shift
+  local item pkg cmd level label reason
+
+  panel "$title" ""
+  for item in "$@"; do
+    IFS='|' read -r pkg cmd level label reason <<< "$item"
+    check_item "$pkg" "$cmd" "$level" "$label" "$reason"
+  done
+}
+
+main() {
+  local vendor gpu virt microcode_pkg microcode_reason
+  local core_items hardware_items desktop_items terminal_items
+  local install_line conditional_line optional_line
+  local vendor_rc=127 gpu_rc=127 virt_rc=127 strict=0
+
+  if (( $# > 1 )); then
+    ui_err "参数过多；用法: recommend-check [--strict]"
+    return 2
+  fi
+  case "${1:-}" in
+    --strict) strict=1 ;;
+    -h|--help) printf '用法: recommend-check [--strict]\n'; return 0 ;;
+    "") ;;
+    *) ui_err "未知参数: %s" "$1"; return 2 ;;
+  esac
+  ui_tally_reset
+
+  ui_banner "推荐补齐" "recommend-check · 只读检查，不安装、不改配置"
+
+  if ! have pacman; then
+    panel "环境错误" ""
+    ui_panel_stat miss "缺少 pacman；这不是可识别的 Arch 环境"
+    panel_end
+    exit 1
+  fi
+  if ! load_installed_pkgs; then
+    panel "环境错误" ""
+    ui_panel_stat err "无法读取 pacman 已安装包数据库"
+    panel_end
+    return 1
+  fi
+
+  vendor=""
+  if have lscpu; then
+    vendor_rc=0
+    vendor="$(cpu_vendor 2>&1)" || vendor_rc=$?
+    if [[ "$vendor_rc" -ne 0 ]]; then vendor=""
+    elif [[ -z "$vendor" ]]; then vendor_rc=1
+    fi
+  fi
+  gpu=""
+  if have lspci; then
+    gpu_rc=0
+    gpu="$(first_gpu_line 2>&1)" || gpu_rc=$?
+    if [[ "$gpu_rc" -ne 0 ]]; then gpu=""
+    elif [[ -z "$gpu" ]]; then gpu_rc=1
+    fi
+  fi
+  virt=""
+  if have systemd-detect-virt; then
+    virt_rc=0
+    virt="$(systemd-detect-virt 2>&1)" || virt_rc=$?
+  fi
+  if [[ "$virt_rc" -eq 1 && ( -z "$virt" || "$virt" == "none" ) ]]; then
+    virt="physical"
+    virt_rc=0
+  elif [[ "$virt_rc" -eq 0 && -z "$virt" ]]; then
+    virt="physical"
+  elif [[ "$virt_rc" -ne 0 ]]; then
+    virt="unknown"
+  fi
+
+  panel "当前环境" ""
+  ui_panel_kv "运行环境" "${virt:-unknown}"
+  ui_panel_kv "CPU 厂商" "${vendor:-unknown}"
+  ui_panel_kv "GPU" "${gpu:-unknown}"
+  if [[ "$vendor_rc" -ne 0 ]]; then
+    ui_panel_stat warn "CPU 厂商查询失败（退出码 $vendor_rc）"
+    RECOMMEND_QUERY_FAILED=1
+  fi
+  if [[ "$gpu_rc" -ne 0 ]]; then
+    ui_panel_stat warn "GPU 查询失败（退出码 $gpu_rc）"
+    RECOMMEND_QUERY_FAILED=1
+  fi
+  if [[ "$virt_rc" -ne 0 ]]; then
+    ui_panel_stat warn "虚拟化环境查询失败（退出码 $virt_rc）"
+    RECOMMEND_QUERY_FAILED=1
+  fi
+  if has_bluetooth_controller; then
+    ui_panel_kv "蓝牙控制器" "detected"
+  else
+    ui_panel_kv "蓝牙控制器" "未检测到或当前环境未暴露"
+  fi
+
+  core_items=(
+    "efibootmgr|efibootmgr|必要|UEFI 启动项检查|双系统实机上用来确认 Windows Boot Manager 和 Arch/GRUB 启动项是否还在。"
+    "os-prober|os-prober|必要|GRUB 探测 Windows|生成 grub.cfg 前确认 Windows 是否能被发现，避免装完 Arch 后菜单没有 Windows。"
+    "rsync|rsync|必要|安全恢复 HOME|backup-restore 用它生成精确覆盖预览，并集中保存被覆盖文件的回滚副本。"
+    "fakeroot|fakeroot|必要|官方仓库更新检查|pacman-contrib 的 checkupdates 需要它建立临时数据库；缺失时待更新列表无法检查 Pacman 更新。"
+    "shellcheck|shellcheck|推荐|维护脚本静态检查|改 term-menu、sysup、clean 等脚本前先跑，能提前发现常见 Bash 问题。"
+    "downgrade|downgrade|可选|pacd 降级工具|pacd 强依赖 downgrade；不需要包版本回退时可以不装。"
+    "strace|strace|可选|pacrrr 残留追踪|pacrrr 需要用 strace 追踪应用读写路径；不用残留追踪清理时可以不装。"
+    "upower|upower|可选|check-battery 电池读取|check-battery 通过 upower 读取电池状态；台式机或不用该脚本时可以不装。"
+  )
+
+  hardware_items=(
+    "smartmontools|smartctl|推荐|SSD SMART 健康检查|实机迁移和长期使用时查看 NVMe/SATA 健康、通电时间和错误计数。"
+    "fwupd|fwupdmgr|推荐|固件更新检查|支持的机器可以查看 BIOS、SSD、扩展坞等固件更新；不会自动更新。"
+    "vulkan-tools|vulkaninfo|推荐|Vulkan / GPU 诊断|gpu-check 需要它输出 Vulkan 摘要，游戏和硬件加速排障也常用。"
+    "btop|btop|推荐|终端资源监控|比 top 更直观，适合看 CPU、内存、磁盘和进程占用。"
+    "powertop|powertop|推荐|功耗诊断|笔记本实机上看耗电来源和省电建议；台式机可选。"
+  )
+
+  terminal_items=(
+    "bat|bat|推荐|更易读的文件查看|在终端中以语法高亮查看配置和脚本；terminal-tools 启用后交互式 cat 也会使用它，不影响脚本。"
+    "zoxide|zoxide|推荐|快速跳转常用目录|会学习你进入过的目录；启用后 z 关键词跳转，zi 可用 fzf 搜索目录。"
+    "git-delta|delta|推荐|更清楚的 Git 改动|美化 git diff、git log -p 与冲突标记，适合审核维护脚本改动。"
+  )
+
+  desktop_items=(
+    "mpv|mpv|推荐|b23 显式播放器依赖|当前可能由 celluloid 间接带入，实机迁移建议显式安装，避免 b23 断依赖。"
+    "sof-firmware||条件|新机器音频固件|如果实机扬声器、麦克风、声卡异常，优先补它；虚拟机里不一定需要。"
+    "flatpak|flatpak|可选|Flatpak 应用支持|如果继续使用 Flatpak 应用或运行时，再安装；不使用可以不装。"
+  )
+
+  if has_bluetooth_controller; then
+    desktop_items+=("blueman|blueman-manager|可选|蓝牙图形管理|有蓝牙键鼠或耳机时更方便；term-menu 会自动发现 blueman-manager。")
+  else
+    desktop_items+=("blueman|blueman-manager|可选|蓝牙图形管理|当前没检测到蓝牙控制器，实机有蓝牙外设时再考虑。")
+  fi
+
+  if [[ "$virt" != "physical" ]]; then
+    ui_panel_stat info "当前是虚拟机，CPU 微码包按实机 CPU 再决定，不在这里强推。"
+  else
+    case "$vendor" in
+      *AuthenticAMD*|*AMD*)
+        microcode_pkg="amd-ucode"
+        microcode_reason="AMD 实机建议安装，并在 grub-mkconfig 后进入 GRUB 启动链。"
+        ;;
+      *GenuineIntel*|*Intel*)
+        microcode_pkg="intel-ucode"
+        microcode_reason="Intel 实机建议安装，并在 grub-mkconfig 后进入 GRUB 启动链。"
+        ;;
+      *)
+        microcode_pkg=""
+        microcode_reason=""
+        ;;
+    esac
+    if [[ -n "${microcode_pkg:-}" ]]; then
+      hardware_items+=("$microcode_pkg||必要|CPU 微码|$microcode_reason")
+    fi
+  fi
+
+  check_group "双系统 / 脚本维护" "${core_items[@]}"
+  check_group "硬件 / 性能 / 固件" "${hardware_items[@]}"
+  check_group "终端效率（可随时撤销）" "${terminal_items[@]}"
+  check_group "桌面体验 / 条件可选" "${desktop_items[@]}"
+
+  panel "AUR 审查 / AI 可选项" ""
+  if have opencode; then
+    ui_panel_stat ok "[可选] opencode-bin — paru-ui AUR 审查"
+    reason_line "paru-ui -c 和 AUR 安装前审查会调用 opencode；官方仓库包不走这套提示词。"
+  else
+    ui_panel_stat info "[可选] opencode-bin — paru-ui AUR 审查"
+    reason_line "需要 AUR 审查时安装：paru -S --needed opencode-bin"
+  fi
+
+  if [[ -f "$HOME/scripts/share/prompts/aur-review.md" ]]; then
+    ui_panel_stat ok "[必要] aur-review.md — paru-ui AUR 审查提示词"
+    reason_line "提示词存在于 ~/scripts/share/prompts/aur-review.md。"
+  else
+    ui_panel_stat warn "[必要] aur-review.md — paru-ui AUR 审查提示词缺失"
+    reason_line "缺失时 paru-ui -c 不能执行 AUR 审查，普通安装模式会提示并退回常规 AUR 流程。"
+  fi
+
+  panel "建议安装命令" ""
+  install_line="$(unique_join "${install_pkgs[@]}")"
+  conditional_line="$(unique_join "${conditional_pkgs[@]}")"
+  optional_line="$(unique_join "${optional_pkgs[@]}")"
+
+  if [[ -n "$install_line" ]]; then
+    ui_panel_line "${UI_C_TEXT}sudo pacman -S --needed $install_line${UI_RESET}"
+  else
+    ui_panel_stat ok "必要/推荐项已补齐"
+  fi
+
+  if [[ -n "$conditional_line" ]]; then
+    ui_panel_blank
+    ui_panel_line "${UI_C_YELLOW}条件项按问题安装:${UI_RESET}"
+    ui_panel_line "${UI_C_TEXT}sudo pacman -S --needed $conditional_line${UI_RESET}"
+  fi
+
+  if [[ -n "$optional_line" ]]; then
+    ui_panel_blank
+    ui_panel_line "${UI_C_SKY}可选项按需安装:${UI_RESET}"
+    ui_panel_line "${UI_C_TEXT}sudo pacman -S --needed $optional_line${UI_RESET}"
+  fi
+
+  panel_end
+  ui_tally_summary
+  [[ "$RECOMMEND_QUERY_FAILED" -eq 0 ]] || return 1
+  ui_tally_status "$strict"
+}
+
+main "$@"

@@ -1,0 +1,27 @@
+# Maintainer: Lennard Hofmann <lennard dot hofmann at web dot de>
+pkgname=wooz-git
+pkgver=r189.24e2856
+pkgrel=1
+pkgdesc='zoom / magnifier utility for Wayland'
+arch=('x86_64')
+url='https://github.com/negrel/wooz'
+license=('MIT')
+depends=('wayland')
+makedepends=('meson' 'ninja' 'pango' 'wayland-protocols')
+provides=('wooz')
+conflicts=('wooz')
+_commit=24e2856bf2cc13810f00971ae143973840555321
+_source_dir="wooz-${_commit}"
+source=("${_source_dir}.tar.gz::${url}/archive/${_commit}.tar.gz")
+sha256sums=('4286f17ab328d70c15c667850b15c8c08892dac9cc9e440c58e252c06c74dff8')
+
+build() {
+  arch-meson -Dwerror=false build "${_source_dir}"
+  ninja -C build
+}
+
+package() {
+  DESTDIR="${pkgdir}" ninja -C build install
+  install -Dm644 "${_source_dir}/LICENSE" \
+    "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

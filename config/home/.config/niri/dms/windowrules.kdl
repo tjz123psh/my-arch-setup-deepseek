@@ -1,0 +1,119 @@
+// ============================================
+//  窗口规则
+//  由用户维护，DMS 不会覆盖此文件
+// ============================================
+
+// WezTerm 首次打开时宽高报告有误，设空默认列宽让其自适应
+window-rule {
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    default-column-width {}
+}
+
+// GNOME 原生对话框使用 CSD，边框画在窗口背后会难看——关掉背景边框并加圆角
+window-rule {
+    match app-id=r#"^org\.gnome\."#
+    draw-border-with-background false
+    geometry-corner-radius 12
+    clip-to-geometry true
+}
+
+// 系统设置面板设为半屏居中，不浮动（方便左右分屏对比）
+window-rule {
+    match app-id=r#"^gnome-control-center$"#
+    match app-id=r#"^pavucontrol$"#
+    match app-id=r#"^nm-connection-editor$"#
+    default-column-width { proportion 0.5; }
+    open-floating false
+}
+
+// 计算器、蓝牙管理器、xdg-desktop-portal 等小工具窗口默认浮动
+window-rule {
+    match app-id=r#"^org\.gnome\.Calculator$"#
+    match app-id=r#"^gnome-calculator$"#
+    match app-id=r#"^galculator$"#
+    match app-id=r#"^blueman-manager$"#
+    match app-id=r#"^xdg-desktop-portal$"#
+    open-floating true
+}
+
+// Steam 通知 toast 固定在右下角，不抢占焦点
+window-rule {
+    match app-id=r#"^steam$"# title=r#"^notificationtoasts_\d+_desktop$"#
+    default-floating-position x=10 y=10 relative-to="bottom-right"
+    open-focused false
+}
+
+// 终端模拟器使用 CSD（自带标题栏），关掉 niri 的背景边框避免重影
+window-rule {
+    match app-id=r#"^org\.wezfurlong\.wezterm$"#
+    match app-id="Alacritty"
+    match app-id="zen"
+    match app-id="com.mitchellh.ghostty"
+    match app-id="kitty"
+    draw-border-with-background false
+}
+
+// Firefox 画中画 / Zoom 会议窗口——浮动，方便拖放到任意位置
+window-rule {
+    match app-id=r#"firefox$"# title="^Picture-in-Picture$"
+    match app-id="zoom"
+    open-floating true
+}
+
+// niri 快捷键速查窗口，浮动 + 固定宽度 700px
+window-rule {
+    match app-id="niri-keys"
+    open-floating true
+    default-column-width { fixed 700; }
+}
+
+// Niri 退出终端菜单：复用 term-menu 的 fzf 视觉
+window-rule {
+    match app-id="niri-quit"
+    open-floating true
+    open-focused true
+    default-column-width { fixed 820; }
+    default-window-height { fixed 500; }
+    draw-border-with-background false
+}
+
+// 维护菜单：浮动大终端（1920x1080 下取 1600x1000 居中，留边不贴屏）
+window-rule {
+    match app-id="term-menu"
+    open-floating true
+    default-column-width { fixed 1600; }
+    default-window-height { fixed 1000; }
+}
+
+// 浮动终端：小窗口浮动，不干扰当前布局
+window-rule {
+    match app-id="quickterminal"
+    open-floating true
+    default-column-width { fixed 800; }
+}
+
+// QuickShell / DMS 面板默认浮动（它们是 overlay/面板类应用）
+window-rule {
+    match app-id=r#"org.quickshell$"#
+    match app-id=r#"com.danklinux.dms$"#
+    open-floating true
+}
+
+// vellum 截图工具 —— Deskpin 置顶窗口
+// vellum 映射后会自己调 niri 的 move-window-to-floating，这条规则是
+// 优化：消除平铺→浮动的瞬间闪烁，并去掉边框让钉住的截图视觉干净。
+window-rule {
+    match app-id="ai.vellum.pin"
+    open-floating true
+    draw-border-with-background false
+    focus-ring {
+        off
+    }
+}
+
+// vellum OCR / 翻译结果小窗，浮动即可
+window-rule {
+    match app-id="ai.vellum.result"
+    open-floating true
+    default-column-width { fixed 560; }
+}

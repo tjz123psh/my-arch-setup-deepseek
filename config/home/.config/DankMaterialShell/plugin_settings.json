@@ -1,0 +1,9 @@
+{
+  "quickCapture": {
+    "enabled": true,
+    "includeCursor": true
+  },
+  "shorinScreenrec": {
+    "enabled": true
+  }
+}

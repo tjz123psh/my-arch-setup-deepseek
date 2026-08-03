@@ -1,0 +1,132 @@
+// 本配置文件使用 KDL 格式：https://kdl.dev
+// "/-" 用于注释掉后面的节点
+
+// 禁用启动失败时的托盘错误通知
+config-notification {
+    disable-failed
+}
+
+
+// 禁用屏幕四角热区（避免误触）
+gestures {
+    hot-corners {
+        off
+    }
+}
+
+
+// ===== 布局 =====
+
+layout {
+    // 窗口背景色设为透明（由壁纸/主题决定）
+    background-color "transparent"
+    // 聚焦列居中策略：never = 只保证列在屏幕内，不强行居中
+    center-focused-column "never"
+    // Mod+R 循环切换的列宽预设：1/3、1/2、2/3
+    preset-column-widths {
+        proportion 0.33333
+        proportion 0.5
+        proportion 0.66667
+    }
+    // 新窗口默认宽度为输出的一半
+    default-column-width { proportion 0.5; }
+
+    border {
+        off
+        width 4
+        active-color   "#707070"      // 聚焦窗口边框色（中性灰）
+        inactive-color "#d0d0d0"      // 非聚焦窗口边框色（浅灰）
+        urgent-color   "#cc4444"      // 紧急通知边框色（柔和红）
+    }
+    shadow {
+        softness 30
+        spread 5
+        offset x=0 y=5
+        color "#0007"
+    }
+    // 保留区域（留给状态栏/扩展坞），当前未使用
+    struts {
+    }
+}
+
+
+// QuickShell 桌面面板置于背景层内（不遮挡窗口）
+layer-rule {
+    match namespace="^quickshell$"
+    place-within-backdrop true
+}
+
+
+// 窗口概览设置
+overview {
+    // 关闭概览中的工作区阴影
+    workspace-shadow {
+        off
+    }
+    // 概览缩放比例
+    zoom 0.55
+}
+
+
+// ===== 环境变量 =====
+
+environment {
+    // 标记当前桌面环境为 niri
+    XDG_CURRENT_DESKTOP "niri"
+    // GTK 使用 OpenGL 渲染器（解决 N 卡双显卡下 GTK 应用启动慢的问题）
+    GSK_RENDERER "gl"
+    // 启用 opencode 内置 websearch 工具（Exa AI，免费无需 key）
+    OPENCODE_ENABLE_EXA "1"
+}
+
+
+// U 盘自动挂载托盘
+spawn-at-startup "udiskie" "-t"
+
+// 截图音效守护：监听剪贴板，配合截图键的 SIGUSR1 "上膛" 播放快门声（Hyprland 会话同样启用）
+spawn-at-startup "/home/pang/scripts/desktop/screenshot-sound"
+
+
+// 启动时不显示快捷键提示浮层
+hotkey-overlay {
+    skip-at-startup
+}
+
+
+// 优先让窗口省略客户端装饰（边框/标题栏由 niri 接管）
+prefer-no-csd
+// 截图保存路径
+screenshot-path "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+
+
+// 调试：即使 activation token 序列号无效也允许激活窗口
+// （某些 XDG 兼容性差的程序需要此设置）
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+
+
+// 覆盖默认窗口切换快捷键：禁用 Super+Tab，改用 Alt+Tab
+recent-windows {
+    binds {
+        Alt+Tab         { next-window scope="output"; }
+        Alt+Shift+Tab   { previous-window scope="output"; }
+        Alt+grave       { next-window filter="app-id"; }
+        Alt+Shift+grave { previous-window filter="app-id"; }
+    }
+}
+
+
+// ===== 模块引入 =====
+
+include "dms/colors.kdl"
+include "dms/layout.kdl"
+include "dms/alttab.kdl"
+// 已由 keybinds.kdl 完全取代
+// include "dms/binds.kdl"
+include "dms/keybinds.kdl"
+include "dms/outputs.kdl"
+include "dms/input.kdl"
+include "dms/cursor.kdl"
+include "dms/windowrules.kdl"
+include "animations-spring.kdl"
