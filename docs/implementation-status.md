@@ -1,6 +1,6 @@
 # Implementation status and next direction
 
-Status date: 2026-08-02
+Status date: 2026-08-03
 Requirements source: [`confirmed-decisions.md`](confirmed-decisions.md)
 
 ## Objective and unchanged safety boundary
@@ -416,15 +416,23 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
 1. Physical ASUS/hybrid-GPU/output, Bluetooth, real playback/recording,
    suspend/resume, boot/recovery and any Docker/libvirt root-equivalent group
    decision require an explicitly approved real-host plan and human acceptance.
-2. Nine of the twelve non-VM-selected AUR recipes (all remote-fixed recipes:
-   clash-verge-rev-bin, google-chrome, leaf-markdown-viewer-bin, obsidian-bin,
-   wooz-git, claude-code, intellij-idea-ultimate-edition, opencode-bin and
-   flclash-bin) passed real clean-chroot build, install and idempotent rerun in
-   disposable VM batch 2026-08-03. The three local-fixed recipes (linuxqq and
-   wechat AppImages, paru cargo-vendor) remain blocked on private source cache
-   acquisition. Every production-planning module still requires its own module
-   selection in the VM matrix before promotion; no recipe-level subset result is
-   generalized to a module.
+ 2. Nine of the twelve non-VM-selected AUR recipes (all remote-fixed recipes:
+    clash-verge-rev-bin, google-chrome, leaf-markdown-viewer-bin, obsidian-bin,
+    wooz-git, claude-code, intellij-idea-ultimate-edition, opencode-bin and
+    flclash-bin) passed real clean-chroot build, install and idempotent rerun in
+    disposable VM batch 2026-08-03. The three local-fixed recipes (linuxqq and
+    wechat AppImages, paru cargo-vendor) have since had their private source
+    caches acquired on the host and verified against the reviewed manifest
+    (commit `fb3b60b`; paru vendor hash renewed deterministically under
+    cargo 1.97.0, see `third_party/aur/paru/REVIEW.md`). Their build/install
+    validation is the in-progress VM batch 2026-08-03b (see
+    `docs/vm-execution-plan-20260803b.md`); the first build attempt was
+    correctly fail-closed by the plan gate because the injected guest cache
+    landed at `~/aur-sources/` instead of
+    `~/.cache/my-archlinux-setup/aur-sources/` — the fix and remaining steps
+    are recorded in that document. Every production-planning module still
+    requires its own module selection in the VM matrix before promotion; no
+    recipe-level subset result is generalized to a module.
 3. Greeter/login-manager remains deferred and unavailable; SDDM remains rejected
    as a fallback.
 4. Hyprland automated runtime/session checks pass, but a reliable guest-owned
