@@ -8,5 +8,9 @@ dist/
 *.pkg.tar.*
 *.sig
 
+# Python bytecode.
+__pycache__/
+*.pyc
+
 # Editor and OS noise.
 .DS_Store
