@@ -402,7 +402,7 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
 | Manual disk/base/GRUB/network handoff | Contract and frozen VM baseline verified | Real reinstall remains user/manual by design |
 | Exact module/WM selection | Implemented; Niri, Hyprland and both config/process boundaries passed | Greeter remains a separate unavailable module |
 | Official + archlinuxcn trust stages | Canonical VM-selected effects applied, verified, retried and rerun | Existing physical host repository state requires a fresh reviewed reconcile plan |
-| Fixed AUR pipeline | Three VM-selected recipes plus nine further recipes passed real source/build/artifact/install/rerun paths in disposable VM batches, including partial-chroot recovery and .INSTALL/.CHANGELOG metadata acceptance | Three local-fixed recipes (linuxqq/wechat AppImages, paru cargo-vendor) remain blocked on private source cache acquisition |
+| Fixed AUR pipeline | Three VM-selected recipes plus all twelve further recipes passed real source/build/artifact/install/rerun paths in disposable VM batches, including partial-chroot recovery and .INSTALL/.CHANGELOG metadata acceptance | No recipe-level boundary remains; only module promotion and physical-host application are outstanding |
 | User config and privilege wrapper | Hash-bound effects, race-safe backup/restore and idempotence passed | No real HOME apply was performed |
 | Automatic system actions | VM-applicable actions and rollback/state checks passed | Hardware services and privileged groups remain physical/manual |
 | Portal/audio/Fcitx session ownership | Strict Niri/Hyprland checkers passed in all exact selections | Hyprland noninteractive screenshot remained unavailable; real audio devices are physical-only |
@@ -416,23 +416,22 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
 1. Physical ASUS/hybrid-GPU/output, Bluetooth, real playback/recording,
    suspend/resume, boot/recovery and any Docker/libvirt root-equivalent group
    decision require an explicitly approved real-host plan and human acceptance.
- 2. Nine of the twelve non-VM-selected AUR recipes (all remote-fixed recipes:
-    clash-verge-rev-bin, google-chrome, leaf-markdown-viewer-bin, obsidian-bin,
-    wooz-git, claude-code, intellij-idea-ultimate-edition, opencode-bin and
-    flclash-bin) passed real clean-chroot build, install and idempotent rerun in
-    disposable VM batch 2026-08-03. The three local-fixed recipes (linuxqq and
-    wechat AppImages, paru cargo-vendor) have since had their private source
-    caches acquired on the host and verified against the reviewed manifest
-    (commit `fb3b60b`; paru vendor hash renewed deterministically under
-    cargo 1.97.0, see `third_party/aur/paru/REVIEW.md`). Their build/install
-    validation is the in-progress VM batch 2026-08-03b (see
-    `docs/vm-execution-plan-20260803b.md`); the first build attempt was
-    correctly fail-closed by the plan gate because the injected guest cache
-    landed at `~/aur-sources/` instead of
-    `~/.cache/my-archlinux-setup/aur-sources/` — the fix and remaining steps
-    are recorded in that document. Every production-planning module still
-    requires its own module selection in the VM matrix before promotion; no
-    recipe-level subset result is generalized to a module.
+ 2. All twelve non-VM-selected AUR recipes passed real clean-chroot build,
+    install and idempotent rerun in disposable VM batches. The nine
+    remote-fixed recipes (clash-verge-rev-bin, google-chrome,
+    leaf-markdown-viewer-bin, obsidian-bin, wooz-git, claude-code,
+    intellij-idea-ultimate-edition, opencode-bin and flclash-bin) passed in
+    batch 2026-08-03. The three local-fixed recipes (linuxqq and wechat
+    AppImages, paru cargo-vendor) then passed in batch 2026-08-03b after
+    their private source caches were acquired and verified against the
+    reviewed manifest (commit `fb3b60b`; paru vendor hash renewed
+    deterministically under cargo 1.97.0, see
+    `third_party/aur/paru/REVIEW.md`); batch 2026-08-03b also surfaced and
+    fixed a recipe-manifest hash inconsistency (commit `915030e`). See
+    `docs/vm-execution-plan-20260803b.md` for the full record. Every
+    production-planning module still requires its own module selection in
+    the VM matrix before promotion; no recipe-level subset result is
+    generalized to a module.
 3. Greeter/login-manager remains deferred and unavailable; SDDM remains rejected
    as a fallback.
 4. Hyprland automated runtime/session checks pass, but a reliable guest-owned

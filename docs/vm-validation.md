@@ -16,7 +16,8 @@ down and checked offline before deletion; the immutable baseline digest stayed
  non-VM-selected AUR recipes through the low-level pipeline; its command-level
  plan and evidence are in
  [`vm-execution-plan-20260803.md`](vm-execution-plan-20260803.md).
- The in-progress local-fixed recipe batch (linuxqq/wechat/paru) is tracked in
+ The local-fixed recipe batch (linuxqq/wechat/paru) passed build/install/rerun
+ and is recorded complete in
  [`vm-execution-plan-20260803b.md`](vm-execution-plan-20260803b.md).
  This evidence authorizes only the exact VM-proven gates and
  never substitutes for physical acceptance.
@@ -58,8 +59,11 @@ integration flag is true and exactly `base-preconditions`, `archlinuxcn-trust`,
 candidate matrix. The later independent production-readiness manifest is also a
 plan input: it marks the nine modules present in exact VM selections available,
 21 other modules planning and 2 greeter modules unavailable. Thus reviewed
-config availability cannot authorize an unselected effect; all 12 non-VM AUR
-recipes, including FlClash, remain blocked.
+config availability cannot authorize an unselected effect: all 12 non-VM AUR
+recipes passed the recipe-level pipeline in batches 2026-08-03 and
+2026-08-03b, but no recipe-level subset result generalizes to a module —
+every planning module still requires its own module selection in the VM
+matrix before promotion.
 
 Read-only plans are safe before approval:
 

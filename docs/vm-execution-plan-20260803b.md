@@ -1,4 +1,4 @@
-# VM batch 2026-08-03b — local-fixed AUR recipe validation (in progress)
+# VM batch 2026-08-03b — local-fixed AUR recipe validation (complete)
 
 This document records the third disposable-VM validation batch, executed on
 2026-08-03 in this repository (my-arch-setup-deepseek). It validates the three
@@ -6,11 +6,10 @@ local-fixed AUR recipes (`linuxqq-appimage`, `wechat-appimage`, `paru`) whose
 private source caches are now acquired, using the same low-level
 `aur-build.py` / `aur-install.py` pipeline as batch 2026-08-03a.
 
-> **Status: IN PROGRESS.** The VM exists and the tree + private sources are
-> injected. The first build attempt failed before building with
-> `aur-build: build plan is not ready`; the cause is a source-cache path
-> mismatch in the guest (see section 5). The fix and the remaining steps are
-> listed below.
+> **Status: COMPLETE.** All three local-fixed recipes passed the real
+> clean-chroot build, idempotent rerun and install paths in the disposable VM.
+> The batch also surfaced and fixed a recipe-manifest hash inconsistency in the
+> host repository (commit `915030e`). See the execution log below.
 
 ## Scope and boundary
 
@@ -45,11 +44,13 @@ private source caches are now acquired, using the same low-level
   or RNG devices — neither needed for this batch).
 - SSH: reused the 2026-08-01 ephemeral key and known_hosts from
   `vm-validation-20260801/ssh/`.
-- Tree injected: fresh `bsdtar` pax archive of this repository HEAD
-  (`440` members, SHA-256
+- Tree injected: the first injection was a fresh `bsdtar` pax archive of the
+  repository HEAD (`440` members, SHA-256
   `dbaa823fe9c9dabd59ebcb7aed4fd146e63d1d3de6fd39dcfdf3f4ded0393dde`),
   excluding `.git` and the root `仓库地址` file, extracted to
-  `~/my-arch-setup` in the guest.
+  `~/my-arch-setup` in the guest. After the host fix (commit `915030e`), the
+  tree was re-injected as a fresh `bsdtar` pax archive of the fixed HEAD
+  (`442` members, SHA-256 `b3ddd145…`).
 - Private sources injected: `scp -r` from the host
   `~/.cache/my-archlinux-setup/aur-sources/` → guest home. **Initial copy
   landed in `~/aur-sources/` — this is the bug below.**
@@ -87,38 +88,81 @@ plan gate fired, i.e. no build started at all.
   to build (exactly the intended fail-closed behavior — the check worked;
   the deployment path was wrong).
 
-### 4. Fix (next step, not yet executed)
+### 4. Fix — source cache path mismatch in the guest (executed)
 
-In the guest:
+In the guest, the private sources were moved from `~/aur-sources/` to the
+contract path `~/.cache/my-archlinux-setup/aur-sources/`, and all three files
+were re-verified with `sha256sum` against the manifest hashes (all matched:
+linuxqq `719fa8307f…`, paru-vendor `18e89a23…`, wechat `457dba02…`).
 
-```
-mkdir -p ~/.cache/my-archlinux-setup/aur-sources
-mv ~/aur-sources/* ~/.cache/my-archlinux-setup/aur-sources/
-# verify: sha256sum over all three files must match the manifest hashes
-```
+### 5. Host repository fix surfaced by the plan gate (commit `915030e`)
 
-then rerun the build command from section 2 unchanged.
+After the guest cache fix, the plan gate still failed for `paru` with two
+inconsistencies that traced back to the host repository (commit `fb3b60b`
+had updated the vendored-source hash and the tree hash but missed two pins):
 
-### 5. Remaining steps after the fix (planned)
+- `paru: recipe tree SHA-256 differs from the reviewed manifest` — the
+  `manifests/aur-recipes.tsv` pin was stale.
+- `paru: local source checksum mismatch: paru-vendor-2.1.0.tar.zst` — the
+  `PKGBUILD`/`.SRCINFO` sha256sums entry was the pre-renewal hash.
 
-1. First build pass of the three recipes (clean-chroot init + build).
-2. Idempotent rerun of the same command — artifacts must return identical
-   SHA-256 without rebuilding.
-3. Install pass: `aur-install.py --packages linuxqq-appimage,paru,wechat-appimage
-   --install --confirm-aur --confirm-system-changes` + independent
-   `pacman -Q` confirmation. `paru` is built from role `paru-bootstrap`, so
-   verify the guest now has a working `paru` binary.
-4. Evidence extraction to
-   `~/.local/state/my-archlinux-setup/vm-lab/20260803/` (installed-state
-   JSON, private build logs), then ACPI shutdown, `virsh undefine --nvram`,
-   offline `qemu-img check`, overlay deletion.
-5. Update `manifests/production-module-readiness.tsv` evidence rows
-   (`daily-apps`, `repository-tools`), `docs/implementation-status.md`
-   remaining-gates item 2, and this document's status header.
+Fix applied and verified on the host (`aur-build.py --plan` reports all three
+`ready`; all 39 `tests/*.sh`, `docs-check.py` and static checks pass):
+`third_party/aur/paru/PKGBUILD` + `.SRCINFO` sha256sums → `18e89a23…`,
+`REVIEW.md` renewed-hash description, `manifests/aur-recipes.tsv` paru
+recipe-tree-sha256 → `44df2230…`, `manifests/stage-inputs.tsv`
+`aur-recipe-policy` → `05a5e926…` and `aur-tree:paru` → `44df2230…`.
+
+### 6. Re-injection and validation run (executed)
+
+A fresh `bsdtar` pax archive of the fixed host HEAD (SHA-256
+`b3ddd145…`, 442 members) was injected into the guest, and the plan was
+`ready` again. The full validation run then completed:
+
+1. **First build pass** (`aur-build.py --packages linuxqq-appimage,paru,wechat-appimage
+   --build --post-official --confirm-aur --confirm-system-changes --json`,
+   clean-chroot init with base-devel + rust, then three clean-chroot builds) —
+   all three `passed`, exit `0`:
+   - `linuxqq-appimage` `3.2.32_20260730-1` artifact SHA-256 `f430a7929874…`
+   - `paru` `2.1.0-5` artifact SHA-256 `5be4d55533d4…`
+   - `wechat-appimage` `4.1.1-4` artifact SHA-256 `247050448457…`
+2. **Idempotent rerun** — same command; the rerun log records
+   `skip: <pkg>: verified artifact already exists` for all three, artifact
+   SHA-256s identical to the first pass and artifact mtimes unchanged.
+3. **Install pass** (`aur-install.py --packages linuxqq-appimage,paru,wechat-appimage
+   --install --confirm-aur --confirm-system-changes --json`) — exit `0`; the
+   independent `pacman -Q` check confirms `linuxqq-appimage 3.2.32_20260730-1`,
+   `paru 2.1.0-5` and `wechat-appimage 4.1.1-4` installed, with a working
+   `/usr/bin/paru` binary (`paru v2.1.0 - libalpm v16.0.1`).
+4. **Evidence extraction, ACPI shutdown, `virsh undefine --nvram`, offline
+   `qemu-img check` (no errors), overlay deletion.**
+
+### 7. Follow-up documentation (executed)
+
+- `manifests/production-module-readiness.tsv` evidence rows updated:
+  `daily-apps` now records all seven recipes passing across batches
+  2026-08-03 / 2026-08-03b; `repository-tools` records the `paru-bootstrap`
+  recipe passing. Both modules remain `planning` — package-specific evidence
+  only, no module promotion.
+- `docs/implementation-status.md` Fixed AUR pipeline row and
+  remaining-gates item 2 updated to reflect all twelve recipes validated.
 
 ## Evidence (as of this writing)
 
 - Host private source cache: `~/.cache/my-archlinux-setup/aur-sources/`
   (three files, all hashes match the manifest).
-- VM: `myarch-batch3-local` running; overlay
-  `batch3-local-fixed.qcow2`; injected tree SHA-256 as above.
+- VM evidence extracted to
+  `~/.local/state/my-archlinux-setup/vm-lab/20260803/`:
+  - `aur-installed-local.json` (this batch's three packages with artifact and
+    recipe-tree SHA-256, distinct from batch a's `aur-installed.json`),
+  - `aur-logs/aur-build-20260803T160750Z-1283.log` (first build pass,
+    including clean-chroot init) and
+    `aur-logs/aur-build-20260803T161445Z-18322.log` (idempotent rerun,
+    recording `skip: verified artifact already exists` for all three),
+  - `aur-install-private-local.log` (install pass).
+- Artifact cache lived inside the disposable overlay; the overlay was deleted
+  by design after evidence extraction. Package `pkg.tar.zst` SHA-256s are
+  retained in `aur-installed-local.json`.
+- VM `myarch-batch3-local` was shut down via ACPI, undefined with `--nvram`,
+  passed offline `qemu-img check` (no errors), and the overlay
+  `batch3-local-fixed.qcow2` was deleted.

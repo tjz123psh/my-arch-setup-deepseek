@@ -13,9 +13,9 @@ personal-user-services	planning	Mapped user units remain disabled and their daem
 base-preconditions	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 archlinuxcn-trust	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 build-foundation	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
-repository-tools	planning	Module remains outside the production-validated disposable VM selection
+repository-tools	planning	paru-bootstrap recipe (paru 2.1.0-5) passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03b; module-level effects still await a module selection in the VM matrix
 fonts	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
-daily-apps	planning	Five daily-apps recipes (clash-verge-rev-bin google-chrome leaf-markdown-viewer-bin obsidian-bin wooz-git) passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; linuxqq and wechat remain blocked on private source cache
+daily-apps	planning	All seven daily-apps recipes (clash-verge-rev-bin google-chrome leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin wechat-appimage wooz-git) passed clean-chroot build/install/rerun in disposable VM batches 2026-08-03 and 2026-08-03b
 desktop-apps	planning	Module remains outside the production-validated disposable VM selection
 input-fcitx-rime	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 cli-tools	planning	Module remains outside the production-validated disposable VM selection

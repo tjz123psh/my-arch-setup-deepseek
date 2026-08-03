@@ -11,8 +11,10 @@ directly via the low-level `aur-build.py` / `aur-install.py` pipeline.
   `leaf-markdown-viewer-bin`, `obsidian-bin`, `wooz-git`, `claude-code`,
   `intellij-idea-ultimate-edition`, `opencode-bin`, `flclash-bin`.
 - Recipes excluded: the three local-fixed recipes (`linuxqq-appimage`,
-  `wechat-appimage`, `paru`) remain blocked on private source cache
-  acquisition; their `aur-source-acquire.py` plans remain ready but unapplied.
+  `wechat-appimage`, `paru`) were excluded from this batch because their
+  `aur-source-acquire.py` plans remained ready but unapplied at the time;
+  they were subsequently validated in batch 2026-08-03b (see
+  [`vm-execution-plan-20260803b.md`](vm-execution-plan-20260803b.md)).
 - Module status: this batch produces **package-specific** evidence only. It does
   not promote `daily-apps`, `development-toolchain` or `personal-autostart` to
   `available`; each planning module still requires its own module selection in
@@ -116,9 +118,10 @@ session.
 
 ## Remaining work after this batch
 
-1. The three local-fixed recipes still require their private source cache
-   (`aur-source-acquire.py --apply --confirm-aur` after the acquisition paths
-   are reviewed and approved) and then a build/install pass in a fresh child.
+1. The three local-fixed recipes (linuxqq-appimage, wechat-appimage, paru)
+   were subsequently validated in batch 2026-08-03b after their private source
+   caches were acquired and reviewed (see
+   [`vm-execution-plan-20260803b.md`](vm-execution-plan-20260803b.md)).
 2. Each of `daily-apps`, `development-toolchain`, `personal-autostart` needs a
    module-level selection in a future VM matrix before production promotion;
    this batch only supplies package-specific recipe evidence.
