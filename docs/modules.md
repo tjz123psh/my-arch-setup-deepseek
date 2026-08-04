@@ -22,9 +22,9 @@ becoming package/service authorization:
   full-DAG effects of that module may execute. Its exact coverage is hashed into
   every plan and rechecked before adapter execution.
 
-The registry currently contains 17 `available`, 13 `planning` and 2
-`unavailable` module surfaces. The stricter execution registry contains 13
-`available`, 17 `planning` and 2 `unavailable` rows. Production apply also
+The registry currently contains 21 `available`, 9 `planning` and 2
+`unavailable` module surfaces. The stricter execution registry contains 21
+`available`, 9 `planning` and 2 `unavailable` rows. Production apply also
 requires every applicable row in `manifests/stages.tsv` to have
 `production-apply-integration=true`, complete canonical adapter coverage and no
 external-manifest substitution. All nine stage flags are true after the

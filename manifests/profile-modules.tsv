@@ -73,3 +73,7 @@ vm	vm-v1	personal-autostart	disabled
 vm	vm-v1	cli-tools	disabled
 vm	vm-v1	desktop-apps	disabled
 vm	vm-v1	ocr	disabled
+vm	vm-v1	graphics-amd	disabled
+vm	vm-v1	graphics-nvidia	disabled
+vm	vm-v1	hardware-tools	disabled
+vm	vm-v1	kernel-support	disabled

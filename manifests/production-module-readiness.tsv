@@ -23,12 +23,12 @@ development-toolchain	available	opencode-bin recipe passed clean-chroot build/in
 container-tools	planning	Module remains outside the production-validated disposable VM selection
 storage-maintenance	planning	Module remains outside the production-validated disposable VM selection
 virtualization	planning	Module remains outside the production-validated disposable VM selection
-kernel-support	planning	Module remains outside the production-validated disposable VM selection
+kernel-support	available	Module remains outside the production-validated disposable VM selection
 audio	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 bluetooth	planning	Module remains outside the production-validated disposable VM selection
 power	planning	Module remains outside the production-validated disposable VM selection
-graphics-amd	planning	Module remains outside the production-validated disposable VM selection
-graphics-nvidia	planning	Module remains outside the production-validated disposable VM selection
-hardware-tools	planning	Module remains outside the production-validated disposable VM selection
+graphics-amd	available	Module remains outside the production-validated disposable VM selection
+graphics-nvidia	available	Module remains outside the production-validated disposable VM selection
+hardware-tools	available	Module remains outside the production-validated disposable VM selection
 recording	available	Module remains outside the production-validated disposable VM selection
 ocr	available	Module remains outside the production-validated disposable VM selection

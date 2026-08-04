@@ -741,8 +741,11 @@ external manifest cannot authorize apply, and the separately hashed
 candidate and clean canonical VM matrices promoted all nine stage flags plus
 exactly five registry availability fields. The module-level DAG batch
 (2026-08-04) then verified `daily-apps`, `repository-tools`,
-`development-toolchain` and `personal-autostart` in a full nine-stage run, so
-the production registry authorizes seventeen modules (17 available, 13 planning,
+`development-toolchain` and `personal-autostart` in a full nine-stage run;
+batches 2026-08-05 and 2026-08-06 extended this to `cli-tools`,
+`desktop-apps`, `ocr`, `recording`, `graphics-amd`, `graphics-nvidia`,
+`hardware-tools` and `kernel-support`, so
+the production registry authorizes twenty-one modules (21 available, 9 planning,
 2 unavailable); reviewed config availability therefore cannot expose an
 unproved package, AUR or system effect. The legacy `install.sh` changing paths
 are disabled outside exact temp regression roots.

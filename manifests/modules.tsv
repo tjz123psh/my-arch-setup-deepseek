@@ -23,12 +23,12 @@ development-toolchain	available	selectable	build-foundation,archlinuxcn-trust	-	
 container-tools	planning	selectable	-	-	Docker container runtime and compose tooling
 storage-maintenance	planning	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
 virtualization	planning	selectable	-	-	KVM, libvirt and graphical virtual-machine tooling
-kernel-support	planning	selectable	base-preconditions	-	Matching headers for manually selected kernels
+kernel-support	available	selectable	base-preconditions	-	Matching headers for manually selected kernels
 audio	available	selectable	-	-	PipeWire, WirePlumber, firmware and audio compatibility packages
 bluetooth	planning	selectable	desktop-shared	-	BlueZ diagnostics and one-session Blueman integration
 power	planning	selectable	-	-	Selected power-profiles policy owner
-graphics-amd	planning	selectable	base-preconditions	-	AMD microcode, Mesa and RADV graphics baseline
-graphics-nvidia	planning	selectable	kernel-support,graphics-amd	-	Hardware-gated NVIDIA open DKMS and user-space graphics stack
-hardware-tools	planning	selectable	-	-	Firmware and physical hardware inspection utilities
+graphics-amd	available	selectable	base-preconditions	-	AMD microcode, Mesa and RADV graphics baseline
+graphics-nvidia	available	selectable	kernel-support,graphics-amd	-	Hardware-gated NVIDIA open DKMS and user-space graphics stack
+hardware-tools	available	selectable	-	-	Firmware and physical hardware inspection utilities
 recording	available	selectable	desktop-shared,archlinuxcn-trust	-	Wayland screenshot and dual-engine recording dependencies
 ocr	available	selectable	-	-	Chinese and English OCR tooling
