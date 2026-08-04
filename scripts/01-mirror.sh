@@ -1,22 +1,38 @@
 #!/usr/bin/env bash
-# 01-mirror.sh - mirrorlist optimisation (China-aware).
+# 01-mirror.sh - mirrorlist optimisation.
+#
+# Strategy (order):
+#   1. If the Aliyun mirror answers quickly (reachable from this network),
+#      use it directly - it is fast for a China timezone host and avoids the
+#      slow global reflector scan entirely.
+#   2. Otherwise run reflector with a hard timeout and a small candidate set
+#      so a restricted network (VM NAT / proxied egress) cannot stall the
+#      installer for minutes per mirror.
+#   3. Enable multilib (needed for lib32 packages), then resync.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
 source "${SCRIPT_DIR}/00-utils.sh"
 
 section "Mirror optimization"
-TZ_CFG="$(readlink -f /etc/localtime 2>/dev/null || echo '')"
 
-if [[ "${TZ_CFG}" == *"Shanghai"* ]] || [[ "${CN_MIRROR:-0}" == "1" ]]; then
-  log "China timezone detected, using Aliyun mirror..."
+ALIYUN="https://mirrors.aliyun.com/archlinux/core/os/x86_64/core.db"
+
+if [[ "${CN_MIRROR:-0}" == "1" ]] || \
+   curl -fsS --connect-timeout 4 --max-time 8 -o /dev/null "${ALIYUN}" 2>/dev/null; then
+  log "Aliyun mirror reachable; using it directly."
   run bash -c 'echo "Server = https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist'
   success "Switched to Aliyun mirror"
 else
-  log "Optimizing mirrors with reflector..."
+  log "Aliyun not reachable; running reflector (60s hard cap)..."
   run pacman -S --noconfirm --needed reflector
-  run reflector --protocol https -a 12 -f 10 --sort rate --save /etc/pacman.d/mirrorlist || \
-    warn "reflector failed, keeping existing mirror"
+  # Hard timeout prevents a multi-minute global scan on a restricted network.
+  timeout 60 run reflector --protocol https -a 5 -f 3 --sort rate \
+    --save /etc/pacman.d/mirrorlist || {
+    warn "reflector timed out or failed; keeping existing mirror"
+    true
+  }
+  success "Mirror selection finished"
 fi
 
 # enable multilib (needed for lib32 packages)

@@ -34,6 +34,28 @@ install_recipe() {
     chown -R "${TARGET_USER}:${TARGET_USER}" "${work}"
   fi
   cp -a "${dir}/." "${work}/"
+
+  # Inject private sources for local-fixed recipes (linuxqq-appimage, paru,
+  # wechat-appimage): their PKGBUILDs reference an external-source file that
+  # is not downloadable (vendor tarball / signed AppImage). The file must be
+  # present in the source cache ~/.cache/my-archlinux-setup/aur-sources/<pkg>/
+  # (populated on the operator's machine); copy it into the build dir so
+  # makepkg finds it.
+  local src_policy ext_src
+  src_policy="$(awk -F'\t' -v p="${recipe}" '$1==p{print $10}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
+  ext_src="$(awk -F'\t' -v p="${recipe}" '$1==p{print $11}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
+  if [[ "${src_policy}" == "local-fixed" && -n "${ext_src}" && "${ext_src}" != "-" ]]; then
+    local cache_dir="${TARGET_HOME}/.cache/my-archlinux-setup/aur-sources/${recipe}"
+    if [[ -f "${cache_dir}/${ext_src}" ]]; then
+      cp -a "${cache_dir}/${ext_src}" "${work}/${ext_src}"
+      log "Injected private source: ${recipe}/${ext_src}"
+    else
+      warn "local-fixed source missing: ${cache_dir}/${ext_src}"
+      warn "Place the private source in the cache, or run this step on the operator machine."
+      rm -rf "${work}"
+      return 1
+    fi
+  fi
   local build_cmd
   build_cmd="cd '${work}' && makepkg -s --noconfirm"
   if command -v paru >/dev/null 2>&1; then

@@ -55,10 +55,10 @@ if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
     run bash -c 'echo -e "\n[archlinuxcn]\nServer = https://mirrors.aliyun.com/archlinuxcn/\$arch" >> /etc/pacman.conf'
   fi
   if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
-    curl -sS -o /tmp/archlinuxcn-keyring.pkg.tar.zst \
-      https://mirrors.aliyun.com/archlinuxcn/x86_64/archlinuxcn-keyring.pkg.tar.zst || \
-      die "archlinuxcn-keyring download failed; cannot install archlinuxcn packages"
-    run pacman -U --noconfirm /tmp/archlinuxcn-keyring.pkg.tar.zst
+    # Let pacman resolve the exact keyring package version from the repo.
+    run pacman -Sy --noconfirm || die "pacman -Sy failed; cannot reach archlinuxcn repo"
+    run pacman -S --noconfirm archlinuxcn-keyring || \
+      die "archlinuxcn-keyring install failed; cannot install archlinuxcn packages"
   fi
   run pacman -Sy
 fi

@@ -114,6 +114,10 @@ main() {
   build_modules
   sys_dashboard
 
+  # Module scripts run as child processes; export the selections so they
+  # can read MACHINE_TYPE/DESKTOP_ENV without re-prompting.
+  export MACHINE_TYPE DESKTOP_ENV
+
   section "Pre-Flight" "System update"
   run pacman -Sy --noconfirm archlinux-keyring
   run pacman -Syyu --noconfirm
