@@ -67,7 +67,7 @@ assert production_readiness.keys() == module_availability.keys()
 assert {
     state: sum(value == state for value in production_readiness.values())
     for state in {"available", "planning", "unavailable"}
-} == {"available": 13, "planning": 17, "unavailable": 2}
+} == {"available": 17, "planning": 13, "unavailable": 2}
 assert all(
     module_availability[module] == "available"
     for module, readiness in production_readiness.items()

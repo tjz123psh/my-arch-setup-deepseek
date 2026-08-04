@@ -16,9 +16,9 @@ build-foundation	available	selectable	-	-	Official build and source-control foun
 repository-tools	available	selectable	build-foundation,archlinuxcn-trust	-	Reviewed package maintenance and repository tooling
 fonts	available	selectable	-	-	Fonts required by the reviewed desktop and editor configuration
 daily-apps	available	selectable	-	-	Personal daily applications installed without account or profile migration
-desktop-apps	planning	selectable	desktop-shared	-	Shared graphical applications and file-management utilities
+desktop-apps	available	selectable	desktop-shared	-	Shared graphical applications and file-management utilities
 input-fcitx-rime	available	selectable	desktop-shared,archlinuxcn-trust	-	Chinese Fcitx5 and Rime packages plus reviewed input configuration
-cli-tools	planning	selectable	-	-	Command-line workstation utilities used by the user and reviewed scripts
+cli-tools	available	selectable	-	-	Command-line workstation utilities used by the user and reviewed scripts
 development-toolchain	available	selectable	build-foundation,archlinuxcn-trust	-	Language runtimes, compilers and development diagnostics
 container-tools	planning	selectable	-	-	Docker container runtime and compose tooling
 storage-maintenance	planning	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
@@ -30,5 +30,5 @@ power	planning	selectable	-	-	Selected power-profiles policy owner
 graphics-amd	planning	selectable	base-preconditions	-	AMD microcode, Mesa and RADV graphics baseline
 graphics-nvidia	planning	selectable	kernel-support,graphics-amd	-	Hardware-gated NVIDIA open DKMS and user-space graphics stack
 hardware-tools	planning	selectable	-	-	Firmware and physical hardware inspection utilities
-recording	planning	selectable	desktop-shared,archlinuxcn-trust	-	Wayland screenshot and dual-engine recording dependencies
-ocr	planning	selectable	-	-	Chinese and English OCR tooling
+recording	available	selectable	desktop-shared,archlinuxcn-trust	-	Wayland screenshot and dual-engine recording dependencies
+ocr	available	selectable	-	-	Chinese and English OCR tooling

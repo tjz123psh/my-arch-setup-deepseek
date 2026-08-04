@@ -57,10 +57,11 @@ All nine canonical handlers and auxiliary inputs are present. Every stage
 integration flag is true and exactly `base-preconditions`, `archlinuxcn-trust`,
 `build-foundation`, `fonts` and `audio` registry fields were promoted after the
 candidate matrix. The later independent production-readiness manifest is also a
-plan input: it marks the thirteen modules present in exact VM selections
-available (the 2026-08-02 matrix added five; the module-level DAG batch
-2026-08-04 added `daily-apps`, `repository-tools`, `development-toolchain` and
-`personal-autostart`), 17 other modules planning and 2 greeter modules
+plan input: it marks the modules present in exact VM selections available (the
+2026-08-02 matrix added five; the module-level DAG batch 2026-08-04 added
+`daily-apps`, `repository-tools`, `development-toolchain` and
+`personal-autostart`; batch 2026-08-05 added `cli-tools`, `desktop-apps`,
+`ocr` and `recording`), 13 other modules planning and 2 greeter modules
 unavailable. Thus reviewed config availability cannot authorize an unselected
 effect: every fixed AUR recipe now carries module-level runtime evidence (the
 three base recipes from the 2026-08-02 matrix, the remaining ten from the

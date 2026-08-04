@@ -69,17 +69,17 @@ with production execution: selecting `personal-autostart` alone exposed the
 unproved `flclash-bin` AUR recipe with no blocker.
 
 `manifests/production-module-readiness.tsv` now supplies the independent,
-plan-hashed execution gate. It covers all 32 modules exactly once: 13 available,
-17 planning and 2 unavailable. The four registry-available but non-VM-selected
+plan-hashed execution gate. It covers all 32 modules exactly once: 17 available,
+13 planning and 2 unavailable. The four registry-available but non-VM-selected
 surfaces—`developer-editor`, `personal-scripts`, `asus-hardware` and
 `personal-user-services`—remain usable by the reviewed
 config-only path but are production-planning for the full DAG. Regression plans
 audit the package/config/system effects of those four modules. Exact VM
-selections have no blocker; the physical ASUS default has 17 blockers
-(`asus-hardware`, `bluetooth`, `cli-tools`, `container-tools`, `desktop-apps`,
+selections have no blocker; the physical ASUS default has 13 blockers
+(`asus-hardware`, `bluetooth`, `container-tools`,
 `developer-editor`, `graphics-amd`, `graphics-nvidia`, `hardware-tools`,
-`kernel-support`, `ocr`, `personal-scripts`, `personal-user-services`, `power`,
-`recording`, `storage-maintenance`, `virtualization`) and fails before preflight.
+`kernel-support`, `personal-scripts`, `personal-user-services`, `power`,
+`storage-maintenance`, `virtualization`) and fails before preflight.
 
 A canonical manifest still cannot override a false stage or production module
 row, and an external manifest cannot authorize apply. The legacy

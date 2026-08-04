@@ -11,8 +11,8 @@ software-side work that must complete first.
   13 fixed AUR recipes passed real source/build/artifact/install/rerun paths.
 - Module registry (`modules.tsv`): **17 `available` / 13 `planning` / 2 `unavailable`**
   (32 total).
-- Execution gate (`production-module-readiness.tsv`): **13 `available` /
-  17 `planning` / 2 `unavailable`** — stricter; the four config-only available
+- Execution gate (`production-module-readiness.tsv`): **17 `available` /
+  13 `planning` / 2 `unavailable`** — the four config-only available
   modules (`developer-editor`, `personal-scripts`, `asus-hardware`,
   `personal-user-services`) are readiness-`planning` for full-DAG execution.
 - Workstation policy: 203 rows (183 current-explicit + 20 confirmed-desired);
@@ -21,8 +21,8 @@ software-side work that must complete first.
 - Physical-host audit (2026-08-04): host explicit sync set fully covered by the
   policy (0 missing); five host-explicit packages adopted (polkit-gnome,
   ydotool, qemu-guest-agent, spice-vdagent, sysbench) in commit `72852fe`.
-- Full ASUS physical profile remains fail-closed with **17 apply blockers**
-  (13 planning modules + `developer-editor`, `personal-scripts`,
+- Full ASUS physical profile remains fail-closed with **13 apply blockers**
+  (9 planning modules + `developer-editor`, `personal-scripts`,
   `asus-hardware`, `personal-user-services`).
 
 ## Remaining work items
@@ -38,13 +38,13 @@ Package inventory per module (all `pacman`/`extra` unless noted):
 
 | Module | Packages | System actions (profile) |
 | --- | --- | --- |
-| `cli-tools` | bat, btop, eza, fastfetch, fzf, git-delta, jq, lsof, sysbench, unzip, wget, yazi, yt-dlp, zoxide (14) | none |
-| `desktop-apps` | cinnamon-translations, ffmpegthumbnailer, file-roller, flatpak, mission-center, nemo, nemo-fileroller, tumbler, webkitgtk-6.0 (9) | none |
+| `cli-tools` ✓ | bat, btop, eza, fastfetch, fzf, git-delta, jq, lsof, sysbench, unzip, wget, yazi, yt-dlp, zoxide (14) | none |
+| `desktop-apps` ✓ | cinnamon-translations, ffmpegthumbnailer, file-roller, flatpak, mission-center, nemo, nemo-fileroller, tumbler, webkitgtk-6.0 (9) | none |
 | `graphics-amd` | amd-ucode (core), mesa, mesa-utils, vulkan-mesa-layers, vulkan-radeon, vulkan-tools (6) | none |
 | `graphics-nvidia` | lib32-nvidia-utils (multilib), libva-nvidia-driver, libva-utils, nvidia-open-dkms, nvidia-prime, nvidia-settings, nvidia-utils (7) | none |
 | `hardware-tools` | evtest, fprintd, fwupd, linux-firmware (core), powertop (5) | none |
-| `ocr` | tesseract, tesseract-data-chi_sim, tesseract-data-eng (3) | none |
-| `recording` | ffmpeg, grim, gtk-layer-shell, gtk4-layer-shell, python-gobject, python-opencv, python-pillow, slurp, wf-recorder, wl-screenrec-git (archlinuxcn) (10) | none |
+| `ocr` ✓ | tesseract, tesseract-data-chi_sim, tesseract-data-eng (3) | none |
+| `recording` ✓ | ffmpeg, grim, gtk-layer-shell, gtk4-layer-shell, python-gobject, python-opencv, python-pillow, slurp, wf-recorder, wl-screenrec-git (archlinuxcn) (10) | none |
 | `bluetooth` | blueman, bluez, bluez-utils (3) | blueman-session-owner (verify, physical), bluetooth-service (apply, physical) |
 | `power` | power-profiles-daemon (1) | power-profiles-service (apply, physical) |
 | `container-tools` | docker, docker-compose (2) | docker-service (apply, physical), docker-group-membership (manual, physical) |
@@ -55,7 +55,10 @@ Package inventory per module (all `pacman`/`extra` unless noted):
 Validation approach (one batch per group, mirroring `docs/vm-execution-plan-20260804.md`):
 
 1. Batch software-only: `cli-tools`, `desktop-apps`, `ocr`, `recording`
-   (37 packages, no physical-scoped actions).
+   (37 packages, no physical-scoped actions). **COMPLETE (batch 2026-08-05):
+   full nine-stage DAG passed in the VM, idempotent rerun, all 37 packages
+   independently confirmed, evidence in
+   `~/.local/state/my-archlinux-setup/vm-lab/20260805/`.**
 2. Batch graphics (VM-safe package install only): `graphics-amd`,
    `graphics-nvidia`, `hardware-tools`, `kernel-support` — validate official
    package install; DKMS/GPU mode checks stay physical.
@@ -69,9 +72,9 @@ Validation approach (one batch per group, mirroring `docs/vm-execution-plan-2026
    delete overlay → host promotion (readiness + modules.tsv) → test-suite update
    → commit.
 
-Expected promotion effect: registry 17 → 30 available; execution readiness
-13 → 26 available. Remaining after this: only the 2 `unavailable` modules
-(`dms-niri-greeter`, `dms-greetd`).
+Expected promotion effect after batches 2-3: registry 21 → 30 available;
+execution readiness 17 → 26 available. Remaining after this: only the 2
+`unavailable` modules (`dms-niri-greeter`, `dms-greetd`).
 
 ### B. System-action truth table for physical-scoped actions
 

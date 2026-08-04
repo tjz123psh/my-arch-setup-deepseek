@@ -742,7 +742,7 @@ candidate and clean canonical VM matrices promoted all nine stage flags plus
 exactly five registry availability fields. The module-level DAG batch
 (2026-08-04) then verified `daily-apps`, `repository-tools`,
 `development-toolchain` and `personal-autostart` in a full nine-stage run, so
-the production registry authorizes thirteen modules (13 available, 17 planning,
+the production registry authorizes seventeen modules (17 available, 13 planning,
 2 unavailable); reviewed config availability therefore cannot expose an
 unproved package, AUR or system effect. The legacy `install.sh` changing paths
 are disabled outside exact temp regression roots.

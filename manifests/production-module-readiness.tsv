@@ -16,9 +16,9 @@ build-foundation	available	Disposable Niri Hyprland and both-WM candidate plus c
 repository-tools	available	paru-bootstrap recipe (paru 2.1.0-5) passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03b; module-level selection (paru, downgrade, pacman-contrib, reflector) verified in the full nine-stage DAG of disposable VM batch 2026-08-04
 fonts	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 daily-apps	available	All seven daily-apps recipes (clash-verge-rev-bin google-chrome leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin wechat-appimage wooz-git) passed clean-chroot build/install/rerun in disposable VM batches 2026-08-03 and 2026-08-03b; module-level selection verified in the full nine-stage DAG of disposable VM batch 2026-08-04
-desktop-apps	planning	Module remains outside the production-validated disposable VM selection
+desktop-apps	available	Module remains outside the production-validated disposable VM selection
 input-fcitx-rime	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
-cli-tools	planning	Module remains outside the production-validated disposable VM selection
+cli-tools	available	Module remains outside the production-validated disposable VM selection
 development-toolchain	available	opencode-bin recipe passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; claude-code and intellij-idea-ultimate-edition were removed from the module by operator decision on 2026-08-04; module-level selection (opencode-bin plus official and archlinuxcn package effects) verified in the full nine-stage DAG of disposable VM batch 2026-08-04
 container-tools	planning	Module remains outside the production-validated disposable VM selection
 storage-maintenance	planning	Module remains outside the production-validated disposable VM selection
@@ -30,5 +30,5 @@ power	planning	Module remains outside the production-validated disposable VM sel
 graphics-amd	planning	Module remains outside the production-validated disposable VM selection
 graphics-nvidia	planning	Module remains outside the production-validated disposable VM selection
 hardware-tools	planning	Module remains outside the production-validated disposable VM selection
-recording	planning	Module remains outside the production-validated disposable VM selection
-ocr	planning	Module remains outside the production-validated disposable VM selection
+recording	available	Module remains outside the production-validated disposable VM selection
+ocr	available	Module remains outside the production-validated disposable VM selection

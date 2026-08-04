@@ -70,3 +70,6 @@ vm	vm-v1	daily-apps	disabled
 vm	vm-v1	repository-tools	disabled
 vm	vm-v1	development-toolchain	disabled
 vm	vm-v1	personal-autostart	disabled
+vm	vm-v1	cli-tools	disabled
+vm	vm-v1	desktop-apps	disabled
+vm	vm-v1	ocr	disabled
