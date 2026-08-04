@@ -744,8 +744,9 @@ exactly five registry availability fields. The module-level DAG batch
 `development-toolchain` and `personal-autostart` in a full nine-stage run;
 batches 2026-08-05 and 2026-08-06 extended this to `cli-tools`,
 `desktop-apps`, `ocr`, `recording`, `graphics-amd`, `graphics-nvidia`,
-`hardware-tools` and `kernel-support`, so
-the production registry authorizes twenty-one modules (21 available, 9 planning,
+`hardware-tools`, `kernel-support`, `bluetooth`, `power`, `container-tools`,
+`storage-maintenance` and `virtualization`, so
+the production registry authorizes twenty-six modules (26 available, 4 planning,
 2 unavailable); reviewed config availability therefore cannot expose an
 unproved package, AUR or system effect. The legacy `install.sh` changing paths
 are disabled outside exact temp regression roots.

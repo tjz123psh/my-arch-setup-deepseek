@@ -77,3 +77,8 @@ vm	vm-v1	graphics-amd	disabled
 vm	vm-v1	graphics-nvidia	disabled
 vm	vm-v1	hardware-tools	disabled
 vm	vm-v1	kernel-support	disabled
+vm	vm-v1	bluetooth	disabled
+vm	vm-v1	power	disabled
+vm	vm-v1	container-tools	disabled
+vm	vm-v1	storage-maintenance	disabled
+vm	vm-v1	virtualization	disabled

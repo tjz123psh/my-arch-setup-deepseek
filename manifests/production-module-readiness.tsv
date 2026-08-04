@@ -20,13 +20,13 @@ desktop-apps	available	Module remains outside the production-validated disposabl
 input-fcitx-rime	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
 cli-tools	available	Module remains outside the production-validated disposable VM selection
 development-toolchain	available	opencode-bin recipe passed clean-chroot build/install/rerun in disposable VM batch 2026-08-03; claude-code and intellij-idea-ultimate-edition were removed from the module by operator decision on 2026-08-04; module-level selection (opencode-bin plus official and archlinuxcn package effects) verified in the full nine-stage DAG of disposable VM batch 2026-08-04
-container-tools	planning	Module remains outside the production-validated disposable VM selection
-storage-maintenance	planning	Module remains outside the production-validated disposable VM selection
-virtualization	planning	Module remains outside the production-validated disposable VM selection
+container-tools	available	Module remains outside the production-validated disposable VM selection
+storage-maintenance	available	Module remains outside the production-validated disposable VM selection
+virtualization	available	Module remains outside the production-validated disposable VM selection
 kernel-support	available	Module remains outside the production-validated disposable VM selection
 audio	available	Disposable Niri Hyprland and both-WM candidate plus canonical VM matrix completed 2026-08-02
-bluetooth	planning	Module remains outside the production-validated disposable VM selection
-power	planning	Module remains outside the production-validated disposable VM selection
+bluetooth	available	Module remains outside the production-validated disposable VM selection
+power	available	Module remains outside the production-validated disposable VM selection
 graphics-amd	available	Module remains outside the production-validated disposable VM selection
 graphics-nvidia	available	Module remains outside the production-validated disposable VM selection
 hardware-tools	available	Module remains outside the production-validated disposable VM selection

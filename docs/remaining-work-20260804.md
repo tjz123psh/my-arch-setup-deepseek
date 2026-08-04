@@ -9,10 +9,10 @@ software-side work that must complete first.
 
 - Nine-stage DAG (`full-orchestrator.py`) validated end-to-end in disposable VMs;
   13 fixed AUR recipes passed real source/build/artifact/install/rerun paths.
-- Module registry (`modules.tsv`): **21 `available` / 9 `planning` / 2 `unavailable`**
+- Module registry (`modules.tsv`): **26 `available` / 4 `planning` / 2 `unavailable`**
   (32 total).
-- Execution gate (`production-module-readiness.tsv`): **21 `available` /
-  9 `planning` / 2 `unavailable`** — the four config-only available
+- Execution gate (`production-module-readiness.tsv`): **26 `available` /
+  4 `planning` / 2 `unavailable`** — the four config-only available
   modules (`developer-editor`, `personal-scripts`, `asus-hardware`,
   `personal-user-services`) are readiness-`planning` for full-DAG execution.
 - Workstation policy: 203 rows (183 current-explicit + 20 confirmed-desired);
@@ -21,7 +21,7 @@ software-side work that must complete first.
 - Physical-host audit (2026-08-04): host explicit sync set fully covered by the
   policy (0 missing); five host-explicit packages adopted (polkit-gnome,
   ydotool, qemu-guest-agent, spice-vdagent, sysbench) in commit `72852fe`.
-- Full ASUS physical profile remains fail-closed with **9 apply blockers**
+- Full ASUS physical profile remains fail-closed with **4 apply blockers**
   (5 planning modules + `developer-editor`, `personal-scripts`,
   `asus-hardware`, `personal-user-services`).
 
@@ -29,7 +29,10 @@ software-side work that must complete first.
 
 ### A. Module-level VM validation for the remaining 5 planning modules
 
-The remaining 5 planning modules are **package-only** (zero config mappings).
+> **COMPLETE (batches 2026-08-05/06/07).** All five were promoted to
+> `available`; registry and execution readiness are now 26 available.
+
+The 5 planning modules are **package-only** (zero config mappings).
 Their system actions are mostly physical-profile-scoped (see B), so the VM
 matrix validates the package effects; physical-scoped actions stay
 not-applicable in `vm` profile exactly as in batch 2026-08-04.
@@ -70,13 +73,18 @@ Validation approach (one batch per group, mirroring `docs/vm-execution-plan-2026
    `virtualization` — package install plus the apply-class services
    (bluetooth.service, power-profiles-daemon, docker.service, libvirtd.service,
    default network) in a VM where the service controller exists, or record
-   not-applicable where the hardware is absent.
+   not-applicable where the hardware is absent. **COMPLETE (batch 2026-08-07):
+   full nine-stage DAG passed in the VM, idempotent rerun, all 19 packages
+   independently confirmed, physical-profile-scoped service actions recorded
+   not-applicable in the VM (bluetooth-service/power-profiles-service/
+   docker-service/libvirtd-service/libvirt-default-network are physical scope),
+   evidence in `~/.local/state/my-archlinux-setup/vm-lab/20260807/`.**
 4. Per batch: guest plan → full DAG apply → idempotent rerun → independent
    `pacman -Q` → evidence extraction → ACPI shutdown → `qemu-img check` →
    delete overlay → host promotion (readiness + modules.tsv) → test-suite update
    → commit.
 
-Expected promotion effect after batch 3: registry 21 → 26 available;
+Promotion effect after batch 3 (realized): registry 21 → 26 available;
 execution readiness 21 → 26 available. Remaining after this: only the 2
 `unavailable` modules (`dms-niri-greeter`, `dms-greetd`).
 
@@ -140,7 +148,7 @@ a VM matrix pass before they can become readiness-`available`:
 
 - The remaining 5 planning modules promoted to `available` (registry 26 available;
   execution readiness 26 available) with per-batch VM evidence in `vm-lab/` and
-  plan documents.
+  plan documents. **DONE (batches 2026-08-05/06/07).**
 - All four config-only available modules readiness-promoted after full-DAG VM
   selection.
 - Physical-scoped action disposition table above verified against current

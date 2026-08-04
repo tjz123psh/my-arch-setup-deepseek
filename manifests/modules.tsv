@@ -20,13 +20,13 @@ desktop-apps	available	selectable	desktop-shared	-	Shared graphical applications
 input-fcitx-rime	available	selectable	desktop-shared,archlinuxcn-trust	-	Chinese Fcitx5 and Rime packages plus reviewed input configuration
 cli-tools	available	selectable	-	-	Command-line workstation utilities used by the user and reviewed scripts
 development-toolchain	available	selectable	build-foundation,archlinuxcn-trust	-	Language runtimes, compilers and development diagnostics
-container-tools	planning	selectable	-	-	Docker container runtime and compose tooling
-storage-maintenance	planning	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
-virtualization	planning	selectable	-	-	KVM, libvirt and graphical virtual-machine tooling
+container-tools	available	selectable	-	-	Docker container runtime and compose tooling
+storage-maintenance	available	selectable	-	-	Btrfs snapshot, backup and storage-health tooling
+virtualization	available	selectable	-	-	KVM, libvirt and graphical virtual-machine tooling
 kernel-support	available	selectable	base-preconditions	-	Matching headers for manually selected kernels
 audio	available	selectable	-	-	PipeWire, WirePlumber, firmware and audio compatibility packages
-bluetooth	planning	selectable	desktop-shared	-	BlueZ diagnostics and one-session Blueman integration
-power	planning	selectable	-	-	Selected power-profiles policy owner
+bluetooth	available	selectable	desktop-shared	-	BlueZ diagnostics and one-session Blueman integration
+power	available	selectable	-	-	Selected power-profiles policy owner
 graphics-amd	available	selectable	base-preconditions	-	AMD microcode, Mesa and RADV graphics baseline
 graphics-nvidia	available	selectable	kernel-support,graphics-amd	-	Hardware-gated NVIDIA open DKMS and user-space graphics stack
 hardware-tools	available	selectable	-	-	Firmware and physical hardware inspection utilities
