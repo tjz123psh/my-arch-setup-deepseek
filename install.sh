@@ -22,10 +22,10 @@ MODULES=()
 
 usage() {
   cat <<'EOF'
-用法: install.sh [options]
+Usage: install.sh [options]
 
-一键恢复 Arch 桌面环境（Niri/Hyprland）。交互式选择桌面与机器类型；
-可用参数直接指定以跳过交互。
+One-click Arch desktop restore (Niri/Hyprland). Interactively select desktop and machine type;
+flags can specify them directly to skip the prompts.
 
 Options:
   -d, --desktop niri|hyprland|both|none
@@ -64,12 +64,12 @@ ensure_fzf_ui() {
 
 select_desktop() {
   [[ -n "${DESKTOP_ENV}" ]] && return
-  section "选择桌面环境"
+  section "Select desktop environment"
   local items=(
-    "Niri (推荐)|niri"
+    "Niri (recommended)|niri"
     "Hyprland|hyprland"
-    "Niri + Hyprland 双会话|both"
-    "不装桌面（仅包与配置）|none"
+    "Niri + Hyprland (both)|both"
+    "No desktop (packages and config only)|none"
   )
   local fzf_list=() idx=1
   for item in "${items[@]}"; do
@@ -78,20 +78,20 @@ select_desktop() {
   done
   local selected
   selected="$(printf '%b\n' "${fzf_list[@]}" | fzf --layout=reverse --border=rounded \
-    --header=' 选择桌面 (J/K 移动, Enter 确认) ' \
+    --header=' Select desktop (J/K move, Enter confirm) ' \
     --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
-  [[ -z "${selected}" ]] && die "已取消"
+  [[ -z "${selected}" ]] && die "Cancelled"
   local pick="${selected%% )*}"
   DESKTOP_ENV="${items[$((pick - 1))]##*|}"
-  log "桌面: ${DESKTOP_ENV}"
+  log "Desktop: ${DESKTOP_ENV}"
 }
 
 select_machine() {
   [[ -n "${MACHINE_TYPE}" ]] && return
-  section "选择机器类型"
+  section "Select machine type"
   local items=(
-    "物理机 (ASUS, 完整配置)|physical"
-    "虚拟机 (轻量配置)|vm"
+    "Physical machine (ASUS, full config)|physical"
+    "Virtual machine (light config)|vm"
   )
   local fzf_list=() idx=1
   for item in "${items[@]}"; do
@@ -100,12 +100,12 @@ select_machine() {
   done
   local selected
   selected="$(printf '%b\n' "${fzf_list[@]}" | fzf --layout=reverse --border=rounded \
-    --header=' 选择机器类型 (J/K 移动, Enter 确认) ' \
+    --header=' Select machine type (J/K move, Enter confirm) ' \
     --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
-  [[ -z "${selected}" ]] && die "已取消"
+  [[ -z "${selected}" ]] && die "Cancelled"
   local pick="${selected%% )*}"
   MACHINE_TYPE="${items[$((pick - 1))]##*|}"
-  log "机器: ${MACHINE_TYPE}"
+  log "Machine: ${MACHINE_TYPE}"
 }
 
 build_modules() {
@@ -114,7 +114,7 @@ build_modules() {
     niri) MODULES+=(04-niri.sh) ;;
     hyprland) MODULES+=(04-hyprland.sh) ;;
     both) MODULES+=(04-niri.sh 04-hyprland.sh) ;;
-    none) log "不安装桌面环境" ;;
+    none) log "Skipping desktop environment" ;;
   esac
   MODULES+=(05-aur.sh 06-config.sh 07-services.sh 99-cleanup.sh)
 }
@@ -128,7 +128,7 @@ main() {
   build_modules
   sys_dashboard
 
-  section "Pre-Flight" "系统更新"
+  section "Pre-Flight" "System update"
   run pacman -Sy --noconfirm archlinux-keyring
   run pacman -Syyu --noconfirm
 
@@ -137,28 +137,28 @@ main() {
     [[ -z "${module}" ]] && continue
     current=$((current + 1))
     local script_path="${SCRIPTS_DIR}/${module}"
-    [[ -f "${script_path}" ]] || { warn "缺少脚本: ${module}"; continue; }
+    [[ -f "${script_path}" ]] || { warn "Missing script: ${module}"; continue; }
     if is_done "${module}"; then
-      log "模块 ${module} 已完成，跳过"
+      log "Module ${module} already done, skipping"
       continue
     fi
-    section "步骤 ${current}/${total}" "${module}"
+    section "Step ${current}/${total}" "${module}"
     # shellcheck disable=SC1090
     bash "${script_path}"
     local rc=$?
     if (( rc == 0 )); then
       mark_done "${module}"
-      success "完成: ${module}"
+      success "Done: ${module}"
     else
-      error "模块 ${module} 失败 (exit ${rc})；重新运行 install.sh 可续跑"
+      error "Module ${module} failed (exit ${rc}); rerun install.sh to resume"
       exit "${rc}"
     fi
   done
 
-  section "完成"
-  success "安装完成，建议重启。"
+  section "Done"
+  success "Installation complete. A reboot is recommended."
   echo
-  echo -e "${H_YELLOW}>>> 系统需要重启。${NC}"
+  echo -e "${H_YELLOW}>>> A system reboot is required.${NC}"
 }
 
 main "$@"

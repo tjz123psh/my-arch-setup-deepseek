@@ -12,11 +12,11 @@ CONFIG_SRC="${PROJECT_DIR}/config"
 BACKUP_DIR="${HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 SCOPE="${MACHINE_TYPE}-v1"   # physical-v1 or vm-v1
 
-section "部署配置映射 (scope: ${SCOPE})"
+section "Deploying config mappings (scope: ${SCOPE})"
 
-[[ -f "${MAPPINGS}" ]] || die "缺少 ${MAPPINGS}"
+[[ -f "${MAPPINGS}" ]] || die "Missing ${MAPPINGS}"
 mkdir -p "${BACKUP_DIR}"
-log "备份目录: ${BACKUP_DIR}"
+log "Backup directory: ${BACKUP_DIR}"
 
 deployed=0 skipped=0
 while IFS=$'\t' read -r scope _module src tgt mode; do
@@ -25,7 +25,7 @@ while IFS=$'\t' read -r scope _module src tgt mode; do
 
   local_src="${CONFIG_SRC}/${src#config/}"
   if [[ ! -f "${local_src}" ]]; then
-    warn "源文件缺失: ${src}"; skipped=$((skipped + 1)); continue
+    warn "Source file missing: ${src}"; skipped=$((skipped + 1)); continue
   fi
 
   target="${HOME}/${tgt}"
@@ -41,5 +41,5 @@ while IFS=$'\t' read -r scope _module src tgt mode; do
   deployed=$((deployed + 1))
 done < "${MAPPINGS}"
 
-log "已部署: ${deployed} 个文件, 跳过: ${skipped} 个"
-success "配置部署完成 (备份在 ${BACKUP_DIR})"
+log "Deployed: ${deployed} file(s), skipped: ${skipped}"
+success "Config deployment complete (backup in ${BACKUP_DIR})"

@@ -23,8 +23,8 @@ module_selected() {
   return 0  # physical: all modules
 }
 
-section "安装软件包 (${MACHINE_TYPE})"
-log "从 ${POLICY} 读取包清单..."
+section "Installing packages (${MACHINE_TYPE})"
+log "Reading package policy from ${POLICY} ..."
 
 # official packages (pacman channel, install policy), filtered by module
 OFFICIAL=()
@@ -42,27 +42,27 @@ while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpos
   esac
 done < "${POLICY}"
 
-log "官方包: ${#OFFICIAL[@]} 个, AUR: ${#AUR_PKGS[@]} 个"
+log "Official packages: ${#OFFICIAL[@]}, AUR: ${#AUR_PKGS[@]}"
 
 # archlinuxcn keyring bootstrap first
-log "初始化 archlinuxcn keyring..."
+log "Initializing archlinuxcn keyring..."
 if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
   curl -sS -o /tmp/archlinuxcn-keyring.pkg.tar.zst \
     https://mirrors.aliyun.com/archlinuxcn/x86_64/archlinuxcn-keyring.pkg.tar.zst 2>/dev/null || \
-    warn "archlinuxcn-keyring 下载失败（稍后 install 时重试）"
+    warn "archlinuxcn-keyring download failed (will retry during install)"
   if [[ -f /tmp/archlinuxcn-keyring.pkg.tar.zst ]]; then
     run pacman -U --noconfirm /tmp/archlinuxcn-keyring.pkg.tar.zst
   fi
 fi
 
 # install official packages
-log "安装官方/archlinuxcn 包..."
+log "Installing official/archlinuxcn packages..."
 run pacman -S --needed --noconfirm "${OFFICIAL[@]}" || {
-  error "官方包安装失败"
-  warn "可能是个别包冲突；尝试逐个安装以定位..."
+  error "Official package install failed"
+  warn "Possible individual package conflict; trying one by one..."
   for p in "${OFFICIAL[@]}"; do
-    run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1 || warn "失败: ${p}"
+    run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1 || warn "failed: ${p}"
   done
 }
 
-success "软件包安装完成 (${#OFFICIAL[@]} 官方 + ${#AUR_PKGS[@]} AUR 待步骤 05)"
+success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 05)"
