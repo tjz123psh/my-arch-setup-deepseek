@@ -1,5 +1,6 @@
 # Maintainer: Morgan <morganamilo@archlinux.org>
-# Local fixed bootstrap recipe: pinned upstream source plus an offline Cargo vendor archive.
+# Local fixed bootstrap recipe: pinned upstream source, built with cargo
+# fetching dependencies from crates.io (no offline vendor archive needed).
 
 pkgname=paru
 pkgver=2.1.0
@@ -15,26 +16,10 @@ backup=('etc/paru.conf')
 options=('!debug')
 source=(
   "paru-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz"
-  'Cargo.lock.libalpm16'
-  "paru-vendor-${pkgver}.tar.zst"
 )
 sha256sums=(
   'eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727'
-  '4231e3bfa8172ad2c0c79322921fd974be97f1dec00bf970e9892ada9a98b323'
-  '18e89a233df4cb6eafca594b072489a4c81b7aa27b5aa043afe58f793fdcb7ea'
 )
-
-prepare() {
-  install -Dm644 "${srcdir}/Cargo.lock.libalpm16" "${srcdir}/paru-${pkgver}/Cargo.lock"
-  install -d "${srcdir}/paru-${pkgver}/.cargo"
-  cat > "${srcdir}/paru-${pkgver}/.cargo/config.toml" <<EOF
-[source.crates-io]
-replace-with = "vendored-sources"
-
-[source.vendored-sources]
-directory = "${srcdir}/vendor"
-EOF
-}
 
 build() {
   cd "${srcdir}/paru-${pkgver}" || return 1
@@ -44,7 +29,7 @@ build() {
     feature_args=(--features git)
   fi
 
-  cargo build --frozen --offline "${feature_args[@]}" --release --target-dir target
+  cargo build "${feature_args[@]}" --release --target-dir target
   ./scripts/mkmo locale/
 }
 

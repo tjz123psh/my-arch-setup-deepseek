@@ -19,7 +19,7 @@ provides=('qq' 'linuxqq')
 conflicts=('linuxqq' 'linuxqq-nt-bwrap')
 
 _appimage="${_Pkgname}-${pkgver}-x86_64.AppImage"
-source_x86_64=("${_appimage}")
+source_x86_64=("${_appimage}::https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/c97651b2/QQ_3.2.32_260730_x86_64_01.AppImage")
 noextract=("${_appimage}")
 sha256sums_x86_64=('719fa8307f569fcfa99f57f321b5c1e2f7bc8450b24bbfcb55fbc46a70b8f07e')
 

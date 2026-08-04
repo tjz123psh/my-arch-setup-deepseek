@@ -96,13 +96,15 @@ select_machine() {
 
 build_modules() {
   MODULES=(01-mirror.sh 02-system.sh 03-packages.sh)
+  # drivers before desktop (physical only; the script itself skips on vm)
+  MODULES+=(04-drivers.sh)
   case "${DESKTOP_ENV}" in
-    niri) MODULES+=(04-niri.sh) ;;
-    hyprland) MODULES+=(04-hyprland.sh) ;;
-    both) MODULES+=(04-niri.sh 04-hyprland.sh) ;;
+    niri) MODULES+=(05-niri.sh) ;;
+    hyprland) MODULES+=(05-hyprland.sh) ;;
+    both) MODULES+=(05-niri.sh 05-hyprland.sh) ;;
     none) log "Skipping desktop environment" ;;
   esac
-  MODULES+=(05-aur.sh 06-config.sh 07-services.sh 99-cleanup.sh)
+  MODULES+=(06-aur.sh 07-config.sh 08-services.sh 09-settings.sh 99-cleanup.sh)
 }
 
 main() {

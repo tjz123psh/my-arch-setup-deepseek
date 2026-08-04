@@ -70,7 +70,8 @@ github-cli	pacman	extra	pacman	development-toolchain	package-only	install	curren
 gitleaks	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Audit Git repos for secrets and keys
 go	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Core compiler tools for the Go programming language
 google-chrome	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Google Chrome web browser without profile migration
-greetd-dms-greeter-git	aur	aur	deferred	dms-greetd	deferred	deferred	current-explicit	Observed rolling DMS greeter retained only as deferred evidence
+greetd	pacman	extra	pacman	dms-greetd	package-only	install	current-explicit	Minimal, flexible, Wayland-native display manager
+greetd-dms-greeter-git	aur	aur	aur-build	dms-greetd	package-only	install	current-explicit	Greetd login screen with the Dank Material aesthetic (git), fixed AUR recipe
 grim	pacman	extra	pacman	recording	package-only	install	current-explicit	Screenshot utility for Wayland
 grub	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	GNU GRand Unified Bootloader (2)
 grub-btrfs	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	Include btrfs snapshots in GRUB boot options

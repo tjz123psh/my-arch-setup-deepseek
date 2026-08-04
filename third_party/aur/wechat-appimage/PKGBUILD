@@ -19,7 +19,7 @@ provides=('wechat')
 
 _appimage="${_Pkgname}-${_last_modified}-x86_64.AppImage"
 source=('LICENSE' 'wechat')
-source_x86_64=("${_appimage}")
+source_x86_64=("${_appimage}::https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage")
 noextract=("${_appimage}")
 sha256sums=(
   '4348aee67f0c40bd29ec370fff75e24384907514a76104b43354d395c436f0f2'

@@ -10,8 +10,9 @@ source "${SCRIPT_DIR}/00-utils.sh"
 RECIPES_DIR="${PROJECT_DIR}/third_party/aur"
 BUILD_BASE="${PROJECT_DIR}/.aur-build"
 RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin \
-         fuzzel-ime-git google-chrome leaf-markdown-viewer-bin linuxqq-appimage \
-         obsidian-bin opencode-bin paru wechat-appimage wooz-git)
+         fuzzel-ime-git google-chrome greetd-dms-greeter-git \
+         leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin opencode-bin \
+         paru wechat-appimage wooz-git)
 
 section "Building and installing AUR packages (${#RECIPES[@]})"
 
@@ -35,12 +36,9 @@ install_recipe() {
   fi
   cp -a "${dir}/." "${work}/"
 
-  # Inject private sources for local-fixed recipes (linuxqq-appimage, paru,
-  # wechat-appimage): their PKGBUILDs reference an external-source file that
-  # is not downloadable (vendor tarball / signed AppImage). The file must be
-  # present in the source cache ~/.cache/my-archlinux-setup/aur-sources/<pkg>/
-  # (populated on the operator's machine); copy it into the build dir so
-  # makepkg finds it.
+  # Private-source recipes (linuxqq-appimage, paru, wechat-appimage): their
+  # PKGBUILDs now carry real download URLs, so makepkg fetches them normally.
+  # If the operator pre-seeded the local cache, reuse it to save bandwidth.
   local src_policy ext_src
   src_policy="$(awk -F'\t' -v p="${recipe}" '$1==p{print $10}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
   ext_src="$(awk -F'\t' -v p="${recipe}" '$1==p{print $11}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
@@ -48,12 +46,7 @@ install_recipe() {
     local cache_dir="${TARGET_HOME}/.cache/my-archlinux-setup/aur-sources/${recipe}"
     if [[ -f "${cache_dir}/${ext_src}" ]]; then
       cp -a "${cache_dir}/${ext_src}" "${work}/${ext_src}"
-      log "Injected private source: ${recipe}/${ext_src}"
-    else
-      warn "local-fixed source missing: ${cache_dir}/${ext_src}"
-      warn "Place the private source in the cache, or run this step on the operator machine."
-      rm -rf "${work}"
-      return 1
+      log "Reused cached source: ${recipe}/${ext_src}"
     fi
   fi
   local build_cmd
