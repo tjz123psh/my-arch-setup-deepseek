@@ -101,15 +101,16 @@ check_root() {
 }
 
 # Print the reviewed plan (reads the orchestrator --plan text output).
-# stdin is detached (< /dev/null) so the orchestrator never enters its
-# interactive module-selection prompt, and the explicit --modules list keeps
-# the plan fingerprint identical to the later apply (same selection source).
+# The explicit --modules list prevents the interactive module-selection
+# prompt entirely (the orchestrator only enters it when no modules are given
+# and stdin is a tty). stdin stays attached so gsudo can prompt for the sudo
+# password through its askpass helper during apply.
 show_plan() {
   local modules
   modules="$(resolve_default_modules)"
   log "reading read-only plan for profile '${PROFILE}' (modules: ${modules})..."
   local plan_out
-  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --modules "${modules}" --plan < /dev/null 2>&1)" || \
+  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --modules "${modules}" --plan 2>&1)" || \
     die "plan generation failed (profile '${PROFILE}' missing or misconfigured)"
   printf '%s\n' "${plan_out}" | sed -n '1,60p'
   # The blockers line looks like:
@@ -192,15 +193,20 @@ resolve_default_modules() {
 }
 
 # Run the nine-stage DAG (confirmations were granted by confirm_plan).
-# stdin is detached (< /dev/null) so the orchestrator never enters interactive
-# module selection, and the explicit --modules list satisfies the apply path's
-# requirement that selections are never inferred.
+# A full system upgrade runs first so the orchestrator's official-update
+# verify (pacman -Qu must be empty) cannot fail on packages upgraded outside
+# the selected module set; the later official-update stage then finds nothing
+# to do. The explicit --modules list prevents interactive selection; stdin
+# stays attached so gsudo can prompt for the sudo password.
 run_dag() {
   local modules
   modules="$(resolve_default_modules)"
+  log "performing a full system upgrade first (official-update verify requires pacman -Qu empty)..."
+  sudo pacman -Syu --noconfirm || \
+    die "full system upgrade failed; check network/mirror and retry."
   log "starting nine-stage DAG apply (profile '${PROFILE}', modules: ${modules})..."
   "${ORCHESTRATOR}" --profile "${PROFILE}" --modules "${modules}" --mode new --apply \
-    --confirm-system-changes --confirm-archlinuxcn --confirm-aur < /dev/null
+    --confirm-system-changes --confirm-archlinuxcn --confirm-aur
 }
 
 report_done() {
