@@ -875,8 +875,8 @@ load_workstation_package_policy() {
   done <"$WORKSTATION_PACKAGE_POLICY"
   ((WORKSTATION_POLICY_ROWS > 0)) || \
     die "reconciled workstation package manifest has no package rows"
-  ((WORKSTATION_CURRENT_ROWS == 178)) || \
-    die "reconciled workstation package manifest does not cover 178 current explicit packages"
+  ((WORKSTATION_CURRENT_ROWS == 183)) || \
+    die "reconciled workstation package manifest does not cover 183 current explicit packages"
   ((WORKSTATION_DESIRED_ROWS > 0)) || \
     die "reconciled workstation package manifest has no confirmed desired packages"
 }

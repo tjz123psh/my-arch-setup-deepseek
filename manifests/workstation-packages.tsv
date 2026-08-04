@@ -133,6 +133,7 @@ pipewire-alsa	pacman	extra	pacman	audio	package-only	install	current-explicit	Lo
 pipewire-audio	pacman	extra	pacman	audio	package-only	install	confirmed-desired	Low-latency audio/video router and processor - Audio support
 pipewire-jack	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor - JACK replacement
 pipewire-pulse	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor - PulseAudio replacement
+polkit-gnome	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	GNOME authentication agent for PolicyKit
 power-profiles-daemon	pacman	extra	pacman	power	package-only	install	current-explicit	Makes power profiles handling available over D-Bus
 powertop	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	A tool to diagnose issues with power consumption and power management
 python-gobject	pacman	extra	pacman	recording	package-only	install	confirmed-desired	Python bindings for GLib/GObject/GIO/GTK
@@ -142,6 +143,7 @@ python-opencv	pacman	extra	pacman	recording	package-only	install	current-explici
 python-pillow	pacman	extra	pacman	recording	package-only	install	current-explicit	Python Imaging Library (PIL) fork
 python-pygments	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Python syntax highlighter
 qemu-desktop	pacman	extra	pacman	virtualization	package-only	install	current-explicit	A QEMU setup for desktop environments
+qemu-guest-agent	pacman	extra	pacman	virtualization	package-only	install	current-explicit	QEMU guest agent
 quickshell	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Flexible toolkit for making desktop shells with QtQuick
 reflector	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	A Python 3 module and script to retrieve and filter the latest Pacman mirror list.
 rime-ice-git	pacman	archlinuxcn	pacman	input-fcitx-rime	config-backed	install	current-explicit	Rime 配置：雾凇拼音 | 长期维护的简体词库
@@ -158,11 +160,13 @@ snapper	pacman	extra	pacman	storage-maintenance	package-only	install	current-exp
 socat	pacman	extra	pacman	wm-hyprland	package-only	install	current-explicit	Multipurpose relay
 sof-firmware	pacman	extra	pacman	audio	package-only	install	current-explicit	Sound Open Firmware
 sound-theme-freedesktop	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Freedesktop sound theme
+spice-vdagent	pacman	extra	pacman	virtualization	package-only	install	current-explicit	SPICE VD agent for Linux guests
 starship	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	The cross-shell prompt for astronauts
 strace	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A diagnostic, debugging and instructional userspace tracer
 stylua	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Deterministic code formatter for Lua
 sudo	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Give certain users the ability to run some commands as root
 supergfxctl	pacman	archlinuxcn	pacman	asus-hardware	package-only	install	current-explicit	A utility for Linux graphics switching on Intel/AMD iGPU + nVidia dGPU laptops
+sysbench	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Scriptable multi-threaded benchmark tool
 tesseract	pacman	extra	pacman	ocr	package-only	install	current-explicit	An OCR program
 tesseract-data-chi_sim	pacman	extra	pacman	ocr	package-only	install	current-explicit	Tesseract OCR data (chi_sim)
 tesseract-data-eng	pacman	extra	pacman	ocr	package-only	install	current-explicit	Tesseract OCR data (eng)
@@ -197,6 +201,7 @@ xdg-desktop-portal-hyprland	pacman	extra	pacman	wm-hyprland	package-only	install
 xorg-server-xvfb	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Virtual framebuffer X server
 xwayland-satellite	pacman	extra	pacman	wm-niri	package-only	install	current-explicit	Xwayland outside your Wayland
 yazi	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Blazing fast terminal file manager written in Rust, based on async I/O
+ydotool	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Generic command-line automation tool for Wayland
 yt-dlp	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A youtube-dl fork with additional features and fixes
 zoxide	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A smarter cd command for your terminal
 zram-generator	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Systemd unit generator for zram devices

@@ -107,8 +107,8 @@ def load_inventory() -> dict[str, InventoryRecord]:
         if any(ord(character) < 32 for character in record.installed_version):
             fail(f"control character in inventory version for {record.package}")
         records[record.package] = record
-    if len(records) != 178:
-        fail(f"expected 178 current explicit inventory rows, found {len(records)}")
+    if len(records) != 183:
+        fail(f"expected 183 current explicit inventory rows, found {len(records)}")
     return records
 
 

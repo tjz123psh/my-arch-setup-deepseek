@@ -127,8 +127,8 @@ The explicit restore interface now implements the confirmed decision:
 ### Official packages
 
 `installer/official-package-apply.py` handles the initial full `pacman -Syu`
-boundary and the exact selected 157-package full ASUS official policy. It
-reconstructs effects from the 200-row ledger, inventories active repositories,
+boundary and the exact selected 162-package full ASUS official policy. It
+reconstructs effects from the 203-row ledger, inventories active repositories,
 blocks unknown/unreviewed trust, pins the archlinuxcn planner and wrapper
 payloads, uses exact argv arrays and distinguishes `pacman -Qu` current,
 pending, ambiguous-empty and failed-query outcomes. After the orchestrator's
@@ -209,16 +209,16 @@ red-then-green regressions and complete `tests/static-check.sh` successfully.
 
 ## Package policy
 
-The immutable observation remains 178 explicit packages: 165 sync-database and
-13 non-sync/AUR. The separate target policy has 198 unique rows:
+The immutable observation remains 183 explicit packages: 170 sync-database and
+13 non-sync/AUR. The separate target policy has 203 unique rows:
 
 | Responsibility | Rows |
 | --- | ---: |
-| install (`package-only` or `config-backed`) | 179 |
+| install (`package-only` or `config-backed`) | 184 |
 | verify-only manual precondition | 18 |
 | deferred greeter | 1 |
 
-The install rows split into 157 official, one archlinuxcn keyring bootstrap,
+The install rows split into 162 official, one archlinuxcn keyring bootstrap,
 eight archlinuxcn packages, one fixed Paru bootstrap and 12 other fixed AUR
 recipes. QQ, WeChat, Obsidian and Chrome remain package-only. All 26
 config-backed packages have explicit package/config relations. The only allowed

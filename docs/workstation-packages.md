@@ -30,25 +30,25 @@ selection.
 ## Immutable observation snapshot
 
 `manifests/workstation-package-inventory.tsv` remains the exact dated observation
-and is never direct apply input. Its successful capture contains 178 explicit
+and is never direct apply input. Its successful capture contains 183 explicit
 packages:
 
 ```text
-pacman -Qqe   -> exit 0, 178 explicit packages
-pacman -Qqen  -> exit 0, 165 sync-database packages
+pacman -Qqe   -> exit 0, 183 explicit packages
+pacman -Qqen  -> exit 0, 170 sync-database packages
 pacman -Qqem  -> exit 0, 13 packages absent from sync databases
-pacman -Si    -> all 165 repository metadata queries succeeded
+pacman -Si    -> all 170 repository metadata queries succeeded
 paru -Sia     -> all 13 non-sync packages were found in AUR
 ```
 
 | Observed repository/channel | Count |
 | --- | ---: |
 | core | 13 |
-| extra | 141 |
+| extra | 146 |
 | multilib | 1 |
 | archlinuxcn through pacman | 10 |
 | AUR | 13 |
-| **Total** | **178** |
+| **Total** | **183** |
 
 A fresh read-only 2026-08-01 comparison reran `pacman -Qqe`, `-Qqen`, `-Qqem`
 and `-Q`, all with exit `0`. It found zero missing names, extra names, version
@@ -59,14 +59,14 @@ not version pins.
 
 ## Reconciled target policy
 
-`manifests/workstation-packages.tsv` is the separate target ledger. It has 198
+`manifests/workstation-packages.tsv` is the separate target ledger. It has 203
 unique package rows:
 
 | Origin | Count |
 | --- | ---: |
-| exact current explicit observation | 178 |
+| exact current explicit observation | 183 |
 | confirmed desired non-explicit requirement | 20 |
-| **Total** | **198** |
+| **Total** | **203** |
 
 The 20 non-explicit rows are requirements supported by the manual, reviewed
 configuration, Phase C decisions and current installed/dependency state:
@@ -82,15 +82,15 @@ Responsibility and execution policy now reconcile to:
 
 | Responsibility | Count | Policy |
 | --- | ---: | --- |
-| package-only | 153 | install |
+| package-only | 158 | install |
 | config-backed | 26 | install after package/config relation checks |
 | manual-precondition | 18 | verify only |
 | deferred | 1 | never install in this release |
-| **Total** | **198** | 179 install / 18 verify / 1 deferred |
+| **Total** | **203** | 184 install / 18 verify / 1 deferred |
 
 Every row has an exact target channel/repository, acquisition method, functional
 module, responsibility, policy, evidence origin and purpose. The default ASUS
-policy's 179 install rows split into non-overlapping trust stages:
+policy's 184 install rows split into non-overlapping trust stages:
 
 ```text
 official pacman install:          157
@@ -166,8 +166,8 @@ The authoritative integrated plan is:
 python installer/full-orchestrator.py --profile asus-amd-nvidia --plan --json
 ```
 
-It derives all 157 official, one bootstrap, eight archlinuxcn and 15 AUR effects
-from the same 200-row snapshot and shows the canonical executable/input
+It derives all 162 official, one bootstrap, eight archlinuxcn and 13 AUR effects
+from the same 203-row snapshot and shows the canonical executable/input
 fingerprints. Current safety remains explicit: the nine stage integrations are
 true, but the default full ASUS policy still resolves unproved `planning`
 modules and is blocked before preflight. The exact VM Niri/Hyprland/both

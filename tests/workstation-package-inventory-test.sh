@@ -51,13 +51,13 @@ for line_number, parts in enumerate(csv.reader(lines[1:], delimiter="\t"), 2):
         "execution": execution,
     }
 
-if len(records) != 178:
-    raise SystemExit(f"expected the complete 178-package live explicit inventory, got {len(records)}")
+if len(records) != 183:
+    raise SystemExit(f"expected the complete 183-package live explicit inventory, got {len(records)}")
 channel_counts = Counter(record["channel"] for record in records.values())
-if channel_counts != {"pacman": 165, "aur": 13}:
+if channel_counts != {"pacman": 170, "aur": 13}:
     raise SystemExit(f"unexpected install-channel split: {dict(channel_counts)}")
 repository_counts = Counter(record["repository"] for record in records.values())
-if repository_counts != {"extra": 141, "core": 13, "archlinuxcn": 10, "aur": 13, "multilib": 1}:
+if repository_counts != {"extra": 146, "core": 13, "archlinuxcn": 10, "aur": 13, "multilib": 1}:
     raise SystemExit(f"unexpected repository split: {dict(repository_counts)}")
 
 expected_archlinuxcn = {

@@ -33,8 +33,8 @@ for line_number, parts in enumerate(csv.reader(inventory_path.read_text().splitl
         raise SystemExit(f"invalid source inventory row at line {line_number}")
     package, version, channel, repository, restore_mode, execution = parts
     inventory[package] = (channel, repository, restore_mode)
-if len(inventory) != 178:
-    raise SystemExit(f"source inventory no longer proves 178 explicit packages: {len(inventory)}")
+if len(inventory) != 183:
+    raise SystemExit(f"source inventory no longer proves 183 explicit packages: {len(inventory)}")
 
 modules: dict[str, tuple[str, ...]] = {}
 for parts in csv.reader(modules_path.read_text().splitlines()[1:], delimiter="\t"):

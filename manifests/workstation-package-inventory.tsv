@@ -125,6 +125,7 @@ pipewire	1:1.6.8-1	pacman	extra	package-only	inventory-only
 pipewire-alsa	1:1.6.8-1	pacman	extra	package-only	inventory-only
 pipewire-jack	1:1.6.8-1	pacman	extra	package-only	inventory-only
 pipewire-pulse	1:1.6.8-1	pacman	extra	package-only	inventory-only
+polkit-gnome	0.105-12	pacman	extra	package-only	inventory-only
 power-profiles-daemon	0.30-1	pacman	extra	package-only	inventory-only
 powertop	2.15-2	pacman	extra	package-only	inventory-only
 python-linkify-it-py	2.1.0-1	pacman	extra	package-only	inventory-only
@@ -133,6 +134,7 @@ python-opencv	5.0.0-7	pacman	extra	package-only	inventory-only
 python-pillow	12.3.0-1	pacman	extra	package-only	inventory-only
 python-pygments	2.20.0-1	pacman	extra	package-only	inventory-only
 qemu-desktop	11.0.2-4	pacman	extra	package-only	inventory-only
+qemu-guest-agent	11.0.3-1	pacman	extra	package-only	inventory-only
 quickshell	0.3.0-2	pacman	extra	config-backed	inventory-only
 reflector	2023-5	pacman	extra	package-only	inventory-only
 rime-ice-git	r985.b681a34-1	pacman	archlinuxcn	config-backed	inventory-only
@@ -147,11 +149,13 @@ snapper	0.13.1-2	pacman	extra	package-only	inventory-only
 socat	1.8.1.3-1	pacman	extra	package-only	inventory-only
 sof-firmware	2025.12.2-1	pacman	extra	package-only	inventory-only
 sound-theme-freedesktop	0.8-6	pacman	extra	package-only	inventory-only
+spice-vdagent	0.23.0-1	pacman	extra	package-only	inventory-only
 starship	1.26.0-1	pacman	extra	config-backed	inventory-only
 strace	7.0-1	pacman	extra	package-only	inventory-only
 stylua	2.5.2-1	pacman	extra	package-only	inventory-only
 sudo	1.9.17.p2-6	pacman	core	manual-precondition	inventory-only
 supergfxctl	5.2.7-2	pacman	archlinuxcn	package-only	inventory-only
+sysbench	1.0.20-2	pacman	extra	package-only	inventory-only
 tesseract	5.5.3-1	pacman	extra	package-only	inventory-only
 tesseract-data-chi_sim	2:4.1.0-5	pacman	extra	package-only	inventory-only
 tesseract-data-eng	2:4.1.0-5	pacman	extra	package-only	inventory-only
@@ -180,6 +184,7 @@ xdg-desktop-portal-gnome	50.0-1	pacman	extra	package-only	inventory-only
 xorg-server-xvfb	21.1.24-1	pacman	extra	package-only	inventory-only
 xwayland-satellite	0.8.2-1	pacman	extra	package-only	inventory-only
 yazi	26.5.6-4	pacman	extra	package-only	inventory-only
+ydotool	1.0.4-2	pacman	extra	package-only	inventory-only
 yt-dlp	2026.07.04-1	pacman	extra	package-only	inventory-only
 zoxide	0.10.0-1	pacman	extra	package-only	inventory-only
 zram-generator	1.2.1-1	pacman	extra	manual-precondition	inventory-only
