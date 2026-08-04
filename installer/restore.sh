@@ -102,12 +102,14 @@ check_root() {
 
 # Print the reviewed plan (reads the orchestrator --plan text output).
 # stdin is detached (< /dev/null) so the orchestrator never enters its
-# interactive module-selection prompt: with a non-tty stdin and no --modules
-# it falls back to the profile's default selection.
+# interactive module-selection prompt, and the explicit --modules list keeps
+# the plan fingerprint identical to the later apply (same selection source).
 show_plan() {
-  log "reading read-only plan for profile '${PROFILE}'..."
+  local modules
+  modules="$(resolve_default_modules)"
+  log "reading read-only plan for profile '${PROFILE}' (modules: ${modules})..."
   local plan_out
-  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --plan < /dev/null 2>&1)" || \
+  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --modules "${modules}" --plan < /dev/null 2>&1)" || \
     die "plan generation failed (profile '${PROFILE}' missing or misconfigured)"
   printf '%s\n' "${plan_out}" | sed -n '1,60p'
   # The blockers line looks like:
@@ -161,12 +163,31 @@ install_build_prereqs() {
   log "prerequisites ready."
 }
 
+# Resolve the profile's default selected modules from profile-modules.tsv.
+# The orchestrator refuses to infer selections for --apply, so restore.sh
+# must pass them explicitly; this mirrors the profile-defaults selection the
+# orchestrator uses when stdin is non-interactive for --plan.
+resolve_default_modules() {
+  local manifest="${PROJECT_DIR}/manifests/profile-modules.tsv"
+  [[ -f "${manifest}" ]] || die "profile-modules.tsv not found at ${manifest}"
+  local modules
+  modules="$(awk -F'\t' -v p="${PROFILE}" '$1==p && $4=="selected"{printf "%s,", $3}' "${manifest}")"
+  modules="${modules%,}"
+  if [[ -z "${modules}" ]]; then
+    die "profile '${PROFILE}' has no selected modules in ${manifest}"
+  fi
+  printf '%s' "${modules}"
+}
+
 # Run the nine-stage DAG (confirmations were granted by confirm_plan).
 # stdin is detached (< /dev/null) so the orchestrator never enters interactive
-# module selection; profile-default selection is used for apply.
+# module selection, and the explicit --modules list satisfies the apply path's
+# requirement that selections are never inferred.
 run_dag() {
-  log "starting nine-stage DAG apply (profile '${PROFILE}')..."
-  "${ORCHESTRATOR}" --profile "${PROFILE}" --mode new --apply \
+  local modules
+  modules="$(resolve_default_modules)"
+  log "starting nine-stage DAG apply (profile '${PROFILE}', modules: ${modules})..."
+  "${ORCHESTRATOR}" --profile "${PROFILE}" --modules "${modules}" --mode new --apply \
     --confirm-system-changes --confirm-archlinuxcn --confirm-aur < /dev/null
 }
 
