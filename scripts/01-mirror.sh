@@ -16,13 +16,26 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 section "Mirror optimization"
 
-ALIYUN="https://mirrors.aliyun.com/archlinux/core/os/x86_64/core.db"
+# Candidate China mirrors, in preference order (pacman tries them in order
+# and fails over to the next on error, so listing several is pure resilience).
+# aliyun first (usually fastest), then USTC and Tsinghua as fallbacks.
+MIRROR_BASE=(
+  "https://mirrors.aliyun.com/archlinux"
+  "https://mirrors.ustc.edu.cn/archlinux"
+  "https://mirrors.tuna.tsinghua.edu.cn/archlinux"
+)
+
+ALIYUN="${MIRROR_BASE[0]}/core/os/x86_64/core.db"
 
 if [[ "${CN_MIRROR:-0}" == "1" ]] || \
    curl -fsS --connect-timeout 4 --max-time 8 -o /dev/null "${ALIYUN}" 2>/dev/null; then
-  log "Aliyun mirror reachable; using it directly."
-  run bash -c 'echo "Server = https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist'
-  success "Switched to Aliyun mirror"
+  log "Aliyun mirror reachable; writing China mirror list (aliyun/ustc/tuna)."
+  run bash -c 'printf "%s\n" \
+    "Server = https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch" \
+    "Server = https://mirrors.ustc.edu.cn/archlinux/\$repo/os/\$arch" \
+    "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/\$repo/os/\$arch" \
+    > /etc/pacman.d/mirrorlist'
+  success "Switched to China mirror list (3 mirrors)"
 else
   log "Aliyun not reachable; running reflector (60s hard cap)..."
   run pacman -S --noconfirm --needed reflector

@@ -52,7 +52,13 @@ log "Official packages: ${#OFFICIAL[@]}, AUR: ${#AUR_PKGS[@]}"
 if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
   log "Configuring archlinuxcn repository and keyring..."
   if ! grep -q '^\[archlinuxcn\]' /etc/pacman.conf; then
-    run bash -c 'echo -e "\n[archlinuxcn]\nServer = https://mirrors.aliyun.com/archlinuxcn/\$arch" >> /etc/pacman.conf'
+    # Multiple mirrors for failover, matching the 01-mirror strategy.
+    run bash -c 'printf "%s\n" \
+      "[archlinuxcn]" \
+      "Server = https://mirrors.aliyun.com/archlinuxcn/\$arch" \
+      "Server = https://mirrors.ustc.edu.cn/archlinuxcn/\$arch" \
+      "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/\$arch" \
+      >> /etc/pacman.conf'
   fi
   if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
     # Let pacman resolve the exact keyring package version from the repo.
