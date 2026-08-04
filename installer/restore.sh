@@ -142,7 +142,10 @@ confirm_plan() {
 
 # Install the build/runtime prerequisites a clean Arch base lacks.
 # python3 runs the orchestrator; git fetched this repo; base-devel/devtools/rust
-# build the AUR recipes; curl fetches remote sources.
+# build the AUR recipes; curl fetches remote sources. Additionally installs any
+# missing base-preconditions verify-only packages (dosfstools/efibootmgr/
+# exfat-utils/linux-zen/os-prober and friends) so the handoff boundary is
+# satisfied automatically instead of failing the system-actions preflight.
 install_build_prereqs() {
   if [[ "${SKIP_PREREQS}" == "true" ]]; then
     log "build-prerequisite install skipped (--skip-prereqs)."
@@ -153,6 +156,15 @@ install_build_prereqs() {
   for p in python3 git base-devel devtools rust curl; do
     if ! pacman -Q "${p}" >/dev/null 2>&1; then missing+=("${p}"); fi
   done
+  # Missing base-preconditions verify-only packages (the manual handoff tools).
+  local policy="${PROJECT_DIR}/manifests/workstation-packages.tsv"
+  local pkg
+  if [[ -f "${policy}" ]]; then
+    while read -r pkg; do
+      [[ -z "${pkg}" ]] && continue
+      if ! pacman -Q "${pkg}" >/dev/null 2>&1; then missing+=("${pkg}"); fi
+    done < <(awk -F'\t' '$5=="base-preconditions" && $7=="verify"{print $1}' "${policy}")
+  fi
   if (( ${#missing[@]} == 0 )); then
     log "prerequisites already present."
     return 0
