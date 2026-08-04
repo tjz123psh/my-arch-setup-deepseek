@@ -20,7 +20,7 @@ test -f "$test_home/.config/niri/scripts/niri-force-kill-window"
 test ! -e "$test_home/.config/hypr"
 test -f "$test_home/.config/DankMaterialShell/firefox.css"
 test -f "$test_home/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml"
-test "$(find "$test_home/.config/DankMaterialShell" -type f | wc -l)" = 8
+test "$(find "$test_home/.config/DankMaterialShell" -type f | wc -l)" = 14
 test -f "$test_home/.config/dankcal/ui-settings.json"
 test -f "$test_home/.config/danksearch/config.toml"
 test -f "$test_home/.config/dgop/colors.json"
@@ -53,7 +53,7 @@ test "$(stat -c '%a' "$test_home/.local/state/my-archlinux-setup")" = 700
 test "$(stat -c '%a' "$test_home/.local/state/my-archlinux-setup/backups")" = 700
 test "$(stat -c '%a' "$test_home/.config/fuzzel/fuzzel.ini")" = 644
 test "$(stat -c '%a' "$test_home/.config/niri/scripts/niri-force-kill-window")" = 755
-test "$(find "$test_home/.config" -type f | wc -l)" = 93
+test "$(find "$test_home/.config" -type f | wc -l)" = 100
 if find "$test_home/.local/state/my-archlinux-setup/backups" -mindepth 1 -type d -print -quit | grep -q .; then
   printf 'expected no backup directory when no target changed\n' >&2
   exit 1
@@ -92,7 +92,7 @@ fi
 test "$(stat -c '%a' "$hypr_home/.config/hypr/scripts/fake-overview.sh")" = 755
 test "$(stat -c '%a' "$hypr_home/.config/hypr/scripts/hypr-force-kill-window")" = 755
 test "$(stat -c '%a' "$hypr_home/.config/hypr/scripts/hypr-keys")" = 755
-test "$(find "$hypr_home/.config" -type f | wc -l)" = 52
+test "$(find "$hypr_home/.config" -type f | wc -l)" = 59
 
 both_home="$test_home/both-wm-home"
 mkdir -p "$both_home"
@@ -104,12 +104,12 @@ test -f "$both_home/.config/niri/scripts/niri-force-kill-window"
 test -f "$both_home/.config/hypr/hyprland.lua"
 test -f "$both_home/.config/hypr/scripts/hypr-keys"
 test -f "$both_home/.config/DankMaterialShell/firefox.css"
-test "$(find "$both_home/.config/DankMaterialShell" -type f | wc -l)" = 8
+test "$(find "$both_home/.config/DankMaterialShell" -type f | wc -l)" = 14
 test -f "$both_home/.config/matugen/templates/fuzzel.ini"
 test -f "$both_home/.local/share/fcitx5/rime/rime_ice.custom.yaml"
 test "$(find "$both_home/scripts/desktop" -maxdepth 1 -type f | wc -l)" = 7
 test -f "$both_home/scripts/maintenance/lib/ui.sh"
-test "$(find "$both_home/.config" -type f | wc -l)" = 65
+test "$(find "$both_home/.config" -type f | wc -l)" = 72
 
 asus_default_home="$test_home/asus-default-home"
 mkdir -p "$asus_default_home"

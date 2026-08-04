@@ -61,7 +61,7 @@ assert_not_contains asus-default 'module: dms-niri-greeter '
 assert_contains asus-default 'module: daily-apps state=selected origin=default availability=available'
 assert_contains asus-default 'apply readiness: blocked by non-executable selected modules'
 assert_contains asus-default 'official packages: 15 reviewed package(s), not installed in plan mode'
-assert_contains asus-default 'configuration targets: 162 audited file mapping(s)'
+assert_contains asus-default 'configuration targets: 169 audited file mapping(s)'
 assert_contains asus-default 'scripts/maintenance/term-menu'
 assert_contains asus-default 'scripts/package/paru-ui'
 assert_contains asus-default '.config/autostart/FlClash.desktop'
@@ -77,12 +77,12 @@ assert_not_contains asus-both 'module: dms-greetd '
 assert_contains asus-both 'module: archlinuxcn-trust state=selected origin=dependency availability=available'
 assert_contains asus-both 'apply readiness: ready for implemented component actions'
 assert_contains asus-both 'official packages: 15 reviewed package(s), not installed in plan mode'
-assert_contains asus-both 'configuration targets: 117 audited file mapping(s)'
+assert_contains asus-both 'configuration targets: 124 audited file mapping(s)'
 
 asus_script_modules='desktop-shared,input-fcitx-rime,developer-editor,wm-niri,wm-hyprland,personal-scripts'
 run_plan asus-scripts --profile asus-amd-nvidia --modules "$asus_script_modules"
 assert_contains asus-scripts 'module: personal-scripts state=selected origin=explicit availability=available'
-assert_contains asus-scripts 'configuration targets: 156 audited file mapping(s)'
+assert_contains asus-scripts 'configuration targets: 163 audited file mapping(s)'
 assert_contains asus-scripts 'scripts/maintenance/term-menu'
 assert_contains asus-scripts 'scripts/package/paru-ui'
 
@@ -91,7 +91,7 @@ run_plan asus-full --profile asus-amd-nvidia --modules "$asus_full_modules"
 assert_contains asus-full 'module: personal-autostart state=selected origin=explicit availability=available'
 assert_contains asus-full 'module: asus-hardware state=selected origin=explicit availability=available'
 assert_contains asus-full 'module: personal-user-services state=selected origin=explicit availability=available'
-assert_contains asus-full 'configuration targets: 162 audited file mapping(s)'
+assert_contains asus-full 'configuration targets: 169 audited file mapping(s)'
 assert_contains asus-full '.config/autostart/FlClash.desktop'
 assert_contains asus-full '.config/rog/rog-control-center.cfg'
 assert_contains asus-full '.config/systemd/user/vellum.service'
@@ -100,7 +100,7 @@ run_plan asus-niri --profile asus-amd-nvidia \
   --modules desktop-shared,input-fcitx-rime,developer-editor,wm-niri
 assert_contains asus-niri 'module: wm-hyprland state=disabled origin=default-overridden availability=available'
 assert_contains asus-niri 'official packages: 14 reviewed package(s), not installed in plan mode'
-assert_contains asus-niri 'configuration targets: 101 audited file mapping(s)'
+assert_contains asus-niri 'configuration targets: 108 audited file mapping(s)'
 assert_not_contains asus-niri '[wm-hyprland] hyprland —'
 assert_not_contains asus-niri '.config/hypr/hyprland.lua'
 assert_contains asus-niri '.config/niri/config.kdl'
@@ -116,7 +116,7 @@ run_plan asus-hypr --profile asus-amd-nvidia \
   --modules desktop-shared,input-fcitx-rime,developer-editor,wm-hyprland
 assert_contains asus-hypr 'module: wm-niri state=disabled origin=default-overridden availability=available'
 assert_contains asus-hypr 'official packages: 14 reviewed package(s), not installed in plan mode'
-assert_contains asus-hypr 'configuration targets: 102 audited file mapping(s)'
+assert_contains asus-hypr 'configuration targets: 109 audited file mapping(s)'
 assert_not_contains asus-hypr '[wm-niri] niri —'
 assert_not_contains asus-hypr '.config/niri/config.kdl'
 assert_contains asus-hypr '.config/hypr/hyprland.lua'
@@ -134,7 +134,7 @@ assert_contains desktop-default 'module: virtualization state=selected origin=de
 assert_contains desktop-default 'apply readiness: blocked by non-executable selected modules'
 assert_contains desktop-default 'module: wm-hyprland state=disabled origin=default-disabled availability=available'
 assert_contains desktop-default 'official packages: 14 reviewed package(s), not installed in plan mode'
-assert_contains desktop-default 'configuration targets: 94 audited file mapping(s)'
+assert_contains desktop-default 'configuration targets: 101 audited file mapping(s)'
 assert_not_contains desktop-default '[wm-hyprland] hyprland —'
 assert_not_contains desktop-default '.config/hypr/hyprland.lua'
 assert_contains desktop-default '.config/DankMaterialShell/settings.json'
@@ -142,7 +142,7 @@ assert_contains desktop-default '.config/DankMaterialShell/plugins/ShorinScreenr
 
 run_plan desktop-both --profile desktop-amd --modules "$asus_both_modules"
 assert_contains desktop-both 'official packages: 15 reviewed package(s), not installed in plan mode'
-assert_contains desktop-both 'configuration targets: 117 audited file mapping(s)'
+assert_contains desktop-both 'configuration targets: 124 audited file mapping(s)'
 assert_contains desktop-both '[wm-hyprland] hyprland —'
 
 run_plan vm-default --profile vm

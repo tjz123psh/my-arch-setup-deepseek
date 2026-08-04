@@ -9,7 +9,7 @@ The schema-3 source of truth is `manifests/config-mappings.tsv`. Each row binds
 one configuration scope, module, repository-relative regular-file source,
 HOME-relative target and the reviewed deploy mode (`600`, `644`, `744` or
 `755`). The declared mode drives deployed permissions, so the reviewed payload
-keeps its exact modes on a clean clone. The current set contains 198 files: 162
+keeps its exact modes on a clean clone. The current set contains 205 files: 169
 in `physical-v1` and 36 in `vm-v1`. Source/target uniqueness is enforced per
 scope, so a reduced VM payload may deliberately target the same HOME-relative
 path as its physical counterpart without sharing the same source file.
@@ -18,7 +18,7 @@ path as its physical counterpart without sharing the same source file.
 
 | Module | `physical-v1` | `vm-v1` | Total |
 | --- | ---: | ---: | ---: |
-| `desktop-shared` | 37 | 27 | 64 |
+| `desktop-shared` | 44 | 27 | 71 |
 | `input-fcitx-rime` | 7 | 7 | 14 |
 | `developer-editor` | 42 | 0 | 42 |
 | `wm-niri` | 15 | 1 | 16 |
@@ -27,7 +27,7 @@ path as its physical counterpart without sharing the same source file.
 | `personal-user-services` | 4 | 0 | 4 |
 | `personal-autostart` | 1 | 0 | 1 |
 | `asus-hardware` | 1 | 0 | 1 |
-| **Total** | **162** | **36** | **198** |
+| **Total** | **169** | **36** | **205** |
 
 The physical scope includes a 42-file Neovim configuration, complete reviewed
 DMS user state, Fcitx5/Rime, independent Niri and Hyprland boundaries, personal
@@ -54,7 +54,7 @@ For `physical-v1`:
 - shared + input + editor + Hyprland: 102 targets;
 - shared + input + editor + both WMs: 117 targets;
 - previous row + `personal-scripts`: 156 targets;
-- ASUS defaults with all reviewed physical personal modules: 162 targets;
+- ASUS defaults with all reviewed physical personal modules: 169 targets;
 - generic AMD defaults with input disabled: 94 targets.
 
 For `vm-v1`:

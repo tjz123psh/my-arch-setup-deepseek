@@ -1,5 +1,11 @@
 # schema=3
 # config-scope<TAB>module<TAB>source path relative to repository<TAB>target path relative to invoking user HOME<TAB>mode
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/MainWidget.qml	.config/DankMaterialShell/plugins/dankmaintenance/MainWidget.qml	644
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/MainWidgetSettings.qml	.config/DankMaterialShell/plugins/dankmaintenance/MainWidgetSettings.qml	644
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/StartupCheck.qml	.config/DankMaterialShell/plugins/dankmaintenance/StartupCheck.qml	644
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/bg-winter.png	.config/DankMaterialShell/plugins/dankmaintenance/bg-winter.png	600
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/collect-status	.config/DankMaterialShell/plugins/dankmaintenance/collect-status	755
+physical-v1	desktop-shared	config/home/.config/DankMaterialShell/plugins/dankmaintenance/plugin.json	.config/DankMaterialShell/plugins/dankmaintenance/plugin.json	644
 physical-v1	desktop-shared	config/home/.config/alacritty/alacritty.toml	.config/alacritty/alacritty.toml	644
 physical-v1	desktop-shared	config/home/.config/alacritty/dank-theme.toml	.config/alacritty/dank-theme.toml	644
 physical-v1	desktop-shared	config/home/.config/cava/themes/solarized_dark	.config/cava/themes/solarized_dark	644
@@ -14,6 +20,7 @@ physical-v1	input-fcitx-rime	config/home/.config/fcitx5/conf/notifications.conf	
 physical-v1	input-fcitx-rime	config/home/.config/fcitx5/rime/default.custom.yaml	.config/fcitx5/rime/default.custom.yaml	644
 physical-v1	desktop-shared	config/home/.config/fish/config.fish	.config/fish/config.fish	644
 physical-v1	desktop-shared	config/home/.config/fish/conf.d/rustup.fish	.config/fish/conf.d/rustup.fish	644
+physical-v1	desktop-shared	config/home/.config/fish/functions/paru.fish	.config/fish/functions/paru.fish	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/colors.ini	.config/fuzzel/colors.ini	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/fuzzel.ini	.config/fuzzel/fuzzel.ini	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/gtk.css	.config/gtk-3.0/gtk.css	644

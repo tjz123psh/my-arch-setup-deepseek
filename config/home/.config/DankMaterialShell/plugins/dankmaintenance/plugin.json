@@ -1,0 +1,19 @@
+{
+    "id": "dankmaintenance",
+    "name": "Maintenance Status",
+    "description": "维护中心状态灯：顶栏图标入口，点击查看待更新数、磁盘使用率、失败服务与快照新鲜度。只读展示，不执行任何维护操作。",
+    "version": "0.2.0",
+    "author": "pang",
+    "type": "widget",
+    "capabilities": ["dankbar-widget"],
+    "component": "./MainWidget.qml",
+    "icon": "monitor_heart",
+    "settings": "./MainWidgetSettings.qml",
+    "startupCheck": "./StartupCheck.qml",
+    "requires_dms": ">=0.1.18",
+    "permissions": [
+        "settings_read",
+        "settings_write",
+        "process"
+    ]
+}

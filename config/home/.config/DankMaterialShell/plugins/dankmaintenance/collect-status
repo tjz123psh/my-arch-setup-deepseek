@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""dankmaintenance 状态收集器（只读）。
+
+数据源全部为只读：
+  - ~/.cache/checkallupdates/updates-{repo,aur,flatpak}.txt（每行 "包名 旧 -> 新"）
+  - ~/.cache/checkallupdates/source-status.tsv（第二列状态）
+  - df（根与 /home 使用率/可用空间）
+  - systemctl --failed（失败单元名）
+  - /.snapshots 与 /home/.snapshots 下的 info.xml（snapper 快照元数据）
+
+输出：写入 ~/.cache/dankmaintenance/status.json（原子替换）并打印到 stdout，
+供 QML 端 Proc.runCommand 直接解析。不执行任何维护操作。
+"""
+
+import json
+import os
+import re
+import sys
+from datetime import datetime
+
+CACHE_DIR = os.path.expanduser("~/.cache/checkallupdates")
+OUT_DIR = os.path.expanduser("~/.cache/dankmaintenance")
+OUT_FILE = os.path.join(OUT_DIR, "status.json")
+
+SNAPSHOT_DIRS = [("root", "/.snapshots"), ("home", "/home/.snapshots")]
+SAMPLE_COUNT = 5
+SAMPLE_MAX_CHARS = 48
+
+
+def read_updates_cache():
+    """读 checkallupdates 缓存：计数、状态、包名样例、缓存年龄。"""
+    per_source = {}
+    newest_mtime = 0.0
+    for key, fname in [("repo", "updates-repo.txt"), ("aur", "updates-aur.txt"),
+                       ("flatpak", "updates-flatpak.txt")]:
+        path = os.path.join(CACHE_DIR, fname)
+        entry = {"count": 0, "status": "missing", "samples": []}
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                lines = [ln.strip() for ln in f if ln.strip()]
+            entry["count"] = len(lines)
+            entry["status"] = "ok"
+            # 每行 "包名 旧 -> 新"，包名取第一列
+            samples = []
+            for ln in lines:
+                pkg = ln.split()[0] if ln.split() else ln
+                samples.append(pkg)
+            entry["samples"] = samples[:SAMPLE_COUNT]
+            newest_mtime = max(newest_mtime, os.path.getmtime(path))
+        except OSError:
+            pass
+        per_source[key] = entry
+
+    total = sum(e["count"] for e in per_source.values())
+
+    # 源状态（source-status.tsv 第二列；缺失时按缓存存在性推断）
+    try:
+        with open(os.path.join(CACHE_DIR, "source-status.tsv"), encoding="utf-8") as f:
+            for line in f:
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    key = {"pacman": "repo", "aur": "aur", "flatpak": "flatpak"}.get(parts[0].strip())
+                    if key and key in per_source:
+                        per_source[key]["status"] = parts[1].strip()
+    except OSError:
+        pass
+
+    # 缓存年龄：按最新缓存文件 mtime 计算（分钟）
+    cache_age = None
+    if newest_mtime > 0:
+        cache_age = max(0, int((datetime.now().timestamp() - newest_mtime) / 60))
+
+    return {"per_source": per_source, "total": total, "cache_age": cache_age}
+
+
+def read_disk():
+    """df 只读输出，取根与 /home。GNU df：--output=pcent,avail,target。"""
+    out = {}
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["df", "--output=size,pcent,avail,target"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in res.stdout.splitlines()[1:]:
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            size, pct, avail, target = parts[0], parts[1], parts[2], parts[3]
+            if target not in ("/", "/home"):
+                continue
+            key = "root" if target == "/" else "home"
+            try:
+                total_gb = round(int(size) / 1024 / 1024, 1)  # df 默认块 1K
+                used_pct = int(pct.rstrip("%"))
+                avail_gb = round(int(avail) / 1024 / 1024, 1)
+            except ValueError:
+                continue
+            out[key] = {"total_gb": total_gb, "used_pct": used_pct, "avail_gb": avail_gb}
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return out
+
+
+def read_failed_units():
+    """systemctl --failed 失败单元名列表。"""
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["systemctl", "--failed", "--no-legend", "--plain"],
+            capture_output=True, text=True, timeout=10,
+        )
+        units = []
+        for line in res.stdout.splitlines():
+            name = line.split()[0] if line.split() else line
+            if name:
+                units.append(name)
+        return units
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+
+INFO_RE = re.compile(r"<(type|num|date|description)>([^<]*)</\1>")
+
+
+def read_snapshots(dirpath):
+    """读 snapper 快照目录：count + 最近快照（info.xml 解析）。
+
+    wheel 组对快照目录有 r-x ACL，普通用户可直接读取，无需 sudo。
+    """
+    result = {"count": 0, "newest_ts": None, "newest_desc": "", "newest_type": ""}
+    if not os.path.isdir(dirpath):
+        result["error"] = "目录不存在"
+        return result
+    try:
+        entries = os.listdir(dirpath)
+    except OSError as e:
+        result["error"] = str(e)
+        return result
+
+    newest = None
+    for name in entries:
+        if not name.isdigit():
+            continue
+        infopath = os.path.join(dirpath, name, "info.xml")
+        try:
+            with open(infopath, encoding="utf-8", errors="replace") as f:
+                content = f.read()
+        except OSError:
+            continue
+        info = {k: v for k, v in INFO_RE.findall(content)}
+        ts = None
+        try:
+            ts = datetime.strptime(info.get("date", ""), "%Y-%m-%d %H:%M:%S").timestamp()
+        except ValueError:
+            continue
+        result["count"] += 1
+        if newest is None or ts > newest[0]:
+            newest = (ts, info.get("description", ""), info.get("type", ""))
+
+    if newest:
+        result["newest_ts"] = int(newest[0])
+        result["newest_desc"] = newest[1]
+        result["newest_type"] = newest[2]
+    return result
+
+
+def read_memory():
+    """/proc/meminfo：内存总量/可用/已用比例 + swap。失败返回 None（源级隔离）。"""
+    out = None
+    try:
+        fields = {}
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    fields[parts[0]] = int(parts[1].strip().split()[0]) * 1024  # kB -> B
+        total = fields.get("MemTotal", 0)
+        avail = fields.get("MemAvailable", 0)
+        if total > 0:
+            out = {
+                "total_gb": round(total / 1024 ** 3, 1),
+                "used_pct": round((total - avail) / total * 100),
+                "avail_gb": round(avail / 1024 ** 3, 1),
+            }
+        stotal = fields.get("SwapTotal", 0)
+        sfree = fields.get("SwapFree", 0)
+        if stotal > 0 and out is not None:
+            out["swap"] = {
+                "total_gb": round(stotal / 1024 ** 3, 1),
+                "used_gb": round((stotal - sfree) / 1024 ** 3, 1),
+                "used_pct": round((stotal - sfree) / stotal * 100),
+            }
+    except (OSError, ValueError, KeyError):
+        pass
+    return out
+
+
+def read_journal_errors(hours=24):
+    """journalctl -p err 近 N 小时按服务聚合（-o json 字段不受 locale 影响）。"""
+    result = {"total": 0, "top": [], "hours": hours}
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["journalctl", "-p", "err", "--since", "%d hours ago" % hours,
+             "--no-pager", "-o", "json"],
+            capture_output=True, text=True, timeout=20,
+        )
+        if res.returncode != 0:
+            result["error"] = True
+            return result
+        counts = {}
+        for line in res.stdout.splitlines():
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            svc = rec.get("SYSLOG_IDENTIFIER") or rec.get("_SYSTEMD_UNIT", "") \
+                .replace(".service", "") or rec.get("_COMM", "") or "unknown"
+            counts[svc] = counts.get(svc, 0) + 1
+        result["total"] = sum(counts.values())
+        result["top"] = [
+            {"service": s, "count": c}
+            for s, c in sorted(counts.items(), key=lambda kv: -kv[1])[:10]
+        ]
+    except (OSError, subprocess.TimeoutExpired):
+        result["error"] = True
+    return result
+
+
+def read_orphans():
+    """pacman -Qdt：孤儿包（不再被依赖，可安全移除）。
+
+    pacman 无孤儿时 rc=1 且空输出，因此只看 stdout 行数不看 returncode。
+    """
+    result = {"count": 0, "packages": []}
+    try:
+        import subprocess
+        res = subprocess.run(
+            ["pacman", "-Q", "-q", "-d", "-t"], capture_output=True, text=True, timeout=20)
+        pkgs = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+        result["count"] = len(pkgs)
+        result["packages"] = pkgs[:10]
+    except (OSError, subprocess.TimeoutExpired):
+        result["error"] = True
+    return result
+
+
+def main():
+    try:
+        updates = read_updates_cache()
+        disk = read_disk()
+        failed = read_failed_units()
+        snapshots = {key: read_snapshots(path) for key, path in SNAPSHOT_DIRS}
+        memory = read_memory()
+        journal_errors = read_journal_errors()
+        orphans = read_orphans()
+
+        status = {
+            "generated_at": int(datetime.now().timestamp()),
+            "updates": updates,
+            "disk": disk,
+            "failed_units": failed,
+            "snapshots": snapshots,
+            "memory": memory,
+            "journal_errors": journal_errors,
+            "orphans": orphans,
+        }
+
+        os.makedirs(OUT_DIR, exist_ok=True)
+        tmp = OUT_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(status, f, ensure_ascii=False)
+        os.replace(tmp, OUT_FILE)
+
+        print(json.dumps(status, ensure_ascii=False))
+    except Exception as e:
+        # 顶层兜底：任何未预期异常（磁盘满、权限、JSON 序列化等）都输出明确错误，
+        # 避免静默崩溃导致 QML 端收到空输出而误判为"正常无数据"
+        err = {"generated_at": int(datetime.now().timestamp()), "collector_error": str(e)}
+        print(json.dumps(err, ensure_ascii=False))
+        sys.stderr.write("dankmaintenance collect-status error: %s\n" % e)
+
+
+if __name__ == "__main__":
+    main()
