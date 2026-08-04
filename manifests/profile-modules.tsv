@@ -82,3 +82,7 @@ vm	vm-v1	power	disabled
 vm	vm-v1	container-tools	disabled
 vm	vm-v1	storage-maintenance	disabled
 vm	vm-v1	virtualization	disabled
+vm	vm-v1	developer-editor	disabled
+vm	vm-v1	personal-scripts	disabled
+vm	vm-v1	asus-hardware	disabled
+vm	vm-v1	personal-user-services	disabled

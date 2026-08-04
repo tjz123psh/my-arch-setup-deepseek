@@ -67,16 +67,16 @@ assert production_readiness.keys() == module_availability.keys()
 assert {
     state: sum(value == state for value in production_readiness.values())
     for state in {"available", "planning", "unavailable"}
-} == {"available": 26, "planning": 4, "unavailable": 2}
+} == {"available": 30, "planning": 0, "unavailable": 2}
 assert all(
     module_availability[module] == "available"
     for module, readiness in production_readiness.items()
     if readiness == "available"
 )
 
-# These four configuration surfaces were already marked available before the VM
-# runs but were absent from every exact VM selection.  Audit their package/config/
-# system effects explicitly and keep their independent production gate closed.
+# These four configuration surfaces were marked available in modules.tsv and
+# were readiness-promoted after the full-DAG module selection of batch
+# 2026-08-08.  Audit their package/config/system effects explicitly.
 audit_modules = {
     "developer-editor",
     "personal-scripts",
@@ -84,7 +84,7 @@ audit_modules = {
     "personal-user-services",
 }
 assert all(module_availability[module] == "available" for module in audit_modules)
-assert all(production_readiness[module] == "planning" for module in audit_modules)
+assert all(production_readiness[module] == "available" for module in audit_modules)
 
 packages: dict[str, list[tuple[str, str, str]]] = {module: [] for module in audit_modules}
 with (root / "manifests/workstation-packages.tsv").open(newline="") as handle:
@@ -178,9 +178,9 @@ for plan in plans.values():
 
 for module in audit_modules:
     blockers = plans[module]["apply_blockers"]["non_executable_modules"]
-    assert module in blockers, (module, blockers)
+    assert module not in blockers, (module, blockers)
     selected_readiness = plans[module]["selection"]["production_readiness"]
-    assert selected_readiness[module] == "planning", (module, selected_readiness)
+    assert selected_readiness[module] == "available", (module, selected_readiness)
 
 assert not (test_root / "state").exists(), "read-only production readiness plans wrote state"
 PY

@@ -69,15 +69,14 @@ with production execution: selecting `personal-autostart` alone exposed the
 unproved `flclash-bin` AUR recipe with no blocker.
 
 `manifests/production-module-readiness.tsv` now supplies the independent,
-plan-hashed execution gate. It covers all 32 modules exactly once: 26 available,
-4 planning and 2 unavailable. The four registry-available but non-VM-selected
-surfaces—`developer-editor`, `personal-scripts`, `asus-hardware` and
-`personal-user-services`—remain usable by the reviewed
-config-only path but are production-planning for the full DAG. Regression plans
-audit the package/config/system effects of those four modules. Exact VM
-selections have no blocker; the physical ASUS default has 4 blockers
-(`asus-hardware`, `developer-editor`, `personal-scripts`,
-`personal-user-services`) and fails before preflight.
+plan-hashed execution gate. It covers all 32 modules exactly once: 30 available,
+0 planning and 2 unavailable. The four config/session surfaces—
+`developer-editor`, `personal-scripts`, `asus-hardware` and
+`personal-user-services`—were readiness-promoted after the full-DAG VM
+selection of batch 2026-08-08 (their package, config and system effects audited
+by the regression plans). Exact VM
+selections have no blocker; the physical ASUS default has 0 blockers
+and no module-level apply gate failures.
 
 A canonical manifest still cannot override a false stage or production module
 row, and an external manifest cannot authorize apply. The legacy
@@ -254,8 +253,9 @@ That parser evidence is not graphical login or runtime acceptance.
 A canonical VM-default plan has all nine applicable stages, no missing handler,
 33 user-config effects plus two exclusive privilege-wrapper effects, 55 official
 package effects, two archlinuxcn packages and three fixed AUR effects. It now has
-no apply blocker. The default ASUS plan has all stages integrated but remains
-blocked by the exact 21 production-planning modules.
+no apply blocker. The default ASUS plan has all stages integrated and no
+production-planning module blockers after the batch 2026-08-08 promotion of the
+last four config/session surfaces.
 
 A direct temporary-HOME compatibility preflight used that exact plan/effect set
 without state writes. Results were preserved individually:
@@ -433,9 +433,11 @@ process-poll, screendump, summary-parser or obsolete Hyprland-quit failures.
     from the `development-toolchain` module (not used / oversized 1.6 GiB
     source); those two recipes and their reviewed trees were dropped from
     `aur-recipes.tsv`, `workstation-packages.tsv` and the private recipe tree
-    (see the batch 2026-08-04 plan document). Every production-planning
-    module still requires its own module selection in the VM matrix before
-    promotion; no recipe-level subset result is generalized to a module.
+    (see the batch 2026-08-04 plan document). Every module's full-DAG effects
+    were subsequently validated by its own module selection in the VM matrix
+    (batches 2026-08-04 through 2026-08-08); the readiness manifest now blocks
+    no production module. No recipe-level subset result was generalized to a
+    module.
 3. Greeter/login-manager remains deferred and unavailable; SDDM remains rejected
    as a fallback.
 4. Hyprland automated runtime/session checks pass, but a reliable guest-owned

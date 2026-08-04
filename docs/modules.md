@@ -22,9 +22,9 @@ becoming package/service authorization:
   full-DAG effects of that module may execute. Its exact coverage is hashed into
   every plan and rechecked before adapter execution.
 
-The registry currently contains 26 `available`, 4 `planning` and 2
-`unavailable` module surfaces. The stricter execution registry contains 21
-`available`, 9 `planning` and 2 `unavailable` rows. Production apply also
+The registry currently contains 30 `available`, 0 `planning` and 2
+`unavailable` module surfaces. The stricter execution registry contains 30
+`available`, 0 `planning` and 2 `unavailable` rows. Production apply also
 requires every applicable row in `manifests/stages.tsv` to have
 `production-apply-integration=true`, complete canonical adapter coverage and no
 external-manifest substitution. All nine stage flags are true after the
@@ -46,33 +46,34 @@ on any independently `planning` production row.
 | `asus-hardware` | Same-ASUS user config; requires `archlinuxcn-trust` |
 | `personal-user-services` | User unit files restored without enabling them |
 
-These modules remain marked `available` for their audited config surface. Only
-`desktop-shared`, `input-fcitx-rime`, `wm-niri` and `wm-hyprland` are also
-production-ready. `developer-editor`, `personal-scripts`,
-`personal-autostart`, `asus-hardware` and `personal-user-services` are
-independently `planning` for full-DAG execution because no exact VM selection
-covered their complete effects. In particular, this closes the former
-`personal-autostart`/`flclash-bin` AUR bypass without disabling reviewed
-config-only deployment. The official `dms-shell` user-session package remains
-owned by `desktop-shared`; `dms-greetd` and `dms-niri-greeter` remain
-unavailable and unoffered. There is no SDDM fallback.
+These modules remain marked `available` for their audited config surface. All
+nine configuration/session surfaces are now also production-ready: the batch
+2026-08-08 full-DAG VM selection covered the complete effects of
+`developer-editor`, `personal-scripts`, `asus-hardware` and
+`personal-user-services`, joining the earlier `desktop-shared`,
+`input-fcitx-rime`, `wm-niri` and `wm-hyprland` promotions and the
+`personal-autostart` flclash-bin AUR evidence. There is no independently
+`planning` config-only module left. The official `dms-shell` user-session
+package remains owned by `desktop-shared`; `dms-greetd` and `dms-niri-greeter`
+remain unavailable and unoffered. There is no SDDM fallback.
 
 ## Full-policy planning modules
 
-The module-registry planning set is:
+The module-registry planning set is empty after the three batches
+(2026-08-05 through 2026-08-08) promoted every previously planning module to
+registry `available`:
 
 ```text
-repository-tools daily-apps desktop-apps cli-tools development-toolchain
-container-tools storage-maintenance virtualization kernel-support bluetooth
-power graphics-amd graphics-nvidia hardware-tools recording ocr
+(no planning modules remain)
 ```
 
-The production planning set additionally contains the five reviewed but
-non-VM-selected config/session modules listed above, for 21 blockers in the
-default ASUS plan. The VM-proven `base-preconditions`, `archlinuxcn-trust`,
-`build-foundation`, `fonts` and `audio` rows moved to registry `available`; the
-separate production registry marks those five plus the four exact VM
-config/session owners ready and promotes nothing else.
+The production planning set is likewise empty: the registry and the execution
+registry both report 30 `available`, 0 `planning` and 2 `unavailable` modules.
+The default ASUS plan therefore has no `non_executable_modules` blocker. The
+VM-proven `base-preconditions`, `archlinuxcn-trust`, `build-foundation`,
+`fonts` and `audio` rows moved to registry `available`; the separate
+production registry marks those five plus the four exact VM config/session
+owners ready and promotes nothing else.
 
 They own the plan-visible 200-row package policy and automatic/manual/deferred
 system actions. `archlinuxcn-trust` is dependency-only and is resolved whenever

@@ -9,28 +9,28 @@ software-side work that must complete first.
 
 - Nine-stage DAG (`full-orchestrator.py`) validated end-to-end in disposable VMs;
   13 fixed AUR recipes passed real source/build/artifact/install/rerun paths.
-- Module registry (`modules.tsv`): **26 `available` / 4 `planning` / 2 `unavailable`**
+- Module registry (`modules.tsv`): **30 `available` / 0 `planning` / 2 `unavailable`**
   (32 total).
-- Execution gate (`production-module-readiness.tsv`): **26 `available` /
-  4 `planning` / 2 `unavailable`** — the four config-only available
+- Execution gate (`production-module-readiness.tsv`): **30 `available` /
+  0 `planning` / 2 `unavailable`** — the four config-only available
   modules (`developer-editor`, `personal-scripts`, `asus-hardware`,
-  `personal-user-services`) are readiness-`planning` for full-DAG execution.
+  `personal-user-services`) were readiness-promoted after the full-DAG
+  VM selection of batch 2026-08-08.
 - Workstation policy: 203 rows (183 current-explicit + 20 confirmed-desired);
   184 install / 18 verify / 1 deferred. AUR recipes: 13 (10 remote-fixed +
   3 local-fixed with private caches).
 - Physical-host audit (2026-08-04): host explicit sync set fully covered by the
   policy (0 missing); five host-explicit packages adopted (polkit-gnome,
   ydotool, qemu-guest-agent, spice-vdagent, sysbench) in commit `72852fe`.
-- Full ASUS physical profile remains fail-closed with **4 apply blockers**
-  (5 planning modules + `developer-editor`, `personal-scripts`,
-  `asus-hardware`, `personal-user-services`).
+- Full ASUS physical profile is no longer fail-closed on modules: **0 apply
+  blockers** after the batch 2026-08-08 promotion.
 
 ## Remaining work items
 
 ### A. Module-level VM validation for the remaining 5 planning modules
 
-> **COMPLETE (batches 2026-08-05/06/07).** All five were promoted to
-> `available`; registry and execution readiness are now 26 available.
+> **COMPLETE (batches 2026-08-05/06/07/08).** All planning modules were
+> promoted to `available`; registry and execution readiness are now 30 available.
 
 The 5 planning modules are **package-only** (zero config mappings).
 Their system actions are mostly physical-profile-scoped (see B), so the VM
@@ -48,12 +48,12 @@ Package inventory per module (all `pacman`/`extra` unless noted):
 | `hardware-tools` ✓ | evtest, fprintd, fwupd, linux-firmware (core), powertop (5) | none |
 | `ocr` ✓ | tesseract, tesseract-data-chi_sim, tesseract-data-eng (3) | none |
 | `recording` ✓ | ffmpeg, grim, gtk-layer-shell, gtk4-layer-shell, python-gobject, python-opencv, python-pillow, slurp, wf-recorder, wl-screenrec-git (archlinuxcn) (10) | none |
-| `bluetooth` | blueman, bluez, bluez-utils (3) | blueman-session-owner (verify, physical), bluetooth-service (apply, physical) |
-| `power` | power-profiles-daemon (1) | power-profiles-service (apply, physical) |
-| `container-tools` | docker, docker-compose (2) | docker-service (apply, physical), docker-group-membership (manual, physical) |
-| `kernel-support` | linux-headers (core), linux-zen-headers (2) | kernel-dkms-verification (verify, physical) |
-| `storage-maintenance` | btrfs-assistant, grub-btrfs, inotify-tools, rsync, smartmontools, snapper (6) | snapper-configs (manual), snapper-timers (manual), grub-btrfs-recovery (deferred) |
-| `virtualization` | dnsmasq, edk2-ovmf, libvirt, qemu-desktop, qemu-guest-agent, spice-vdagent, virt-manager (7) | libvirtd-service (apply), libvirt-default-network (apply), libvirt-group-membership (manual), virtualization-hugepages (deferred) |
+| `bluetooth` ✓ | blueman, bluez, bluez-utils (3) | blueman-session-owner (verify, physical), bluetooth-service (apply, physical) |
+| `power` ✓ | power-profiles-daemon (1) | power-profiles-service (apply, physical) |
+| `container-tools` ✓ | docker, docker-compose (2) | docker-service (apply, physical), docker-group-membership (manual, physical) |
+| `kernel-support` ✓ | linux-headers (core), linux-zen-headers (2) | kernel-dkms-verification (verify, physical) |
+| `storage-maintenance` ✓ | btrfs-assistant, grub-btrfs, inotify-tools, rsync, smartmontools, snapper (6) | snapper-configs (manual), snapper-timers (manual), grub-btrfs-recovery (deferred) |
+| `virtualization` ✓ | dnsmasq, edk2-ovmf, libvirt, qemu-desktop, qemu-guest-agent, spice-vdagent, virt-manager (7) | libvirtd-service (apply), libvirt-default-network (apply), libvirt-group-membership (manual), virtualization-hugepages (deferred) |
 
 Validation approach (one batch per group, mirroring `docs/vm-execution-plan-20260804.md`):
 
@@ -84,13 +84,14 @@ Validation approach (one batch per group, mirroring `docs/vm-execution-plan-2026
    delete overlay → host promotion (readiness + modules.tsv) → test-suite update
    → commit.
 
-Promotion effect after batch 3 (realized): registry 21 → 26 available;
-execution readiness 21 → 26 available. Remaining after this: only the 2
-`unavailable` modules (`dms-niri-greeter`, `dms-greetd`).
+Promotion effect after batch 4 (realized): registry and execution readiness
+21 → 26 → 30 available; 0 `planning` modules remain. The only non-available
+modules are the 2 `unavailable` greeter surfaces (`dms-niri-greeter`,
+`dms-greetd`).
 
 ### B. System-action truth table for physical-scoped actions
 
-The 5 remaining planning modules carry actions that are **physical-profile-scoped** and
+The former planning modules carry actions that are **physical-profile-scoped** and
 therefore never ran in any VM. Before physical apply, each needs an explicit
 disposition recorded (they already exist in `system-actions.tsv`; this section
 tracks their validation status):
@@ -116,10 +117,20 @@ physical apply.
 
 ### C. The four config-only available modules
 
+> **COMPLETE (batch 2026-08-08).** Full-DAG VM selection of
+> `developer-editor`, `personal-scripts`, `asus-hardware` and
+> `personal-user-services` passed (9 packages installed: fd,
+> lua-language-server, neovide, neovim, ripgrep, stylua from extra;
+> asusctl, rog-control-center, supergfxctl from archlinuxcn; 86 config
+> mappings remain physical-v1 scope so none deploy in the vm profile;
+> system-actions stay not-applicable there). Idempotent rerun and
+> independent `pacman -Q` confirmed all 9. Evidence in
+> `~/.local/state/my-archlinux-setup/vm-lab/20260808/`. The four surfaces are
+> now readiness-`available`.
+
 `developer-editor`, `personal-scripts`, `asus-hardware`, `personal-user-services`
-are registry-`available` but readiness-`planning` (usable via reviewed
-config-only path). Full-DAG selection of each (package + config + actions) needs
-a VM matrix pass before they can become readiness-`available`:
+are registry-`available` and now readiness-`available` (full-DAG selection
+covered package + config + actions):
 
 - `developer-editor`: Neovim config etc. (config-backed)
 - `personal-scripts`: `~/scripts` payloads
@@ -146,11 +157,11 @@ a VM matrix pass before they can become readiness-`available`:
 
 ## Definition of done for this phase
 
-- The remaining 5 planning modules promoted to `available` (registry 26 available;
-  execution readiness 26 available) with per-batch VM evidence in `vm-lab/` and
-  plan documents. **DONE (batches 2026-08-05/06/07).**
+- All planning modules promoted to `available` (registry and execution
+  readiness 30 available) with per-batch VM evidence in `vm-lab/` and
+  plan documents. **DONE (batches 2026-08-05/06/07/08).**
 - All four config-only available modules readiness-promoted after full-DAG VM
-  selection.
+  selection. **DONE (batch 2026-08-08).**
 - Physical-scoped action disposition table above verified against current
   `system-actions.tsv` and complete.
 - All docs re-audited; no stale counts.

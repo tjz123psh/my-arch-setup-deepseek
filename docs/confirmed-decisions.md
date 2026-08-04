@@ -746,7 +746,7 @@ batches 2026-08-05 and 2026-08-06 extended this to `cli-tools`,
 `desktop-apps`, `ocr`, `recording`, `graphics-amd`, `graphics-nvidia`,
 `hardware-tools`, `kernel-support`, `bluetooth`, `power`, `container-tools`,
 `storage-maintenance` and `virtualization`, so
-the production registry authorizes twenty-six modules (26 available, 4 planning,
+the production registry authorizes thirty modules (30 available, 0 planning,
 2 unavailable); reviewed config availability therefore cannot expose an
 unproved package, AUR or system effect. The legacy `install.sh` changing paths
 are disabled outside exact temp regression roots.
@@ -771,9 +771,10 @@ Do not guess these during implementation:
 2. Physical ASUS/hybrid-GPU/display, Bluetooth/real-audio, suspend/resume,
    boot/recovery and any root-equivalent group decision that VM evidence cannot
    settle.
-3. Exact source/cache and runtime evidence for the 12 fixed AUR recipes outside
-   the promoted VM selection and every production-planning module. The current
-   readiness manifest keeps all of them blocked, including FlClash.
+3. Exact source/cache and runtime evidence for the fixed AUR recipes is
+   closed by the VM batches (2026-08-03 through 2026-08-08); the readiness
+   manifest now blocks no production module, and the only blocked recipes are
+   the two unavailable greeter modules.
 4. Log pruning timing/details beyond the confirmed “keep latest 10 after a
    successful startup” rule.
 
