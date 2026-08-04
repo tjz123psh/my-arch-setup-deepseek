@@ -1,7 +1,0 @@
-# schema=1
-# conflict-set<TAB>packages<TAB>system-units<TAB>user-units<TAB>behavior<TAB>purpose
-ntp-owner-conflicts	networkmanager-dispatcher-ntpd,ntp,chrony,openntpd	ntpd.service,chronyd.service,openntpd.service	-	block-active-or-installed	Keep systemd-timesyncd as the single reviewed time synchronization owner
-pipewire-owner-conflicts	pulseaudio,pulseaudio-bluetooth,pipewire-media-session,jack,jack2	-	pulseaudio.service,pulseaudio.socket,pipewire-media-session.service	block-active-or-installed	Do not remove or silently replace competing audio and JACK policy owners
-power-owner-conflicts	tlp,tuned,tuned-ppd,auto-cpufreq,system76-power	tlp.service,tuned.service,auto-cpufreq.service,system76-power.service	-	block-active-or-installed	Keep power-profiles-daemon as the single reviewed power policy owner
-libvirt-daemon-model-conflicts	-	virtqemud.service,virtqemud.socket,virtnetworkd.service,virtnetworkd.socket,virtstoraged.service,virtstoraged.socket	-	block-active	Do not mix the reviewed monolithic libvirtd baseline with already-active modular daemons
-portal-override-conflicts	-	-	-	block-managed-paths	No user or system global xdg-desktop-portal override may replace package-owned per-session preferences

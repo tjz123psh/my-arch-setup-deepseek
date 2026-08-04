@@ -1,3 +1,0 @@
-# schema=1
-# package<TAB>version<TAB>package-url<TAB>sha256<TAB>signature-url<TAB>signature-sha256<TAB>signer-primary-fingerprint<TAB>repository<TAB>server<TAB>siglevel<TAB>database-signature<TAB>authorization
-archlinuxcn-keyring	20260505-1	https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/x86_64/archlinuxcn-keyring-20260505-1-any.pkg.tar.zst	f8ed39c21babdf8fccfc36f603bc6d99c808332238d7e5297714a0f1f624e17a	https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/x86_64/archlinuxcn-keyring-20260505-1-any.pkg.tar.zst.sig	e5d4703cf40ee68db240660d19e2806a499837d305510593c9919181c8e70292	B5971F2C5C10A9A08C60030F786C63F330D7CB92	archlinuxcn	https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/$arch	Required DatabaseOptional TrustedOnly	unavailable-upstream	archlinuxcn

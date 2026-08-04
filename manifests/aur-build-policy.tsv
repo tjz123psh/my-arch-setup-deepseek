@@ -1,3 +1,0 @@
-# schema=1
-# backend<TAB>architecture<TAB>chroot-relative<TAB>bootstrap-packages<TAB>pacman-config<TAB>host-prerequisite<TAB>authorization<TAB>root-authorization<TAB>root-helper<TAB>artifact-roots<TAB>purpose
-clean-chroot	x86_64	builds/aur/chroot	base-devel,rust	config/templates/aur-build-pacman.conf	devtools	aur	system-changes	gsudo	usr,opt,etc	Build every declared recipe as an unprivileged builduser in an official-only clean Arch chroot

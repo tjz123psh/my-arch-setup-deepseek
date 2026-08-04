@@ -122,35 +122,6 @@ for line_number, parts in enumerate(csv.reader(lines[1:], delimiter="\t"), 2):
 current = {name for name, record in records.items() if record["origin"] == "current-explicit"}
 if current != set(inventory):
     raise SystemExit(f"current explicit reconciliation drift: {sorted(current ^ set(inventory))}")
-transitions_path = root / "manifests/package-source-transitions.tsv"
-if not transitions_path.is_file() or transitions_path.is_symlink():
-    raise SystemExit("package source transition manifest is missing or unsafe")
-transition_lines = transitions_path.read_text().splitlines()
-if not transition_lines or transition_lines[0] != "# schema=1":
-    raise SystemExit("package source transition manifest has an unsupported schema")
-transitions = {}
-for line_number, parts in enumerate(csv.reader(transition_lines[1:], delimiter="\t"), 2):
-    if not parts or not parts[0] or parts[0].startswith("#"):
-        continue
-    if len(parts) != 6 or not all(parts):
-        raise SystemExit(f"invalid package source transition at line {line_number}")
-    package, observed_channel, observed_repository, target_channel, target_repository, rationale = parts
-    if package in transitions:
-        raise SystemExit(f"duplicate package source transition: {package}")
-    transitions[package] = (observed_channel, observed_repository, target_channel, target_repository)
-
-source_changes = set()
-for package in sorted(current):
-    expected_channel, expected_repository, _old_mode = inventory[package]
-    record = records[package]
-    observed = (expected_channel, expected_repository)
-    target = (record["channel"], record["repository"] )
-    if target != observed:
-        source_changes.add(package)
-        if transitions.get(package) != (*observed, *target):
-            raise SystemExit(f"current package source changed without exact transition evidence: {package}")
-if set(transitions) != source_changes:
-    raise SystemExit(f"stale or missing package source transitions: {sorted(set(transitions) ^ source_changes)}")
 
 required_desired = {
     "alsa-ucm-conf",

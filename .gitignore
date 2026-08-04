@@ -3,6 +3,10 @@
 *.audit-private.md
 /session-ses_*.md
 
+# Installer runtime state (resume markers, build dirs).
+.install_progress
+.aur-build*/
+
 # Release and build outputs.
 dist/
 *.pkg.tar.*
