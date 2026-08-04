@@ -80,6 +80,13 @@ README 故意不提供物理主机 `--apply` 复制粘贴示例。当前完整�
 ## 常用只读命令
 
 ```bash
+# 一键安装入口（重装 Arch 并完成手工交接点后，在 tty 中运行）
+# 会先打印完整安装清单，确认后执行九阶段 DAG；需要 sudo 密码
+git clone git@github.com:tjz123psh/my-arch-setup-deepseek.git
+cd my-arch-setup-deepseek
+./installer/restore.sh --plan        # 先看清单（零写入）
+./installer/restore.sh                # 确认后执行
+
 # 查看 VM 与物理 profile 的规范化计划
 python3 installer/full-orchestrator.py --profile vm --plan --json
 python3 installer/full-orchestrator.py --profile asus-amd-nvidia --plan
