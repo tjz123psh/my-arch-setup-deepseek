@@ -14,6 +14,7 @@
 
 ## 项目定位与目标
 
-- 本工作区是一个**新启动的私有项目仓库**：GitHub remote `origin` 为 `git@github.com:tjz123psh/my-arch-setup-deepseek.git`（私有）。
-- 开发内容沿原始项目 my-archlinux-setup 的既有设计推进（README、docs/ 与 tests/ 中的约定），但**本仓库的整洁性优先**：不把原始项目的历史遗留（未提交改动、嵌套 `.git`、构建产物）混入本仓库。
-- 尚未完成的物理主机部署、模块生产就绪（planning/unavailable 项）、硬件验收等事项，先与用户讨论确认范围，再在本工作区实现与验证。
+- 本工作区是一个**个人专用的 Arch Linux 恢复工具仓库**：GitHub remote `origin` 为 `git@github.com:tjz123psh/my-arch-setup-deepseek.git`（私有）。
+- 目标：重装 Arch、完成手工基础安装（分区/GRUB/首次启动/联网）后，一条命令恢复 ASUS 工作站的完整桌面环境（Niri/Hyprland、软件包、AUR、个人配置与系统服务）。
+- 设计原则：**简单优先、面向个人**。安装器是 strap.sh + install.sh + scripts/ 的分步流程，直接读取 manifests 中精简的清单；不做审阅引擎、不做哈希 pin、不做模块生产就绪分级等工程化机制。
+- 数据资产（config/ 配置、third_party/aur/ recipe、manifests 清单）是仓库的核心价值，修改须保持安装器可读。

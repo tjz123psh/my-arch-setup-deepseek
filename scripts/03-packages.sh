@@ -9,7 +9,7 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 POLICY="${PROJECT_DIR}/manifests/workstation-packages.tsv"
 
-# VM profile selected modules (from profile-modules.tsv)
+# VM profile selected modules (hardcoded; matches the vm profile selection)
 VM_MODULES=(desktop-shared wm-niri base-preconditions build-foundation fonts input-fcitx-rime audio)
 
 module_selected() {
