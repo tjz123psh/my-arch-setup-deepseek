@@ -26,9 +26,13 @@ module_selected() {
 section "Installing packages (${MACHINE_TYPE})"
 log "Reading package policy from ${POLICY} ..."
 
-# official packages (pacman channel, install policy), filtered by module
+# official packages (pacman channel, install policy), filtered by module.
+# NOTE: column 2 is the channel (pacman/aur), column 3 is the repository
+# (core/extra/multilib/archlinuxcn). archlinuxcn packages install via pacman
+# but need the [archlinuxcn] repo configured + keyring bootstrapped first.
 OFFICIAL=()
 AUR_PKGS=()
+HAVE_ARCHLINUXCN=false
 while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpose; do
   [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
   module_selected "${module}" || continue
@@ -37,22 +41,26 @@ while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpos
   [[ "${pol}" == "verify" || "${pol}" == "deferred" ]] && continue
   case "${channel}" in
     pacman) OFFICIAL+=("${pkg}") ;;
-    archlinuxcn) OFFICIAL+=("${pkg}") ;;  # installed after keyring bootstrap below
     aur) AUR_PKGS+=("${pkg}") ;;
   esac
+  [[ "${repo}" == "archlinuxcn" ]] && HAVE_ARCHLINUXCN=true
 done < "${POLICY}"
 
 log "Official packages: ${#OFFICIAL[@]}, AUR: ${#AUR_PKGS[@]}"
 
-# archlinuxcn keyring bootstrap first
-log "Initializing archlinuxcn keyring..."
-if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
-  curl -sS -o /tmp/archlinuxcn-keyring.pkg.tar.zst \
-    https://mirrors.aliyun.com/archlinuxcn/x86_64/archlinuxcn-keyring.pkg.tar.zst 2>/dev/null || \
-    warn "archlinuxcn-keyring download failed (will retry during install)"
-  if [[ -f /tmp/archlinuxcn-keyring.pkg.tar.zst ]]; then
+# archlinuxcn repo + keyring bootstrap (only when the selection uses it)
+if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
+  log "Configuring archlinuxcn repository and keyring..."
+  if ! grep -q '^\[archlinuxcn\]' /etc/pacman.conf; then
+    run bash -c 'echo -e "\n[archlinuxcn]\nServer = https://mirrors.aliyun.com/archlinuxcn/\$arch" >> /etc/pacman.conf'
+  fi
+  if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
+    curl -sS -o /tmp/archlinuxcn-keyring.pkg.tar.zst \
+      https://mirrors.aliyun.com/archlinuxcn/x86_64/archlinuxcn-keyring.pkg.tar.zst || \
+      die "archlinuxcn-keyring download failed; cannot install archlinuxcn packages"
     run pacman -U --noconfirm /tmp/archlinuxcn-keyring.pkg.tar.zst
   fi
+  run pacman -Sy
 fi
 
 # install official packages

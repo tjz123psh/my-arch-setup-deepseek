@@ -28,18 +28,32 @@ install_recipe() {
   log "Building ${recipe} ..."
   local work
   work="$(mktemp -d "${BUILD_BASE}.XXXXXX")"
+  # makepkg refuses to run as root; in the strap.sh (root) path the build must
+  # run as the target user, with the build dir owned by that user.
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown -R "${TARGET_USER}:${TARGET_USER}" "${work}"
+  fi
   cp -a "${dir}/." "${work}/"
-  (
-    cd "${work}"
-    # makepkg as the invoking user (non-root); install with sudo
-    if command -v paru >/dev/null 2>&1; then
-      paru -Ui --noconfirm . 2>/dev/null || \
-        { makepkg -s --noconfirm; run pacman -U --noconfirm ./*.pkg.tar.*; }
-    else
-      makepkg -s --noconfirm
-      run pacman -U --noconfirm ./*.pkg.tar.*
+  local build_cmd
+  build_cmd="cd '${work}' && makepkg -s --noconfirm"
+  if command -v paru >/dev/null 2>&1; then
+    # paru as the user, then root installs the built package
+    if [[ "$(id -u)" -eq 0 ]]; then
+      if runuser -u "${TARGET_USER}" -- bash -c "cd '${work}' && paru -Ui --noconfirm ." 2>/dev/null; then
+        rm -rf "${work}"; success "Installed: ${recipe}"; return 0
+      fi
+    elif paru -Ui --noconfirm . 2>/dev/null; then
+      rm -rf "${work}"; success "Installed: ${recipe}"; return 0
     fi
-  )
+  fi
+  # fallback: plain makepkg then root pacman -U
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- bash -c "${build_cmd}" || { rm -rf "${work}"; return 1; }
+    run pacman -U --noconfirm "${work}"/*.pkg.tar.* || { rm -rf "${work}"; return 1; }
+  else
+    ( cd "${work}" && makepkg -s --noconfirm ) || { rm -rf "${work}"; return 1; }
+    run pacman -U --noconfirm "${work}"/*.pkg.tar.* || { rm -rf "${work}"; return 1; }
+  fi
   rm -rf "${work}"
   success "Installed: ${recipe}"
 }

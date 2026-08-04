@@ -2,13 +2,12 @@
 # strap.sh - one-command Arch workstation restore (shorin-style entry).
 #
 # Usage (from a tty on a freshly-installed Arch system):
-#   bash strap.sh
-# or one-shot:
-#   curl -L https://example.invalid/strap.sh | bash    # after publishing
+#   sudo bash strap.sh
 #
 # The script must run as root (like shorin's installer): it drives the whole
 # restore without interactive password prompts. It self-clones the repository
 # into /opt/my-arch-setup if missing, then delegates to install.sh.
+# The clone is the audited path (no curl|bash of remote content).
 
 set -Eeuo pipefail
 

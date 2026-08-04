@@ -10,14 +10,12 @@ set -Eeuo pipefail
 
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_DIR="${BASE_DIR}/scripts"
-STATE_FILE="${BASE_DIR}/.install_progress"
 
 # shellcheck source=scripts/00-utils.sh
 source "${SCRIPTS_DIR}/00-utils.sh"
 
 DESKTOP_ENV="${DESKTOP_ENV:-}"
 MACHINE_TYPE="${MACHINE_TYPE:-}"
-OPTIONAL_MODULES=()
 MODULES=()
 
 usage() {

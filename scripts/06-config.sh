@@ -9,10 +9,10 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 MAPPINGS="${PROJECT_DIR}/manifests/config-mappings.tsv"
 CONFIG_SRC="${PROJECT_DIR}/config"
-BACKUP_DIR="${HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
+BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 SCOPE="${MACHINE_TYPE}-v1"   # physical-v1 or vm-v1
 
-section "Deploying config mappings (scope: ${SCOPE})"
+section "Deploying config mappings (scope: ${SCOPE}, target: ${TARGET_USER})"
 
 [[ -f "${MAPPINGS}" ]] || die "Missing ${MAPPINGS}"
 mkdir -p "${BACKUP_DIR}"
@@ -28,7 +28,7 @@ while IFS=$'\t' read -r scope _module src tgt mode; do
     warn "Source file missing: ${src}"; skipped=$((skipped + 1)); continue
   fi
 
-  target="${HOME}/${tgt}"
+  target="${TARGET_HOME}/${tgt}"
   # backup existing target
   if [[ -e "${target}" ]] && [[ ! -L "${target}" ]]; then
     mkdir -p "${BACKUP_DIR}/$(dirname "${tgt}")"
@@ -38,6 +38,10 @@ while IFS=$'\t' read -r scope _module src tgt mode; do
   mkdir -p "$(dirname "${target}")"
   cp -a "${local_src}" "${target}"
   chmod "${mode}" "${target}" 2>/dev/null || true
+  # when running as root, keep files owned by the target user
+  if [[ "$(id -u)" -eq 0 ]]; then
+    chown "${TARGET_USER}:${TARGET_USER}" "${target}" 2>/dev/null || true
+  fi
   deployed=$((deployed + 1))
 done < "${MAPPINGS}"
 

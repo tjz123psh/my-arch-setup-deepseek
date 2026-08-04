@@ -36,7 +36,7 @@ sudo bash strap.sh
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
 | 03-packages | 安装审阅过的软件包清单（物理 171 官方/archlinuxcn + 13 AUR；VM 59 官方/archlinuxcn + 3 AUR） |
 | 04-niri/hyprland | 桌面环境（Niri 或 Hyprland） |
-| 05-aur | 构建安装 13 个固定 AUR recipe（含 paru） |
+| 05-aur | 构建安装固定 AUR recipe（物理 13 个 / VM 3 个，含 paru） |
 | 06-config | 部署个人配置映射（物理 171 / VM 36，先备份） |
 | 07-services | 启用系统服务（物理机：蓝牙/电源/Docker/libvirt 等） |
 | 99-cleanup | 清理缓存与构建目录 |
@@ -64,11 +64,3 @@ sudo bash strap.sh
 软件包清单、配置映射与 AUR recipe 均基于真实 ASUS 机器检录，并经过多轮
 一次性虚拟机完整安装验证（官方包、archlinuxcn、AUR 构建安装、配置部署、
 服务启停均已跑通）。物理机完整部署留待实机验收。
-
-## 详细文档
-
-- [配置映射与恢复](docs/configuration.md)
-- [工作站软件包策略](docs/workstation-packages.md)
-- [审计结果与处置](docs/audit.md)
-- [已确认的持久决策](docs/confirmed-decisions.md)
-- [实施状态](docs/implementation-status.md)

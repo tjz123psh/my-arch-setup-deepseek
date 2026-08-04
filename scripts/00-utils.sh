@@ -17,6 +17,25 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly PROJECT_DIR
 STATE_FILE="${PROJECT_DIR}/.install_progress"
 
+# --- target user resolution ---
+# The installer may run as root (strap.sh path) or as the desktop user.
+# Config deployment and user services must target the real desktop user's
+# HOME, never /root. TARGET_USER/TARGET_HOME resolve that user.
+if [[ "$(id -u)" -eq 0 ]]; then
+  if [[ -n "${SUDO_USER:-}" ]]; then
+    TARGET_USER="${SUDO_USER}"
+  else
+    # first real (uid>=1000) login user
+    TARGET_USER="$(awk -F: '$3>=1000 && $7!~/nologin|false/{print $1; exit}' /etc/passwd)"
+  fi
+  [[ -n "${TARGET_USER:-}" ]] || TARGET_USER="root"
+  TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
+else
+  TARGET_USER="${USER:-$(id -un)}"
+  TARGET_HOME="${HOME}"
+fi
+readonly TARGET_USER TARGET_HOME
+
 log()    { echo -e "  ${DIM}->${NC} $*"; }
 section(){ echo; echo -e "${H_CYAN}===[ $* ]${NC}"; }
 success(){ echo -e "  ${H_GREEN}✔${NC} $*"; }
@@ -62,7 +81,7 @@ sys_dashboard() {
   section "System"
   echo "  Kernel   : $(uname -r)"
   echo "  User     : $(whoami)"
-  echo "  Desktop  : ${DESKTOP_ENV^^:-none}"
-  echo "  Machine  : ${MACHINE_TYPE^^:-physical}"
+  echo "  Desktop  : ${DESKTOP_ENV:-none}"
+  echo "  Machine  : ${MACHINE_TYPE:-physical}"
   echo "  Modules  : ${#MODULES[@]} step(s) selected"
 }

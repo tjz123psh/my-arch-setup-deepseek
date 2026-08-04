@@ -8,11 +8,20 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 section "Enabling system services (${MACHINE_TYPE})"
 
-# user units (always)
-for u in "${HOME}/.config/systemd/user/"*.service; do
+# user units (always; run as the target user so systemctl --user works)
+# helper: run a command as the target user (root path uses runuser)
+as_user() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- "$@"
+  else
+    "$@"
+  fi
+}
+
+for u in "${TARGET_HOME}/.config/systemd/user/"*.service; do
   [[ -e "${u}" ]] || continue
   unit="$(basename "${u}")"
-  systemctl --user enable "${unit}" 2>/dev/null && log "User service: ${unit}"
+  as_user systemctl --user enable "${unit}" 2>/dev/null && log "User service: ${unit}"
 done
 
 if [[ "${MACHINE_TYPE}" == "physical" ]]; then
