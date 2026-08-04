@@ -75,7 +75,7 @@ VM-proven `base-preconditions`, `archlinuxcn-trust`, `build-foundation`,
 production registry marks those five plus the four exact VM config/session
 owners ready and promotes nothing else.
 
-They own the plan-visible 200-row package policy and automatic/manual/deferred
+They own the plan-visible 203-row package policy and automatic/manual/deferred
 system actions. `archlinuxcn-trust` is dependency-only and is resolved whenever
 a selected module owns an archlinuxcn package; this ensures the bootstrap stages
 cannot disappear from an apparently valid VM/Rime plan.

@@ -699,7 +699,7 @@ manifests, tests and this section together.
 ### IMPL-C-01 — Versioned TSV module/effect contract
 
 Schema-marked TSV files own module/profile selection, independent full-DAG
-production readiness, the 200-row package policy, 198 config mappings, 30 system
+production readiness, the 203-row package policy, 207 config mappings, 30 system
 actions, nine DAG stages, canonical executables and auxiliary trust inputs.
 `--modules` is an exact requested set;
 `requires-all` closure is disclosed and an unsatisfied `requires-any` remains an
