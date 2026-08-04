@@ -10,15 +10,21 @@
 # Safety:
 #   - never touches partition/GRUB/kernel/credentials/login-manager;
 #   - reads the exact reviewed plan before doing anything (--plan is zero-write);
-#   - installs only the build prerequisites that the AUR stages require and that
-#     a clean base lacks (base-devel devtools rust curl git);
+#   - installs only the build prerequisites that the clean base lacks
+#     (python3 git base-devel devtools rust curl);
 #   - runs the orchestrated apply with the three explicit confirmations, which
 #     the operator grants by the single confirmation prompt below;
 #   - any stage failure stops the run; rerun with the same command resumes.
 #
 # tty compatibility: gsudo's askpass helper falls back to systemd-ask-password
 # when fuzzel is not yet installed, so the password prompt works from a plain
-# tty with no graphical session.
+# tty with no graphical session. All output is English to stay readable under
+# any terminal locale (a clean base may lack a UTF-8 locale).
+#
+# NOTE: python3 is required to run full-orchestrator.py; a minimal Arch base
+# does not ship it. This script installs python3 (and git) automatically as
+# part of the build-prerequisite step, so the first run on a clean base needs
+# python3 only to be installable by pacman, not preinstalled.
 
 set -Eeuo pipefail
 
@@ -34,23 +40,24 @@ SKIP_PREREQS=false
 
 usage() {
   cat <<'EOF_USAGE'
-用法: restore.sh [options]
+Usage: restore.sh [options]
 
-重装 Arch 基础系统并完成手工交接点（分区/GRUB/首次启动/联网）后，
-在本机一键恢复完整工作站（九阶段 DAG：官方包 -> archlinuxcn -> AUR ->
-配置 -> 系统动作）。
+After reinstalling Arch and completing the manual handoff (partitioning,
+base install, GRUB, first boot, networking), restore the full workstation on
+this machine with the nine-stage DAG (official packages -> archlinuxcn ->
+AUR -> config -> system actions).
 
 Options:
-  -p, --profile NAME   目标 profile（默认 asus-amd-nvidia）
-  --plan               只打印安装清单并退出（零写入）
-  -y, --assume-yes     跳过清单确认，直接执行（仅用于已审阅过的重跑）
-  --skip-prereqs       不自动安装 AUR 构建工具（假定 clean-base 已具备）
-  -h, --help           显示本帮助并退出
+  -p, --profile NAME   target profile (default: asus-amd-nvidia)
+  --plan               print the installation plan and exit (zero writes)
+  -y, --assume-yes     skip the plan confirmation (reviewed reruns only)
+  --skip-prereqs       do not auto-install AUR build prerequisites
+  -h, --help           show this help and exit
 EOF_USAGE
 }
 
 log() { printf '[restore] %s\n' "$*"; }
-die() { printf '[restore] 错误: %s\n' "$*" >&2; exit 1; }
+die() { printf '[restore] error: %s\n' "$*" >&2; exit 1; }
 
 parse_args() {
   while (( $# > 0 )); do
@@ -60,94 +67,100 @@ parse_args() {
       -y|--assume-yes) ASSUME_YES=true; shift ;;
       --skip-prereqs) SKIP_PREREQS=true; shift ;;
       -h|--help) usage; exit 0 ;;
-      *) die "未知参数: $1（见 --help）" ;;
+      *) die "unknown argument: $1 (see --help)" ;;
     esac
   done
 }
 
-# 检查环境前提（只读）
+# Read-only environment checks (no package installs here)
 check_prereqs() {
-  command -v python3 >/dev/null 2>&1 || die "缺少 python3（Arch 基础安装应已包含）"
-  command -v sudo >/dev/null 2>&1 || die "缺少 sudo"
-  command -v pacman >/dev/null 2>&1 || die "缺少 pacman（请确认这是 Arch 系统）"
-  command -v git >/dev/null 2>&1 || die "缺少 git（请先: sudo pacman -S --needed git）"
-  # 网络检查：只读，不修改任何东西
+  command -v pacman >/dev/null 2>&1 || die "pacman not found; is this an Arch system?"
+  command -v sudo >/dev/null 2>&1 || die "sudo not found; install it first (pacman -S sudo)"
+  # python3/git are handled by install_build_prereqs below; a clean base may
+  # lack them and we install them automatically instead of failing here.
+  # Network probe: read-only, modifies nothing.
   if ! timeout 8 bash -c 'echo > /dev/tcp/8.8.8.8/53' 2>/dev/null; then
-    log "警告: 网络探测失败（8.8.8.8:53）。AUR/archlinuxcn 阶段需要联网。"
-    [[ "${ASSUME_YES}" == "true" ]] || die "请先建立可用网络连接（NetworkManager: nmcli device connect <iface>）"
+    log "warning: network probe failed (8.8.8.8:53); AUR/archlinuxcn stages need connectivity."
+    if [[ "${ASSUME_YES}" != "true" ]]; then
+      die "establish a working network connection first (NetworkManager: nmcli device connect <iface>)"
+    fi
   fi
 }
 
-# 检查 root 通道：sudo 是否可用（非交互探测，不弹框）
+# Root channel: detect whether sudo needs a password (no prompt here)
 check_root() {
   if sudo -n true 2>/dev/null; then
     return 0
   fi
-  # sudo 需要密码：确认当前 tty 可交互
+  # sudo needs a password: require an interactive tty
   if [[ -t 0 ]] && [[ -t 1 ]]; then
-    log "需要 root 权限。将提示输入 sudo 密码。"
+    log "root required; a sudo password prompt will follow."
     return 0
   fi
-  die "sudo 需要密码且当前不是交互式 tty；请直接在终端运行（不要用 nohup/后台）。"
+  die "sudo requires a password and stdin is not an interactive tty; run directly in a terminal (not nohup/background)."
 }
 
-# 打印安装清单（读 --plan 文本输出，逐行展示）
+# Print the reviewed plan (reads the orchestrator --plan text output)
 show_plan() {
-  log "读取 profile '${PROFILE}' 的只读安装计划..."
+  log "reading read-only plan for profile '${PROFILE}'..."
   local plan_out
   plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --plan 2>&1)" || \
-    die "生成计划失败（profile '${PROFILE}' 可能不存在或配置有误）"
+    die "plan generation failed (profile '${PROFILE}' missing or misconfigured)"
   printf '%s\n' "${plan_out}" | sed -n '1,60p'
-  # 检查是否有 blocker
-  if printf '%s\n' "${plan_out}" | grep -qE "Apply blockers: .*=(none|);"; then
-    :
-  elif printf '%s\n' "${plan_out}" | grep -qE "non-executable-modules=[^;]*[a-z]"; then
-    die "计划存在 apply blockers（非可执行模块），不执行。请先检查模块状态。"
+  # The blockers line looks like:
+  #   Apply blockers: non-executable-modules=none; missing-adapter-stages=none; non-integrated-stages=none; noncanonical-adapter=false
+  # Refuse unless the exact clean form is present.
+  local blockers_line
+  blockers_line="$(printf '%s\n' "${plan_out}" | grep -E "^Apply blockers:" || true)"
+  if [[ -n "${blockers_line}" ]]; then
+    if ! printf '%s\n' "${blockers_line}" | grep -qE "non-executable-modules=none; missing-adapter-stages=none; non-integrated-stages=none; noncanonical-adapter=false"; then
+      die "plan has apply blockers: ${blockers_line}"
+    fi
   fi
 }
 
 confirm_plan() {
   if [[ "${ASSUME_YES}" == "true" ]]; then
-    log "已通过 --assume-yes 跳过清单确认。"
+    log "confirmation skipped via --assume-yes."
     return 0
   fi
   if [[ ! -t 0 ]]; then
-    die "需要确认但 stdin 不是 tty；请直接运行，或使用 --assume-yes（仅限已审阅过的重跑）。"
+    die "confirmation requires an interactive tty; run directly, or use --assume-yes (reviewed reruns only)."
   fi
-  printf '\n[restore] 以上是将要执行的内容。输入 yes 继续，或任意其它内容中止: '
+  printf '\n[restore] This is what will be executed. Type yes to continue, anything else aborts: '
   local answer
   read -r answer
   if [[ "${answer}" != "yes" ]]; then
-    die "已中止（输入不是 yes）。未做任何更改。"
+    die "aborted (answer was not yes). Nothing was changed."
   fi
 }
 
-# 安装 clean-base 缺失的 AUR 构建前提（一次性，幂等）
+# Install the build/runtime prerequisites a clean Arch base lacks.
+# python3 runs the orchestrator; git fetched this repo; base-devel/devtools/rust
+# build the AUR recipes; curl fetches remote sources.
 install_build_prereqs() {
   if [[ "${SKIP_PREREQS}" == "true" ]]; then
-    log "已跳过构建工具安装（--skip-prereqs）。"
+    log "build-prerequisite install skipped (--skip-prereqs)."
     return 0
   fi
-  log "检查/安装 AUR 构建前提（base-devel devtools rust curl）..."
+  log "checking/installing runtime and build prerequisites (python3 git base-devel devtools rust curl)..."
   local missing=()
-  for p in base-devel devtools rust curl; do
+  for p in python3 git base-devel devtools rust curl; do
     if ! pacman -Q "${p}" >/dev/null 2>&1; then missing+=("${p}"); fi
   done
   if (( ${#missing[@]} == 0 )); then
-    log "构建工具已齐备。"
+    log "prerequisites already present."
     return 0
   fi
-  printf '[restore] 将安装构建前提: %s\n' "${missing[*]}"
+  printf '[restore] installing prerequisites: %s\n' "${missing[*]}"
   sudo pacman -S --needed --noconfirm "${missing[@]}" || \
-    die "构建前提安装失败。请检查网络/镜像后重试。"
-  log "构建前提就绪。"
+    die "prerequisite install failed; check network/mirror and retry."
+  log "prerequisites ready."
 }
 
-# 执行九阶段 DAG
+# Run the nine-stage DAG (confirmations were granted by confirm_plan)
 run_dag() {
-  log "开始九阶段 DAG apply（profile '${PROFILE}'）..."
-  log "命令: full-orchestrator.py --profile ${PROFILE} --mode new --apply --confirm-system-changes --confirm-archlinuxcn --confirm-aur"
-  # 直接前台运行；任何阶段失败会非零退出，随后由 run_dag 的调用方报告
+  log "starting nine-stage DAG apply (profile '${PROFILE}')..."
   "${ORCHESTRATOR}" --profile "${PROFILE}" --mode new --apply \
     --confirm-system-changes --confirm-archlinuxcn --confirm-aur
 }
@@ -155,16 +168,16 @@ run_dag() {
 report_done() {
   cat <<'EOF_DONE'
 
-[restore] 九阶段 DAG 执行完成。
+[restore] nine-stage DAG completed.
 
-接下来请在本机逐项验收（安装器不会自动完成这些）:
-  1. 显示/GPU: 切换 NVIDIA <-> AMD，确认输出正常
-  2. 音频: 播放与录音
-  3. 蓝牙: 连接设备
-  4. 挂起/唤醒
-  5. ASUS 控制中心（风扇/性能模式）
+Accept on this host (the installer does not do these automatically):
+  1. display/GPU: switch NVIDIA <-> AMD, confirm outputs
+  2. audio: playback and recording
+  3. bluetooth: pair a device
+  4. suspend/resume
+  5. ASUS control center (fans/performance modes)
 
-若某阶段失败，直接重跑本脚本即可（幂等；同一计划会 resume/rerun）。
+If a stage failed, rerun this script (idempotent; same plan resumes/reruns).
 EOF_DONE
 }
 
@@ -172,9 +185,21 @@ main() {
   parse_args "$@"
   cd "${PROJECT_DIR}"
   check_prereqs
+  # python3 is required to render the plan. A clean base may lack it; install
+  # it first (still zero other writes). --plan with a missing python3 tells
+  # the operator how to get one.
+  if ! command -v python3 >/dev/null 2>&1; then
+    if [[ "${PLAN_ONLY}" == "true" ]]; then
+      die "python3 is missing. Install it first (sudo pacman -S python3), or run restore.sh without --plan to install prerequisites automatically."
+    fi
+    log "python3 missing; installing it first so the plan can be rendered..."
+    check_root
+    sudo pacman -S --needed --noconfirm python3 || \
+      die "python3 install failed; check network/mirror and retry."
+  fi
   show_plan
   if [[ "${PLAN_ONLY}" == "true" ]]; then
-    log "已按 --plan 只打印清单，未做任何更改。"
+    log "--plan requested; nothing was changed."
     exit 0
   fi
   check_root
