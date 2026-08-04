@@ -123,8 +123,8 @@ main() {
   parse_args "$@"
   check_root
   ensure_fzf_ui
-  select_desktop
   select_machine
+  select_desktop
   build_modules
   sys_dashboard
 
