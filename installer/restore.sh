@@ -100,11 +100,14 @@ check_root() {
   die "sudo requires a password and stdin is not an interactive tty; run directly in a terminal (not nohup/background)."
 }
 
-# Print the reviewed plan (reads the orchestrator --plan text output)
+# Print the reviewed plan (reads the orchestrator --plan text output).
+# stdin is detached (< /dev/null) so the orchestrator never enters its
+# interactive module-selection prompt: with a non-tty stdin and no --modules
+# it falls back to the profile's default selection.
 show_plan() {
   log "reading read-only plan for profile '${PROFILE}'..."
   local plan_out
-  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --plan 2>&1)" || \
+  plan_out="$("${ORCHESTRATOR}" --profile "${PROFILE}" --plan < /dev/null 2>&1)" || \
     die "plan generation failed (profile '${PROFILE}' missing or misconfigured)"
   printf '%s\n' "${plan_out}" | sed -n '1,60p'
   # The blockers line looks like:
@@ -158,11 +161,13 @@ install_build_prereqs() {
   log "prerequisites ready."
 }
 
-# Run the nine-stage DAG (confirmations were granted by confirm_plan)
+# Run the nine-stage DAG (confirmations were granted by confirm_plan).
+# stdin is detached (< /dev/null) so the orchestrator never enters interactive
+# module selection; profile-default selection is used for apply.
 run_dag() {
   log "starting nine-stage DAG apply (profile '${PROFILE}')..."
   "${ORCHESTRATOR}" --profile "${PROFILE}" --mode new --apply \
-    --confirm-system-changes --confirm-archlinuxcn --confirm-aur
+    --confirm-system-changes --confirm-archlinuxcn --confirm-aur < /dev/null
 }
 
 report_done() {
