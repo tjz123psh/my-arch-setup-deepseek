@@ -23,6 +23,7 @@ physical-v1	desktop-shared	config/home/.config/fish/conf.d/rustup.fish	.config/f
 physical-v1	desktop-shared	config/home/.config/fish/functions/paru.fish	.config/fish/functions/paru.fish	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/colors.ini	.config/fuzzel/colors.ini	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/fuzzel.ini	.config/fuzzel/fuzzel.ini	644
+physical-v1	build-foundation	config/home/.config/git/ignore	.config/git/ignore	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/gtk.css	.config/gtk-3.0/gtk.css	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/dank-colors.css	.config/gtk-3.0/dank-colors.css	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/nemo.css	.config/gtk-3.0/nemo.css	644
@@ -91,6 +92,7 @@ physical-v1	developer-editor	config/home/.config/nvim/lua/plugins/theme.lua	.con
 physical-v1	developer-editor	config/home/.config/nvim/lua/plugins/treesitter.lua	.config/nvim/lua/plugins/treesitter.lua	644
 physical-v1	developer-editor	config/home/.config/nvim/lua/plugins/whichkey.lua	.config/nvim/lua/plugins/whichkey.lua	644
 physical-v1	developer-editor	config/home/.config/nvim/stylua.toml	.config/nvim/stylua.toml	644
+physical-v1	repository-tools	config/home/.config/paru/paru.conf	.config/paru/paru.conf	644
 physical-v1	desktop-shared	config/home/.config/starship.toml	.config/starship.toml	644
 physical-v1	desktop-shared	config/home/.config/DankMaterialShell/firefox.css	.config/DankMaterialShell/firefox.css	644
 physical-v1	desktop-shared	config/home/.config/DankMaterialShell/monitors.json	.config/DankMaterialShell/monitors.json	644
