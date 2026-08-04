@@ -65,46 +65,34 @@ ensure_fzf_ui() {
 select_desktop() {
   [[ -n "${DESKTOP_ENV}" ]] && return
   section "Select desktop environment"
-  local items=(
-    "Niri (recommended)|niri"
-    "Hyprland|hyprland"
-    "Niri + Hyprland (both)|both"
-    "No desktop (packages and config only)|none"
-  )
-  local fzf_list=() idx=1
-  for item in "${items[@]}"; do
-    fzf_list+=("${idx}) ${item%%|*}")
-    ((idx++))
-  done
   local selected
-  selected="$(printf '%b\n' "${fzf_list[@]}" | fzf --layout=reverse --border=rounded \
-    --header=' Select desktop (J/K move, Enter confirm) ' \
-    --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  selected="$(printf 'Niri (recommended)\nHyprland\nNiri + Hyprland (both)\nNo desktop (packages and config only)\n' \
+    | fzf --layout=reverse --border=rounded \
+        --header=' Select desktop (J/K move, Enter confirm) ' \
+        --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
   [[ -z "${selected}" ]] && die "Cancelled"
-  local pick="${selected%% )*}"
-  DESKTOP_ENV="${items[$((pick - 1))]##*|}"
+  case "${selected}" in
+    *"Hyprland (both)"*) DESKTOP_ENV="both" ;;
+    *Hyprland*) DESKTOP_ENV="hyprland" ;;
+    *"No desktop"*) DESKTOP_ENV="none" ;;
+    *) DESKTOP_ENV="niri" ;;
+  esac
   log "Desktop: ${DESKTOP_ENV}"
 }
 
 select_machine() {
   [[ -n "${MACHINE_TYPE}" ]] && return
   section "Select machine type"
-  local items=(
-    "Physical machine (ASUS, full config)|physical"
-    "Virtual machine (light config)|vm"
-  )
-  local fzf_list=() idx=1
-  for item in "${items[@]}"; do
-    fzf_list+=("${idx}) ${item%%|*}")
-    ((idx++))
-  done
   local selected
-  selected="$(printf '%b\n' "${fzf_list[@]}" | fzf --layout=reverse --border=rounded \
-    --header=' Select machine type (J/K move, Enter confirm) ' \
-    --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  selected="$(printf 'Physical machine (ASUS, full config)\nVirtual machine (light config)\n' \
+    | fzf --layout=reverse --border=rounded \
+        --header=' Select machine type (J/K move, Enter confirm) ' \
+        --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
   [[ -z "${selected}" ]] && die "Cancelled"
-  local pick="${selected%% )*}"
-  MACHINE_TYPE="${items[$((pick - 1))]##*|}"
+  case "${selected}" in
+    *"Virtual machine"*) MACHINE_TYPE="vm" ;;
+    *) MACHINE_TYPE="physical" ;;
+  esac
   log "Machine: ${MACHINE_TYPE}"
 }
 
