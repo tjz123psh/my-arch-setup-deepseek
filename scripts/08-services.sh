@@ -100,18 +100,31 @@ fi
 # --- GRUB theme (physical) ---
 # Operator decision (2026-08-05): the host uses the Elegant grub2 theme
 # (vinceliuice/Elegant-grub2-themes, mountain-blur-left-dark). Deploy the
-# captured theme files and set GRUB_THEME so a manual grub-mkconfig picks it
-# up. grub-mkconfig/grub-install stay manual (boot chain is the operator's
-# handoff responsibility).
+# captured theme files, set GRUB_THEME, then regenerate the config with
+# grub-mkconfig so the theme takes effect immediately. This is a config
+# refresh (grub.cfg is a text menu generated from /etc/default/grub); the
+# actual boot install (grub-install) remains the operator's handoff step.
 if [[ "${MACHINE_TYPE}" == "physical" ]]; then
   THEME_DIR="/boot/grub/themes/Elegant-mountain-blur-left-dark"
   log "Deploying GRUB theme (Elegant-mountain-blur-left-dark)..."
   run bash -c "mkdir -p /boot/grub/themes && cp -a '${PROJECT_DIR}/config/etc/grub/themes/Elegant-mountain-blur-left-dark' /boot/grub/themes/"
   if ! grep -q '^GRUB_THEME=' /etc/default/grub; then
     run bash -c 'echo "GRUB_THEME=\"/boot/grub/themes/Elegant-mountain-blur-left-dark/theme.txt\"" >> /etc/default/grub'
-    log "GRUB_THEME set; run 'sudo grub-mkconfig -o /boot/grub/grub.cfg' to apply"
   else
     log "GRUB_THEME already present in /etc/default/grub"
+  fi
+  # regenerate the menu so the theme applies now; back up the current
+  # grub.cfg first and never abort the install if regeneration fails.
+  if command -v grub-mkconfig >/dev/null 2>&1; then
+    log "Regenerating GRUB config (grub-mkconfig)..."
+    run bash -c 'cp -f /boot/grub/grub.cfg /boot/grub/grub.cfg.bak-$(date +%Y%m%d%H%M%S) 2>/dev/null || true'
+    if run grub-mkconfig -o /boot/grub/grub.cfg 2>/dev/null; then
+      success "GRUB theme applied (grub.cfg regenerated)"
+    else
+      warn "grub-mkconfig failed; run 'sudo grub-mkconfig -o /boot/grub/grub.cfg' manually"
+    fi
+  else
+    warn "grub-mkconfig not found; run it manually after installing grub"
   fi
 fi
 
