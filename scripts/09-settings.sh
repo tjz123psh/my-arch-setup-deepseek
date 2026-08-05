@@ -47,4 +47,23 @@ EOF'
 run systemctl daemon-reload
 success "zram configured (zstd, size=ram)"
 
+# --- standard user directories (empty, xdg defaults) ---
+# Operator decision (2026-08-05): only create the default empty dirs that a
+# fresh xdg-user-dirs setup provides; the host's existing files in them are
+# personal data and are NOT migrated. user-dirs.dirs is deployed by 07-config
+# and defines the paths; this step creates the directories themselves.
+log "Creating standard user directories (Desktop/Documents/Downloads/Music/Public/Templates/Videos)..."
+STD_DIRS=(Desktop Documents Downloads Music Public Templates Videos)
+if [[ "$(id -u)" -eq 0 ]]; then
+  for d in "${STD_DIRS[@]}"; do
+    mkdir -p "${TARGET_HOME}/${d}"
+    chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/${d}"
+  done
+else
+  for d in "${STD_DIRS[@]}"; do
+    mkdir -p "${HOME}/${d}"
+  done
+fi
+success "Standard user directories ready"
+
 success "System settings complete"
