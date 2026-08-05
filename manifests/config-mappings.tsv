@@ -207,3 +207,45 @@ vm-v1	input-fcitx-rime	config/home/.local/share/fcitx5/rime/default.custom.yaml	
 vm-v1	input-fcitx-rime	config/home/.local/share/fcitx5/rime/rime_ice.custom.yaml	.local/share/fcitx5/rime/rime_ice.custom.yaml	644
 vm-v1	wm-niri	config/vm/home/.config/niri/config.kdl	.config/niri/config.kdl	644
 vm-v1	wm-hyprland	config/vm/home/.config/hypr/hyprland.lua	.config/hypr/hyprland.lua	644
+physical-v1	developer-editor	config/home/md/archlinux/Shorin-ArchLinux-Guide-合集.md	md/archlinux/Shorin-ArchLinux-Guide-合集.md	644
+physical-v1	developer-editor	config/home/md/kvm虚拟机/KVM虚拟机优化记录.md	md/kvm虚拟机/KVM虚拟机优化记录.md	644
+physical-v1	developer-editor	config/home/md/linux/.gitignore	md/linux/.gitignore	644
+physical-v1	developer-editor	config/home/md/linux/Btrfs快照与滚挂恢复流程.md	md/linux/Btrfs快照与滚挂恢复流程.md	644
+physical-v1	developer-editor	config/home/md/linux/arch系统调优.md	md/linux/arch系统调优.md	644
+physical-v1	developer-editor	config/home/md/linux/b站视频弹窗播放.md	md/linux/b站视频弹窗播放.md	644
+physical-v1	developer-editor	config/home/md/linux/fuzzel美化与动态配色.md	md/linux/fuzzel美化与动态配色.md	644
+physical-v1	developer-editor	config/home/md/linux/linuxqq-wayland-fix.md	md/linux/linuxqq-wayland-fix.md	644
+physical-v1	developer-editor	config/home/md/linux/nemo文件管理器.md	md/linux/nemo文件管理器.md	644
+physical-v1	developer-editor	config/home/md/linux/当前archlinux快捷键.md	md/linux/当前archlinux快捷键.md	644
+physical-v1	developer-editor	config/home/md/linux/登录管理器-SDDM迁移DMS-greetd.md	md/linux/登录管理器-SDDM迁移DMS-greetd.md	644
+physical-v1	developer-editor	config/home/md/linux/系统维护脚本使用说明.md	md/linux/系统维护脚本使用说明.md	644
+physical-v1	developer-editor	config/home/md/linux/自定义脚本索引.md	md/linux/自定义脚本索引.md	644
+physical-v1	developer-editor	config/home/md/nvim/nvim命令.md	md/nvim/nvim命令.md	644
+physical-v1	developer-editor	config/home/md/nvim/nvim快捷键.md	md/nvim/nvim快捷键.md	644
+physical-v1	developer-editor	config/home/md/nvim/nvim插件介绍.md	md/nvim/nvim插件介绍.md	644
+physical-v1	developer-editor	config/home/md/nvim/nvim自定义命令.md	md/nvim/nvim自定义命令.md	644
+physical-v1	developer-editor	config/home/md/nvim/nvim配置架构.md	md/nvim/nvim配置架构.md	644
+physical-v1	developer-editor	config/home/md/nvim/从零搭建依赖清单.md	md/nvim/从零搭建依赖清单.md	644
+physical-v1	developer-editor	config/home/md/opencode/opencode配置.md	md/opencode/opencode配置.md	644
+physical-v1	developer-editor	config/home/md/rog-control-center中文翻译/README.md	md/rog-control-center中文翻译/README.md	644
+physical-v1	developer-editor	config/home/md/rog-control-center中文翻译/rog-control-center.desktop	md/rog-control-center中文翻译/rog-control-center.desktop	644
+physical-v1	developer-editor	config/home/md/rog-control-center中文翻译/rog-control-center.mo	md/rog-control-center中文翻译/rog-control-center.mo	644
+physical-v1	developer-editor	config/home/md/skills目录/skill市场.md	md/skills目录/skill市场.md	644
+physical-v1	developer-editor	config/home/md/软件使用教程/leaf-guide.md	md/软件使用教程/leaf-guide.md	644
+physical-v1	developer-editor	config/home/md/软件使用教程/yazi 终端文件管理器使用教程.md	md/软件使用教程/yazi 终端文件管理器使用教程.md	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/281aafdb2ade8f0321ad743b8be11af8_0.png	Pictures/背景图片/281aafdb2ade8f0321ad743b8be11af8_0.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/ChatGPT Image 2026年6月22日 19_39_06.png	Pictures/背景图片/ChatGPT Image 2026年6月22日 19_39_06.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/ChatGPT Image 2026年6月26日 11_08_39.png	Pictures/背景图片/ChatGPT Image 2026年6月26日 11_08_39.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/ChatGPT Image 2026年6月26日 11_24_35.png	Pictures/背景图片/ChatGPT Image 2026年6月26日 11_24_35.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/ChatGPT Image 2026年7月12日 21_49_54.png	Pictures/背景图片/ChatGPT Image 2026年7月12日 21_49_54.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/ChatGPT Image 2026年7月27日 03_24_40.png	Pictures/背景图片/ChatGPT Image 2026年7月27日 03_24_40.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/acb52fc0c29600b3830f5c3c71c92cff.png	Pictures/背景图片/acb52fc0c29600b3830f5c3c71c92cff.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】Fate-saber.png	Pictures/背景图片/【哲风壁纸】Fate-saber.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】SNAFFUR-动漫少女.png	Pictures/背景图片/【哲风壁纸】SNAFFUR-动漫少女.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】下雪-冬季-冬日.png	Pictures/背景图片/【哲风壁纸】下雪-冬季-冬日.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】二次元少女-动漫插画.png	Pictures/背景图片/【哲风壁纸】二次元少女-动漫插画.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】养眼-动漫.png	Pictures/背景图片/【哲风壁纸】养眼-动漫.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】动漫-夜空-宇宙.png	Pictures/背景图片/【哲风壁纸】动漫-夜空-宇宙.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】动漫.png	Pictures/背景图片/【哲风壁纸】动漫.png	644
+physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】樱花-电脑.png	Pictures/背景图片/【哲风壁纸】樱花-电脑.png	644
+physical-v1	desktop-shared	config/home/Pictures/archlinux头像/头像.png	Pictures/archlinux头像/头像.png	644
