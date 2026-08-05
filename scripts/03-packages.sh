@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # 03-packages.sh - install the reviewed workstation package policy.
 # Reads manifests/workstation-packages.tsv (reused asset); selects packages
-# by module set: vm -> the vm profile's 7 modules, physical -> all modules.
+# by module set: physical -> all modules; vm -> everything except the
+# GPU/hardware-specific modules (no NVIDIA/AMD driver, no ASUS control, no
+# hardware tools). Everything else installs identically on both.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
@@ -9,16 +11,17 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 POLICY="${PROJECT_DIR}/manifests/workstation-packages.tsv"
 
-# VM profile selected modules (hardcoded; matches the vm profile selection)
-VM_MODULES=(desktop-shared wm-niri base-preconditions build-foundation fonts input-fcitx-rime audio)
+# Operator decision (2026-08-05): VM installs everything physical does except
+# GPU/hardware modules. kernel-support stays (headers needed for DKMS).
+VM_SKIP_MODULES=(graphics-amd graphics-nvidia asus-hardware hardware-tools)
 
 module_selected() {
   local mod="$1"
   if [[ "${MACHINE_TYPE}" == "vm" ]]; then
-    for m in "${VM_MODULES[@]}"; do
-      [[ "${mod}" == "${m}" ]] && return 0
+    for m in "${VM_SKIP_MODULES[@]}"; do
+      [[ "${mod}" == "${m}" ]] && return 1
     done
-    return 1
+    return 0
   fi
   return 0  # physical: all modules
 }

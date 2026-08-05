@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# 描述：KVM 大页（HugePages）开启/关闭/状态查询，含持久化配置维护。
+# Description: Enable/disable/query KVM HugePages with persistent config management.
+
+set -euo pipefail
+
+# 默认页数：6GB VM = 3072 页 + 128 余量 = 3200（2MiB/页）
+DEFAULT_PAGES=3200
+SYSCTL_CONF=/etc/sysctl.d/40-hugepage.conf
+FSTAB_LINE='hugetlbfs /dev/hugepages hugetlbfs mode=01770,gid=kvm 0 0'
+# 脚本由用户在终端交互运行，直接使用 sudo 在终端输入密码，不弹图形框。
+
+# 颜色（非 TTY 自动禁用）
+BOLD=$'\033[1m'
+RED=$'\033[31m'
+GREEN=$'\033[32m'
+YELLOW=$'\033[33m'
+CYAN=$'\033[36m'
+NC=$'\033[0m'
+if [[ ! -t 1 ]]; then
+  BOLD=""; RED=""; GREEN=""; YELLOW=""; CYAN=""; NC=""
+fi
+
+info() { printf "${CYAN}[信息]${NC} %s\n" "$*"; }
+ok()   { printf "${GREEN}[成功]${NC} %s\n" "$*"; }
+warn() { printf "${YELLOW}[注意]${NC} %s\n" "$*"; }
+err()  { printf "${RED}[错误]${NC} %s\n" "$*" >&2; }
+die()  { err "$*"; exit 1; }
+
+usage() {
+  cat <<'EOF'
+Usage: hugepages-toggle [on|off|status]
+
+控制宿主机 KVM 大页（HugePages）池：开启、关闭、查看状态。
+
+Commands:
+  on [页数]   开启大页并写入持久化配置（默认 3200 页 = 6.4GB，适配 6GB VM）
+  off         关闭大页，删除 sysctl 配置和 fstab 挂载行（需先关闭所有 VM）
+  status      显示当前大页状态（不传参数时默认显示状态）
+  -h, --help  显示帮助并退出
+
+说明:
+  - 开启后大页池立即锁定，重启宿主仍生效（已持久化）
+  - 关闭前请确认 VM 已关闭，否则内核无法释放正在使用的大页
+  - 改 VM 内存后请用 on + 页数 重新调整（页数 = VM内存MiB / 2）
+EOF
+}
+
+require_deps() {
+  local missing=()
+  local cmd
+
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    err "缺少依赖: ${missing[*]}"
+    exit 127
+  fi
+}
+
+# --- 状态查询 ---
+hugepages_status() {
+  local total free used size_mib page_kb
+  total=$(awk '/HugePages_Total/{print $2}' /proc/meminfo)
+  free=$(awk '/HugePages_Free/{print $2}' /proc/meminfo)
+  page_kb=$(awk '/Hugepagesize/{print $2}' /proc/meminfo)
+  used=$((total - free))
+  size_mib=$((total * page_kb / 1024))
+
+  printf '%s\n' "${BOLD}── 大页状态 ──${NC}"
+  printf '  Total : %d 页（%d MiB）\n' "$total" "$size_mib"
+  printf '  Free  : %d 页\n' "$free"
+  printf '  Used  : %d 页\n' "$used"
+
+  if [[ -f "$SYSCTL_CONF" ]]; then
+    printf '  持久化 : %s 存在\n' "$SYSCTL_CONF"
+  else
+    printf '  %s持久化 : %s 不存在（重启后不生效）%s\n' "$YELLOW" "$SYSCTL_CONF" "$NC"
+  fi
+
+  if grep -q 'hugetlbfs' /etc/fstab; then
+    printf '  fstab  : 挂载行存在\n'
+  else
+    printf '  %sfstab  : 无 hugetlbfs 挂载行%s\n' "$YELLOW" "$NC"
+  fi
+
+  local running
+  running=$(virsh -c qemu:///system list --name --state-running 2>/dev/null | grep -v '^$' | tr '\n' ' ' || true)
+  if [[ -n "$running" ]]; then
+    printf '  %s运行中 VM: %s（正在占用大页）%s\n' "$YELLOW" "$running" "$NC"
+  else
+    printf '  运行中 VM : 无\n'
+  fi
+}
+
+# --- 开启 ---
+hugepages_on() {
+  local pages="${1:-$DEFAULT_PAGES}"
+
+  if [[ ! "$pages" =~ ^[0-9]+$ ]]; then
+    die "页数必须是正整数，收到: '$pages'"
+  fi
+
+  if (( pages <= 0 )); then
+    die '页数必须大于 0'
+  fi
+
+  if ! sudo sh -c "printf 'vm.nr_hugepages = %d\n' \"$pages\" > '$SYSCTL_CONF'"; then
+    die "写入 $SYSCTL_CONF 失败（sudo 认证失败或被取消）"
+  fi
+  ok "已写入 $SYSCTL_CONF = $pages 页"
+
+  if ! grep -q 'hugetlbfs' /etc/fstab; then
+    if ! sudo sh -c "echo '$FSTAB_LINE' >> /etc/fstab"; then
+      die '写入 fstab 失败（sudo 认证失败或被取消）'
+    fi
+    ok '已追加 fstab 挂载行'
+  else
+    info 'fstab 挂载行已存在，跳过'
+  fi
+
+  if ! sudo sysctl -w "vm.nr_hugepages=$pages"; then
+    die '在线设置大页失败（sudo 认证失败，或有大页被 VM 占用）'
+  fi
+
+  ok "大页已开启（$pages 页 = $((pages * 2)) MiB，已持久化，重启生效）"
+}
+
+# --- 关闭 ---
+hugepages_off() {
+  local running
+  running=$(virsh -c qemu:///system list --name --state-running 2>/dev/null | grep -v '^$' | tr '\n' ' ' || true)
+  if [[ -n "$running" ]]; then
+    die "检测到运行中的 VM: $running。请先关闭所有 VM 再关大页（大页池被占用时无法释放）"
+  fi
+
+  if ! sudo sysctl -w vm.nr_hugepages=0; then
+    die '在线关闭大页失败（sudo 认证失败或被取消）'
+  fi
+  ok '已在线关闭大页池'
+
+  if [[ -f "$SYSCTL_CONF" ]]; then
+    if ! sudo rm -f "$SYSCTL_CONF"; then
+      die "删除 $SYSCTL_CONF 失败（sudo 认证失败或被取消）"
+    fi
+    ok "已删除 $SYSCTL_CONF"
+  fi
+
+  if grep -q 'hugetlbfs' /etc/fstab; then
+    if ! sudo sed -i '/hugetlbfs/d' /etc/fstab; then
+      die '移除 fstab 挂载行失败（sudo 认证失败或被取消）'
+    fi
+    ok '已移除 fstab 挂载行'
+  fi
+
+  ok '大页已完全关闭（内存已释放，重启后保持关闭）'
+}
+
+# --- 依赖检查 ---
+require_deps awk virsh sudo
+
+# --- 参数解析 ---
+ACTION=status
+if [[ $# -gt 0 ]]; then
+  case "$1" in
+    on|off|status)
+      ACTION="$1"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf '错误: 未知参数: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+  shift
+fi
+
+# --- 主逻辑 ---
+case "$ACTION" in
+  on)     hugepages_on "${1:-}" ;;
+  off)    hugepages_off ;;
+  status) hugepages_status ;;
+esac

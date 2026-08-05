@@ -26,7 +26,7 @@ sudo bash strap.sh
 
 交互流程：
 
-1. 选择机器类型：物理机（ASUS 完整配置）/ 虚拟机（轻量配置）
+1. 选择机器类型：物理机（ASUS 完整配置）/ 虚拟机（除显卡驱动外全量）
 2. 选择桌面环境：Niri / Hyprland / 双会话 / 不装桌面
 3. 自动执行分步安装（每步记录 `.install_progress`，中断后重跑续传）
 
@@ -36,12 +36,12 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（阿里/中科大/清华多镜像）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 安装软件包清单（物理 172 官方/archlinuxcn + 14 AUR；VM 59 官方/archlinuxcn + 3 AUR） |
+| 03-packages | 安装软件包清单（物理 172 官方/archlinuxcn + 14 AUR；VM 151 官方/archlinuxcn + 14 AUR（仅少显卡驱动模块）） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制；VM 跳过） |
 | 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（14 个，全部自动下载，含 paru/greetd-dms-greeter） |
-| 07-config | 部署个人配置映射（物理 171 / VM 36，先备份） |
-| 08-services | 启用服务：greetd 登录（dms-greeter→niri）+ 物理机 蓝牙/电源/Docker/libvirt 等 |
+| 07-config | 部署个人配置映射（物理与 VM 一致 171 映射，先备份） |
+| 08-services | 启用服务：greetd 登录（dms-greeter→niri）+ 蓝牙/电源/Docker/libvirt 等（物理与 VM 一致） |
 | 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram |
 | 99-cleanup | 清理缓存与构建目录 |
 

@@ -10,7 +10,11 @@ source "${SCRIPT_DIR}/00-utils.sh"
 MAPPINGS="${PROJECT_DIR}/manifests/config-mappings.tsv"
 CONFIG_SRC="${PROJECT_DIR}/config"
 BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
-SCOPE="${MACHINE_TYPE}-v1"   # physical-v1 or vm-v1
+# Operator decision (2026-08-05): the VM restores the same full configuration
+# as the physical machine (packages minus GPU drivers; config is identical).
+# physical-v1 carries the complete reviewed mapping set (171); vm-v1 was the
+# old "lightweight VM" split and is no longer used for deployment.
+SCOPE="physical-v1"
 
 section "Deploying config mappings (scope: ${SCOPE}, target: ${TARGET_USER})"
 
