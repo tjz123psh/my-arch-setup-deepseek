@@ -64,7 +64,8 @@ fi
 # libvirt-docker-forward helper stays manual (host-custom iptables, not a
 # package) and supergfxd is not present in the VM.
 SERVICES=(bluetooth.service power-profiles-daemon.service docker.service \
-          libvirtd.service NetworkManager.service grub-btrfsd.service)
+          libvirtd.service NetworkManager.service grub-btrfsd.service \
+          systemd-timesyncd.service)
 run systemctl daemon-reload
 for s in "${SERVICES[@]}"; do
   if run systemctl enable --now "${s}" 2>/dev/null; then
