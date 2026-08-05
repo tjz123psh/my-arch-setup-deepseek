@@ -1,0 +1,19 @@
+<!--
+WARNING: THIS IS AN AUTO-GENERATED FILE. CHANGES TO IT ARE LIKELY TO BE
+OVERWRITTEN AND LOST. Changes to this xml configuration should be made using:
+  virsh pool-edit default
+or other application using the libvirt API.
+-->
+
+<pool type='dir'>
+  <name>default</name>
+  <uuid>ea6838ae-aab4-4118-842a-1f41a85e0a0e</uuid>
+  <capacity unit='bytes'>0</capacity>
+  <allocation unit='bytes'>0</allocation>
+  <available unit='bytes'>0</available>
+  <source>
+  </source>
+  <target>
+    <path>/home/pang/.local/share/libvirt/images</path>
+  </target>
+</pool>

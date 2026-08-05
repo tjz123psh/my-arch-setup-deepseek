@@ -249,3 +249,11 @@ physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】�
 physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】动漫.png	Pictures/背景图片/【哲风壁纸】动漫.png	644
 physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】樱花-电脑.png	Pictures/背景图片/【哲风壁纸】樱花-电脑.png	644
 physical-v1	desktop-shared	config/home/Pictures/archlinux头像/头像.png	Pictures/archlinux头像/头像.png	644
+physical-v1	desktop-shared	config/home/.config/mako/config	.config/mako/config	644
+physical-v1	virtualization	config/home/.config/libvirt/storage/default.xml	.config/libvirt/storage/default.xml	644
+physical-v1	virtualization	config/home/.config/libvirt/storage/disks.xml	.config/libvirt/storage/disks.xml	644
+physical-v1	desktop-shared	config/home/.config/menus/applications-merged/user-chrome-apps.menu	.config/menus/applications-merged/user-chrome-apps.menu	644
+physical-v1	desktop-shared	config/home/.config/menus/applications-merged/xdg-desktop-menu-dummy.menu	.config/menus/applications-merged/xdg-desktop-menu-dummy.menu	644
+physical-v1	desktop-shared	config/home/.config/mimeapps.list	.config/mimeapps.list	644
+physical-v1	desktop-shared	config/home/.config/user-dirs.dirs	.config/user-dirs.dirs	644
+physical-v1	desktop-shared	config/home/.config/user-dirs.locale	.config/user-dirs.locale	644
