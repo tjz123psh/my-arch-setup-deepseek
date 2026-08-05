@@ -1,16 +1,17 @@
-# schema=2
-# package<TAB>pkgbase<TAB>role<TAB>module<TAB>pkgver<TAB>pkgrel<TAB>arch<TAB>aur-commit<TAB>recipe-tree-sha256<TAB>source-policy<TAB>external-source<TAB>executes-source<TAB>review-state<TAB>review-note
-clash-verge-rev-bin	clash-verge-rev-bin	aur-build	daily-apps	2.5.2	1	x86_64	65d41470c23fa8576308304024b25625c41f3095	d24c09d43c96a673c01b15b8783e057b3813adad6e352fb12fd04fbc9734e9bb	remote-fixed	-	no	reviewed	Pinned upstream release Debian artifact and reviewed package hook
-dsearch-bin	dsearch-bin	aur-build	desktop-shared	0.3.2	1	x86_64	b9d824a7cccefe7939179028b1cb876556668e70	79415abe93c3b426ca1afe7884adf38929bbe3deeb35dd9ec8bf60caf0513851	remote-fixed	-	no	reviewed	Pinned release binary and commit-addressed documentation
-fcitx5-skin-fluentdark-git	fcitx5-skin-fluentdark-git	aur-build	input-fcitx-rime	v0.4.0.r7.g399699a	1	x86_64	3c1548f95b2fa5b93b5e9cdd92fefadae4ea6d05	e2a751b0618995ff78abb03702993d9cfede0e803677497eca77423c6380f306	remote-fixed	-	no	reviewed	Pinned upstream commit archive reproducing the observed version
-flclash-bin	flclash-bin	aur-build	personal-autostart	0.8.94	1	x86_64	97f93d636ed82ec26affdf4635f33d63ea5b61be	14f057d8b2b6c809653b08c2f954c6027c2e0f0404763ec16761eb7da7e02967	remote-fixed	-	no	reviewed	Pinned release Debian artifact and commit-addressed bridge payload
-fuzzel-ime-git	fuzzel-ime-git	aur-build	desktop-shared	1.14.1.r26.g302f228	1	x86_64	c49a01c7c754df0663cfa0dacfdf7c71ea4711dd	11f8a59d81b2ef1e3202a04531a96f544cd474ee55fb3e93f0667bd5b375f635	remote-fixed	-	no	reviewed	Pinned upstream commit archive for the selected IME-capable provider
-google-chrome	google-chrome	aur-build	daily-apps	151.0.7922.71	1	x86_64	cf617f18280a369fd9dff2849c3161163badf264	7488d9567bfb6e8d61fefc1b2c4098087011c49b3ffec1c67b808be54a3ac1e9	remote-fixed	-	no	reviewed	Pinned stable-channel vendor Debian artifact
-leaf-markdown-viewer-bin	leaf-markdown-viewer-bin	aur-build	daily-apps	1.26.2	1	x86_64	918f4a87d0869467c533864aa487793bddcb9014	b3d835e2830623cdf68fd4e725f52a6dfcff9e105ed73f4a15d66fc7c0465eba	remote-fixed	-	yes	reviewed	Pinned release binary runs only in the required isolated unprivileged build
-linuxqq-appimage	linuxqq-appimage	aur-build	daily-apps	3.2.32_20260730	1	x86_64	6c9bffa4ef5fb91b14d69e97b19ffee968f58f61	0915f8ffca3348ffa97a446808029933668382a3fe94d15bb3cbbfa0965f4cf1	remote-fixed	Linuxqq-3.2.32_20260730-x86_64.AppImage	yes	precondition	Exact AppImage must be acquired into the private source cache and hash-verified before an isolated build
-obsidian-bin	obsidian	aur-build	daily-apps	1.12.7	1	x86_64	f5fc32c5df9b3caae1c719f78992277ab8dab1f0	86f8dbfbd6b5e6562cdcc14c9559e4900b26d46869c957c4d6e064997f3581a8	remote-fixed	-	no	reviewed	Pinned current obsidian split-pkgbase Debian recipe preserves the observed wrapper and conditional AppArmor hook
-opencode-bin	opencode-bin	aur-build	development-toolchain	1.18.10	1	x86_64	69b15cc11ee8eecc8e4379075f18af9ead1bd6af	7d987a602efce4de0ceb2f420e7363ea020e6a1d634011951406f69edbba7068	remote-fixed	-	no	reviewed	Pinned upstream release archive matching the observed version
-paru	paru	paru-bootstrap	repository-tools	2.1.0	5	x86_64	329be2113c590046cb29858c23d9b96a8d7bd586	44df22301d21426f5244c81016ad937d270fc9a9439d3729c71818a6e174436f	remote-fixed	paru-vendor-2.1.0.tar.zst	no	precondition	Pinned upstream source requires the exact reviewed libalpm-16 lock and deterministic offline Cargo vendor archive
-wechat-appimage	wechat-appimage	aur-build	daily-apps	4.1.1	4	x86_64	79e238580e278174ebc03fa0091d420aa0a8e59d	009d1ec563f5dbe0d1352c31645fccbe7f1700f226d8cfe5a0b0c692028fd65e	remote-fixed	WechatLinux-1783692407-x86_64.AppImage	yes	precondition	Exact AppImage must be acquired into the private source cache and hash-verified before an isolated build
-wooz-git	wooz-git	aur-build	daily-apps	r189.24e2856	1	x86_64	3c753bf41b0ce51493924f8d8e9e09ef57313dae	a01f3afdcd459369832a59be48e969b88e13b7cdc60be9744f7da064c327261b	remote-fixed	-	no	reviewed	Pinned upstream commit archive reproducing the observed version
-greetd-dms-greeter-git	greetd-dms-greeter-git	aur-build	dms-greetd	1:0.0.0.r9.gd73d3c0	1	x86_64	41ff38b24c9d74067c8841615c503c7dc54ba76f	62d75d0f131697bb3646ca0a0c23fa7631026ca0bd25d11c55a30cf5cd9bf11f	remote-fixed	-	no	reviewed	Fixed AUR recipe reproducing the greeter observed on the operator host
+# schema=1
+# package
+
+clash-verge-rev-bin
+dsearch-bin
+fcitx5-skin-fluentdark-git
+flclash-bin
+fuzzel-ime-git
+google-chrome
+leaf-markdown-viewer-bin
+linuxqq-appimage
+obsidian-bin
+opencode-bin
+paru
+wechat-appimage
+wooz-git
+greetd-dms-greeter-git

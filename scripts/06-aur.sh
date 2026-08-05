@@ -38,17 +38,6 @@ install_recipe() {
 
   # Private-source recipes (linuxqq-appimage, paru, wechat-appimage): their
   # PKGBUILDs now carry real download URLs, so makepkg fetches them normally.
-  # If the operator pre-seeded the local cache, reuse it to save bandwidth.
-  local src_policy ext_src
-  src_policy="$(awk -F'\t' -v p="${recipe}" '$1==p{print $10}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
-  ext_src="$(awk -F'\t' -v p="${recipe}" '$1==p{print $11}' "${PROJECT_DIR}/manifests/aur-recipes.tsv" 2>/dev/null | head -1)"
-  if [[ "${src_policy}" == "local-fixed" && -n "${ext_src}" && "${ext_src}" != "-" ]]; then
-    local cache_dir="${TARGET_HOME}/.cache/my-archlinux-setup/aur-sources/${recipe}"
-    if [[ -f "${cache_dir}/${ext_src}" ]]; then
-      cp -a "${cache_dir}/${ext_src}" "${work}/${ext_src}"
-      log "Reused cached source: ${recipe}/${ext_src}"
-    fi
-  fi
   local build_cmd
   build_cmd="cd '${work}' && makepkg -s --noconfirm"
   if command -v paru >/dev/null 2>&1; then

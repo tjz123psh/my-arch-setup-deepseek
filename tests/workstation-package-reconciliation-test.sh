@@ -104,12 +104,12 @@ for src in mapping_sources:
     if not local.is_file():
         raise SystemExit(f"config mapping source file missing: {src}")
 
-# ---- aur-recipes.tsv (installer 05-aur.sh input) ----
+# ---- aur-recipes.tsv (installer 06-aur.sh input; slim single-column list) ----
 recipe_names: set[str] = set()
 for line_number, parts in enumerate(csv.reader(recipes_path.read_text().splitlines()[1:], delimiter="\t"), 2):
     if not parts or not parts[0] or parts[0].startswith("#"):
         continue
-    if len(parts) < 2:
+    if len(parts) != 1:
         raise SystemExit(f"invalid AUR recipe row at line {line_number}")
     recipe_names.add(parts[0])
 
