@@ -97,6 +97,22 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
   log "Note: clash-verge-service is intentionally NOT enabled (private config)"
 fi
 
+# --- required user groups ---
+# dms (DankMaterialShell) needs the 'input' group to read evdev devices for
+# its plugins (dankmaintenance collect-status, ShorinScreenrec); without it
+# dms logs 'insufficient permissions to access input devices' and the plugins
+# appear inactive even though the files are deployed. docker/libvirt groups
+# are added too so the services are usable after a relogin.
+REQUIRED_GROUPS=(input docker libvirt)
+for g in "${REQUIRED_GROUPS[@]}"; do
+  if ! getent group "${g}" >/dev/null 2>&1; then
+    run groupadd "${g}" 2>/dev/null || true
+  fi
+  if ! id -nG "${TARGET_USER}" 2>/dev/null | grep -qw "${g}"; then
+    run usermod -a -G "${g}" "${TARGET_USER}" && log "Added ${TARGET_USER} to group ${g}"
+  fi
+done
+
 # --- GRUB theme (all machine types) ---
 # Operator decision (2026-08-05): the host uses the Elegant grub2 theme
 # (vinceliuice/Elegant-grub2-themes, mountain-blur-left-dark). Deploy the

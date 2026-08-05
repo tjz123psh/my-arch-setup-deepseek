@@ -17,8 +17,8 @@ RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin 
 
 section "Building and installing AUR packages (${#RECIPES[@]})"
 
-# devtools for clean build env
-run pacman -S --needed --noconfirm base-devel git curl
+# base-devel/git/curl are already installed by 03-packages (build-foundation
+# module); not re-installed here so we do not pay an extra sudo prompt.
 
 HAVE_PARU=false
 command -v paru >/dev/null 2>&1 && HAVE_PARU=true

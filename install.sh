@@ -152,6 +152,27 @@ main() {
   success "Installation complete. A reboot is recommended."
   echo
   echo -e "${H_YELLOW}>>> A system reboot is required.${NC}"
+  echo
+  # Auto-reboot: -y skips the prompt and reboots immediately; otherwise ask
+  # on an interactive tty. Never reboot when stdin is not a tty (e.g. CI/log).
+  if [[ "${ASSUME_YES}" == "true" ]]; then
+    log "Auto-rebooting (--assume-yes)..."
+    sleep 3
+    run systemctl reboot
+  elif [[ -t 0 ]]; then
+    printf '%s' '[install] Reboot now? [Y/n]: '
+    local answer
+    read -r answer
+    if [[ -z "${answer}" || "${answer,,}" == "y" || "${answer,,}" == "yes" ]]; then
+      log "Rebooting..."
+      sleep 3
+      run systemctl reboot
+    else
+      log "Skipping reboot; run 'sudo systemctl reboot' when ready."
+    fi
+  else
+    log "Non-interactive session; run 'sudo systemctl reboot' when ready."
+  fi
 }
 
 main "$@"
