@@ -107,4 +107,8 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
   fi
 fi
 
+# --- paru.conf (AUR helper options, matches host snapshot) ---
+log "Deploying paru.conf..."
+run bash -c "cp -f '${PROJECT_DIR}/config/etc/paru.conf' /etc/paru.conf && chmod 644 /etc/paru.conf"
+
 success "Service configuration complete"
