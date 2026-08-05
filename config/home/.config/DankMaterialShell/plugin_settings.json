@@ -5,5 +5,10 @@
   },
   "shorinScreenrec": {
     "enabled": true
+  },
+  "dankmaintenance": {
+    "enabled": true,
+    "lastChip": 1,
+    "backgroundImage": "file:///home/pang/.config/DankMaterialShell/plugins/dankmaintenance/bg-winter.png"
   }
 }
