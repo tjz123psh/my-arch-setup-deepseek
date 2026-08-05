@@ -5,6 +5,8 @@
 重装 Arch、完成基础安装（分区/GRUB/首次启动/联网）后，一条命令恢复完整桌面
 环境（Niri / Hyprland、软件包、AUR、个人配置与系统服务）。
 
+> 产品定位与已确认的产品决策见 [`docs/project-vision.md`](docs/project-vision.md)。
+
 > 本仓库同时支持**物理机**（ASUS 完整配置）与**虚拟机**（轻量配置）两种模式。
 
 ## 使用
