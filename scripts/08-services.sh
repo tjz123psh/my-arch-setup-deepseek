@@ -44,12 +44,16 @@ if [[ -f /usr/lib/systemd/system/greetd.service ]]; then
 fi
 
 if [[ "${MACHINE_TYPE}" == "physical" ]]; then
+  # libvirt-docker-forward is a host-custom iptables helper (not a package);
+  # it stays out of the installer and is maintained manually on the host.
   SERVICES=(bluetooth.service power-profiles-daemon.service docker.service \
-            libvirtd.service NetworkManager.service \
-            grub-btrfsd.service libvirt-docker-forward.service)
+            libvirtd.service NetworkManager.service grub-btrfsd.service)
+  run systemctl daemon-reload
   for s in "${SERVICES[@]}"; do
-    if systemctl list-unit-files "${s}" >/dev/null 2>&1; then
-      run systemctl enable --now "${s}" && log "Service: ${s}"
+    if run systemctl enable --now "${s}" 2>/dev/null; then
+      log "Service: ${s}"
+    else
+      warn "could not enable ${s} (unit missing?)"
     fi
   done
   # cleanup timers
