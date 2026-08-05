@@ -49,15 +49,15 @@ run pacman -S --needed --noconfirm "${DRIVERS[@]}" || {
   done
 }
 
-log "Enabling ASUS control services (asusd, supergfxd)..."
+log "Enabling ASUS control services (supergfxd)..."
 run systemctl daemon-reload
-for svc in asusd supergfxd; do
-  if run systemctl enable --now "${svc}" 2>/dev/null; then
-    log "service: ${svc}"
-  else
-    warn "could not enable ${svc} (unit missing on this machine)"
-  fi
-done
+# asusd.service is a static unit (triggered via supergfxd); it must not be
+# enabled directly. Only supergfxd gets enabled.
+if run systemctl enable --now supergfxd 2>/dev/null; then
+  log "service: supergfxd"
+else
+  warn "could not enable supergfxd (unit missing on this machine)"
+fi
 
 success "Drivers installed (${#DRIVERS[@]} packages)"
 log "Note: NVIDIA DKMS modules need a reboot to take effect; pick the GPU"
