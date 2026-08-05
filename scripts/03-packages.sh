@@ -2,8 +2,8 @@
 # 03-packages.sh - install the reviewed workstation package policy.
 # Reads manifests/workstation-packages.tsv (reused asset); selects packages
 # by module set: physical -> all modules; vm -> everything except the
-# GPU/hardware-specific modules (no NVIDIA/AMD driver, no ASUS control, no
-# hardware tools). Everything else installs identically on both.
+# GPU/hardware-specific packages (NVIDIA driver, AMD ucode, ASUS control,
+# hardware tools). mesa/vulkan stay (the compositor needs GL to render).
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
@@ -12,18 +12,23 @@ source "${SCRIPT_DIR}/00-utils.sh"
 POLICY="${PROJECT_DIR}/manifests/workstation-packages.tsv"
 
 # Operator decision (2026-08-05): VM installs everything physical does except
-# GPU/hardware modules. kernel-support stays (headers needed for DKMS).
-VM_SKIP_MODULES=(graphics-amd graphics-nvidia asus-hardware hardware-tools)
+# hardware-specific packages. amd-ucode is a CPU microcode update (no CPU in
+# the VM); the NVIDIA stack, ASUS control and hardware tools are host-only.
+# mesa and the vulkan user-space layers stay: niri/hyprland need GL to render.
+VM_SKIP_PKGS=(amd-ucode nvidia-open-dkms nvidia-utils nvidia-settings \
+              nvidia-prime lib32-nvidia-utils libva-nvidia-driver libva-utils \
+              asusctl rog-control-center supergfxctl \
+              evtest fprintd fwupd linux-firmware powertop)
 
 module_selected() {
-  local mod="$1"
+  local pkg="$1"
   if [[ "${MACHINE_TYPE}" == "vm" ]]; then
-    for m in "${VM_SKIP_MODULES[@]}"; do
-      [[ "${mod}" == "${m}" ]] && return 1
+    for p in "${VM_SKIP_PKGS[@]}"; do
+      [[ "${pkg}" == "${p}" ]] && return 1
     done
     return 0
   fi
-  return 0  # physical: all modules
+  return 0  # physical: all packages
 }
 
 section "Installing packages (${MACHINE_TYPE})"
@@ -38,7 +43,7 @@ AUR_PKGS=()
 HAVE_ARCHLINUXCN=false
 while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpose; do
   [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
-  module_selected "${module}" || continue
+  module_selected "${pkg}" || continue
   # verify-only rows are handoff preconditions (base/grub/linux/mkinitcpio/...)
   # checked for presence, never installed; deferred rows are never installed.
   [[ "${pol}" == "verify" || "${pol}" == "deferred" ]] && continue
