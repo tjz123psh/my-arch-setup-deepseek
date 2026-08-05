@@ -78,13 +78,16 @@ install_recipe() {
 # is set, and makepkg builds as the target user (root path uses runuser), so
 # the toolchain must be installed into that user's HOME and detected there.
 ensure_rust() {
-  local user_cargo
+  # cargo may exist as a rustup shim while no toolchain is active (common:
+  # rustup installed without 'rustup default stable'). Verify an active
+  # toolchain, not just the shim's presence.
+  local active
   if [[ "$(id -u)" -eq 0 ]]; then
-    user_cargo="$(runuser -u "${TARGET_USER}" -- bash -lc 'command -v cargo' 2>/dev/null || true)"
+    active="$(runuser -u "${TARGET_USER}" -- bash -lc 'rustup show active-toolchain 2>/dev/null' || true)"
   else
-    user_cargo="$(command -v cargo 2>/dev/null || true)"
+    active="$(rustup show active-toolchain 2>/dev/null || true)"
   fi
-  if [[ -n "${user_cargo}" ]]; then
+  if [[ -n "${active}" ]]; then
     return 0
   fi
   local have_rustup
@@ -94,7 +97,7 @@ ensure_rust() {
     have_rustup="$(command -v rustup 2>/dev/null || true)"
   fi
   if [[ -n "${have_rustup}" ]]; then
-    log "rustup present; setting stable toolchain..."
+    log "rustup present but no active toolchain; setting stable..."
     if [[ "$(id -u)" -eq 0 ]]; then
       runuser -u "${TARGET_USER}" -- bash -lc 'rustup default stable' || \
         warn "rustup default stable failed; paru build may fail"
