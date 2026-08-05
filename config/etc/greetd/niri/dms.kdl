@@ -1,0 +1,38 @@
+debug {
+    honor-xdg-activation-with-invalid-serial
+}
+
+output "Virtual-1" {
+    mode "1920x1080@60.000"
+    scale 1
+    position x=0 y=0
+    variable-refresh-rate on-demand=true
+}
+
+output "eDP-1" {
+    mode "1920x1080@144.063"
+    scale 1
+    transform "normal"
+    position x=0 y=0
+}
+
+input {
+    keyboard {
+        xkb
+        repeat-delay 200
+        repeat-rate 50
+        numlock
+    }
+    touchpad {
+        tap
+        natural-scroll
+        accel-speed 0.0
+        accel-profile "flat"
+    }
+    mouse {
+        accel-speed 0.3
+        accel-profile "flat"
+    }
+    trackpoint
+}
+

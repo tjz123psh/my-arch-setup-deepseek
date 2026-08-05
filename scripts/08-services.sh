@@ -36,6 +36,9 @@ vt = 1
 command = "/usr/bin/dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl"
 user = "greeter"
 EOF'
+# dms-greeter reads /etc/greetd/niri/config.kdl (which includes dms.kdl);
+# deploy the reviewed greeter configs so the login screen starts.
+run bash -c "cp -f '${PROJECT_DIR}/config/etc/greetd/niri/config.kdl' /etc/greetd/niri/config.kdl && cp -f '${PROJECT_DIR}/config/etc/greetd/niri/dms.kdl' /etc/greetd/niri/dms.kdl && chown root:greeter /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl && chmod 644 /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl"
 # list-unit-files can report "0 unit files listed" before a daemon-reload;
 # check the unit file on disk and enable directly instead.
 run systemctl daemon-reload || true

@@ -9,6 +9,7 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 RECIPES_DIR="${PROJECT_DIR}/third_party/aur"
 BUILD_BASE="${PROJECT_DIR}/.aur-build"
+mkdir -p "${BUILD_BASE}"
 RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin \
          fuzzel-ime-git google-chrome greetd-dms-greeter-git \
          leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin opencode-bin \
@@ -36,30 +37,25 @@ install_recipe() {
   fi
   cp -a "${dir}/." "${work}/"
 
-  # Private-source recipes (linuxqq-appimage, paru, wechat-appimage): their
-  # PKGBUILDs now carry real download URLs, so makepkg fetches them normally.
+  # PKGBUILDs carry real download URLs, so makepkg fetches them normally.
   local build_cmd
   build_cmd="cd '${work}' && makepkg -s --noconfirm"
-  if command -v paru >/dev/null 2>&1; then
-    # paru as the user, then root installs the built package
-    if [[ "$(id -u)" -eq 0 ]]; then
-      if runuser -u "${TARGET_USER}" -- bash -c "cd '${work}' && paru -Ui --noconfirm ." 2>/dev/null; then
-        rm -rf "${work}"; success "Installed: ${recipe}"; return 0
-      fi
-    elif paru -Ui --noconfirm . 2>/dev/null; then
-      rm -rf "${work}"; success "Installed: ${recipe}"; return 0
-    fi
-  fi
-  # fallback: plain makepkg then root pacman -U
   if [[ "$(id -u)" -eq 0 ]]; then
     runuser -u "${TARGET_USER}" -- bash -c "${build_cmd}" || { rm -rf "${work}"; return 1; }
-    run pacman -U --noconfirm "${work}"/*.pkg.tar.* || { rm -rf "${work}"; return 1; }
   else
     ( cd "${work}" && makepkg -s --noconfirm ) || { rm -rf "${work}"; return 1; }
-    run pacman -U --noconfirm "${work}"/*.pkg.tar.* || { rm -rf "${work}"; return 1; }
   fi
+  # collect the built artifact; a single sudo installs everything at the end
+  local pkg
+  pkg="$(find "${work}" -maxdepth 1 -name '*.pkg.tar.*' | head -1)"
+  if [[ -z "${pkg}" ]]; then
+    rm -rf "${work}"
+    warn "No package artifact produced: ${recipe}"
+    return 1
+  fi
+  mv "${pkg}" "${BUILD_BASE}/"
   rm -rf "${work}"
-  success "Installed: ${recipe}"
+  log "Built: ${recipe}"
 }
 
 # Ensure a usable Rust toolchain for the paru build. base-devel does not
@@ -120,6 +116,21 @@ for recipe in "${RECIPES[@]}"; do
     failed=$((failed + 1))
   fi
 done
+
+# install all built artifacts with a single sudo invocation (one password
+# prompt instead of one per package; sudo cache alone is insufficient because
+# long AUR builds outlive the default 5-minute timestamp)
+mapfile -t pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name '*.pkg.tar.*' | sort)
+if (( ${#pkgs[@]} > 0 )); then
+  log "Installing ${#pkgs[@]} built AUR packages (single sudo)..."
+  run pacman -U --noconfirm "${pkgs[@]}" || {
+    warn "bulk AUR install failed; retry with: sudo pacman -U ${BUILD_BASE}/*.pkg.tar.*"
+  }
+  rm -f "${pkgs[@]}"
+  success "Installed ${#pkgs[@]} AUR packages"
+else
+  warn "no AUR artifacts to install"
+fi
 
 if (( failed > 0 )); then
   warn "${failed} AUR package(s) failed; rerun this step to retry"
