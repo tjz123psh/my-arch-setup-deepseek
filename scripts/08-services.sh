@@ -130,7 +130,9 @@ log "Deploying GRUB theme (Elegant-mountain-blur-left-dark)..."
 # supported, so -a would print a "failed to preserve ownership" error per
 # file. The theme needs no special permissions; -r copies contents cleanly.
 run bash -c "mkdir -p /boot/grub/themes && cp -r '${PROJECT_DIR}/config/etc/grub/themes/Elegant-mountain-blur-left-dark' /boot/grub/themes/"
-if ! grep -q '^GRUB_THEME=' /etc/default/grub; then
+if [[ ! -f /etc/default/grub ]]; then
+  warn "/etc/default/grub missing; GRUB theme not configured (is grub installed?)"
+elif ! grep -q '^GRUB_THEME=' /etc/default/grub; then
   run bash -c 'echo "GRUB_THEME=\"/boot/grub/themes/Elegant-mountain-blur-left-dark/theme.txt\"" >> /etc/default/grub'
 else
   log "GRUB_THEME already present in /etc/default/grub"
