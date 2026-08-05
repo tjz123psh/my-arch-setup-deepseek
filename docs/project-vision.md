@@ -43,8 +43,11 @@ and it is not an audited/reproducible engineering system.
    intentionally not managed by the installer.
 7. **System settings.** locale zh_CN+en_US, timezone Asia/Shanghai, hostname
    default (archlinux), zram with zstd.
-8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB,
-   kernel selection, initramfs, credentials (SSH/GPG/tokens/passwords).
+8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB
+   install and `grub-mkconfig`, kernel selection, initramfs, credentials
+   (SSH/GPG/tokens/passwords). GRUB *theme* deployment (files + `GRUB_THEME`
+   in `/etc/default/grub`) IS managed, because it is a config asset; applying
+   it still requires the operator's manual `grub-mkconfig` afterwards.
 
 ## 3. Validation workflow (agreed)
 

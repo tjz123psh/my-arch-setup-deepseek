@@ -89,4 +89,22 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
   log "Note: clash-verge-service is intentionally NOT enabled (private config)"
 fi
 
+# --- GRUB theme (physical) ---
+# Operator decision (2026-08-05): the host uses the Elegant grub2 theme
+# (vinceliuice/Elegant-grub2-themes, mountain-blur-left-dark). Deploy the
+# captured theme files and set GRUB_THEME so a manual grub-mkconfig picks it
+# up. grub-mkconfig/grub-install stay manual (boot chain is the operator's
+# handoff responsibility).
+if [[ "${MACHINE_TYPE}" == "physical" ]]; then
+  THEME_DIR="/boot/grub/themes/Elegant-mountain-blur-left-dark"
+  log "Deploying GRUB theme (Elegant-mountain-blur-left-dark)..."
+  run bash -c "mkdir -p /boot/grub/themes && cp -a '${PROJECT_DIR}/config/etc/grub/themes/Elegant-mountain-blur-left-dark' /boot/grub/themes/"
+  if ! grep -q '^GRUB_THEME=' /etc/default/grub; then
+    run bash -c 'echo "GRUB_THEME=\"/boot/grub/themes/Elegant-mountain-blur-left-dark/theme.txt\"" >> /etc/default/grub'
+    log "GRUB_THEME set; run 'sudo grub-mkconfig -o /boot/grub/grub.cfg' to apply"
+  else
+    log "GRUB_THEME already present in /etc/default/grub"
+  fi
+fi
+
 success "Service configuration complete"

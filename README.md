@@ -48,7 +48,7 @@ sudo bash strap.sh
 ## 项目边界
 
 - 不分区、不格式化、不执行 pacstrap
-- 不接管 GRUB、内核选择、initramfs
+- 不接管 GRUB 安装与 grub-mkconfig、内核选择、initramfs（GRUB 主题部署除外：安装器会部署主题文件并设置 GRUB_THEME，应用需手动 grub-mkconfig）
 - 不复制凭据（SSH/GPG/令牌/密码）
 - 登录管理器：安装并启用 greetd（dms-greeter → niri 会话）
 - 配置部署前自动备份到 `~/.config-backup-my-arch-*`
