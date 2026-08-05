@@ -88,8 +88,11 @@ for t in paccache.timer snapper-cleanup.timer; do
     run systemctl enable --now "${t}" && log "Timer: ${t}"
   fi
 done
-# libvirt default network
-if command -v virsh >/dev/null 2>&1; then
+# libvirt default network (physical only). In the VM the operator's host
+# already provides a virbr0 on 192.168.122.0/24; if the guest's own
+# libvirtd autostarts its default network it creates a colliding virbr0
+# on the same subnet, breaking guest networking. So skip it on vm.
+if [[ "${MACHINE_TYPE}" == "physical" ]] && command -v virsh >/dev/null 2>&1; then
   run virsh net-autostart default 2>/dev/null && log "libvirt default network autostart"
 fi
 if [[ "${MACHINE_TYPE}" == "physical" ]]; then
@@ -123,7 +126,10 @@ done
 # the actual boot install (grub-install) remains the operator's handoff step.
 THEME_DIR="/boot/grub/themes/Elegant-mountain-blur-left-dark"
 log "Deploying GRUB theme (Elegant-mountain-blur-left-dark)..."
-run bash -c "mkdir -p /boot/grub/themes && cp -a '${PROJECT_DIR}/config/etc/grub/themes/Elegant-mountain-blur-left-dark' /boot/grub/themes/"
+# Use cp -r (not -a): /boot is often a vfat ESP where chown/chmod are not
+# supported, so -a would print a "failed to preserve ownership" error per
+# file. The theme needs no special permissions; -r copies contents cleanly.
+run bash -c "mkdir -p /boot/grub/themes && cp -r '${PROJECT_DIR}/config/etc/grub/themes/Elegant-mountain-blur-left-dark' /boot/grub/themes/"
 if ! grep -q '^GRUB_THEME=' /etc/default/grub; then
   run bash -c 'echo "GRUB_THEME=\"/boot/grub/themes/Elegant-mountain-blur-left-dark/theme.txt\"" >> /etc/default/grub'
 else
