@@ -1,25 +1,30 @@
 # Maintainer: Morgan <morganamilo@archlinux.org>
 # Local fixed bootstrap recipe: pinned upstream source, built with cargo
 # fetching dependencies from crates.io (no offline vendor archive needed).
+# Aligned with the official AUR PKGBUILD: `cargo update alpm alpm-utils`
+# upgrades the alpm binding to a version that supports the current libalpm
+# before the frozen build.
 
 pkgname=paru
 pkgver=2.1.0
 pkgrel=5
 pkgdesc='Feature packed AUR helper'
-arch=('x86_64')
 url='https://github.com/Morganamilo/paru'
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Morganamilo/paru/archive/v$pkgver.tar.gz")
+backup=('etc/paru.conf')
+arch=('x86_64')
 license=('GPL-3.0-or-later')
 makedepends=('cargo')
 depends=('git' 'pacman' 'libalpm.so>=14')
 optdepends=('bat: colored PKGBUILD printing' 'devtools: build in chroot and downloading PKGBUILDs')
-backup=('etc/paru.conf')
+sha256sums=('eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727')
 options=('!debug')
-source=(
-  "paru-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz"
-)
-sha256sums=(
-  'eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727'
-)
+
+prepare() {
+  cd "${srcdir}/paru-${pkgver}"
+  cargo update alpm alpm-utils
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's|host: ||p')"
+}
 
 build() {
   cd "${srcdir}/paru-${pkgver}" || return 1
@@ -29,7 +34,7 @@ build() {
     feature_args=(--features git)
   fi
 
-  cargo build "${feature_args[@]}" --release --target-dir target
+  cargo build --frozen "${feature_args[@]}" --release --target-dir target
   ./scripts/mkmo locale/
 }
 
