@@ -26,7 +26,9 @@ module_selected() {
   # Driver packages are handled by the dedicated 04-drivers step (physical
   # only), so 03-packages excludes them on BOTH machine types. This keeps
   # 03 identical between vm and physical (156 official + 14 AUR) and avoids
-  # double-installing the 21 driver packages.
+  # double-installing the 16 hardware driver packages. The mesa/vulkan
+  # user-space GL layers are intentionally NOT excluded: VMs need them to
+  # render, and on physical 04-drivers re-lists them (a no-op via --needed).
   for p in "${VM_SKIP_PKGS[@]}"; do
     [[ "${pkg}" == "${p}" ]] && return 1
   done

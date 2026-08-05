@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 04-hyprland.sh - Hyprland desktop environment + configuration.
+# 05-hyprland.sh - Hyprland desktop environment + configuration.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh

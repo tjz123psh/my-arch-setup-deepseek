@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 04-niri.sh - Niri desktop environment + configuration.
+# 05-niri.sh - Niri desktop environment + configuration.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh

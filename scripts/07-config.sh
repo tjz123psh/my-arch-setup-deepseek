@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 06-config.sh - deploy reviewed user config mappings.
+# 07-config.sh - deploy reviewed user config mappings.
 # Reads manifests/config-mappings.tsv (reused asset): scope physical-v1 for
 # physical machines, vm-v1 for VMs. Backs up any existing target first.
 set -Eeuo pipefail
@@ -12,7 +12,7 @@ CONFIG_SRC="${PROJECT_DIR}/config"
 BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 # Operator decision (2026-08-05): the VM restores the same full configuration
 # as the physical machine (packages minus GPU drivers; config is identical).
-# physical-v1 carries the complete reviewed mapping set (171); vm-v1 was the
+# physical-v1 carries the complete reviewed mapping set (225); vm-v1 was the
 # old "lightweight VM" split and is no longer used for deployment.
 SCOPE="physical-v1"
 
