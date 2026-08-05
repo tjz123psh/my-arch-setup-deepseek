@@ -41,6 +41,14 @@ done
 
 # greetd login manager (every machine; niri session via dms-greeter)
 log "Configuring greetd (dms-greeter -> niri)..."
+# greetd's config uses user="greeter"; the package does NOT create that user
+# (verified: greetd ships no install hook). Ensure it exists so the greeter
+# session can start; matches the host snapshot (greeter uid 961).
+if ! getent passwd greeter >/dev/null 2>&1; then
+  log "Creating greeter user for greetd..."
+  run useradd --system --home-dir / --shell /bin/bash greeter || \
+    warn "could not create greeter user; greetd login may fail"
+fi
 run bash -c 'mkdir -p /etc/greetd/niri && cat > /etc/greetd/config.toml <<EOF
 [terminal]
 vt = 1

@@ -11,10 +11,11 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 POLICY="${PROJECT_DIR}/manifests/workstation-packages.tsv"
 
-# Operator decision (2026-08-05): VM installs everything physical does except
-# hardware-specific packages. amd-ucode is a CPU microcode update (no CPU in
-# the VM); the NVIDIA stack, ASUS control and hardware tools are host-only.
-# mesa and the vulkan user-space layers stay: niri/hyprland need GL to render.
+# Driver/hardware-specific packages are excluded from the package step on
+# BOTH machine types and installed by the dedicated 04-drivers step
+# (physical only). amd-ucode is a CPU microcode update; the NVIDIA stack,
+# ASUS control and hardware tools are host-only. mesa and the vulkan
+# user-space layers stay: niri/hyprland need GL to render.
 VM_SKIP_PKGS=(amd-ucode nvidia-open-dkms nvidia-utils nvidia-settings \
               nvidia-prime lib32-nvidia-utils libva-nvidia-driver libva-utils \
               asusctl rog-control-center supergfxctl \
@@ -22,13 +23,14 @@ VM_SKIP_PKGS=(amd-ucode nvidia-open-dkms nvidia-utils nvidia-settings \
 
 module_selected() {
   local pkg="$1"
-  if [[ "${MACHINE_TYPE}" == "vm" ]]; then
-    for p in "${VM_SKIP_PKGS[@]}"; do
-      [[ "${pkg}" == "${p}" ]] && return 1
-    done
-    return 0
-  fi
-  return 0  # physical: all packages
+  # Driver packages are handled by the dedicated 04-drivers step (physical
+  # only), so 03-packages excludes them on BOTH machine types. This keeps
+  # 03 identical between vm and physical (156 official + 14 AUR) and avoids
+  # double-installing the 21 driver packages.
+  for p in "${VM_SKIP_PKGS[@]}"; do
+    [[ "${pkg}" == "${p}" ]] && return 1
+  done
+  return 0
 }
 
 section "Installing packages (${MACHINE_TYPE})"
