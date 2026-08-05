@@ -73,9 +73,50 @@ install_recipe() {
   success "Installed: ${recipe}"
 }
 
+# Ensure a usable Rust toolchain for the paru build. base-devel does not
+# include rust; rustup (when installed) has no default toolchain until one
+# is set, and makepkg builds as the target user (root path uses runuser), so
+# the toolchain must be installed into that user's HOME and detected there.
+ensure_rust() {
+  local user_cargo
+  if [[ "$(id -u)" -eq 0 ]]; then
+    user_cargo="$(runuser -u "${TARGET_USER}" -- bash -lc 'command -v cargo' 2>/dev/null || true)"
+  else
+    user_cargo="$(command -v cargo 2>/dev/null || true)"
+  fi
+  if [[ -n "${user_cargo}" ]]; then
+    return 0
+  fi
+  local have_rustup
+  if [[ "$(id -u)" -eq 0 ]]; then
+    have_rustup="$(runuser -u "${TARGET_USER}" -- bash -lc 'command -v rustup' 2>/dev/null || true)"
+  else
+    have_rustup="$(command -v rustup 2>/dev/null || true)"
+  fi
+  if [[ -n "${have_rustup}" ]]; then
+    log "rustup present; setting stable toolchain..."
+    if [[ "$(id -u)" -eq 0 ]]; then
+      runuser -u "${TARGET_USER}" -- bash -lc 'rustup default stable' || \
+        warn "rustup default stable failed; paru build may fail"
+    else
+      rustup default stable || warn "rustup default stable failed; paru build may fail"
+    fi
+    return 0
+  fi
+  log "installing rustup and stable toolchain..."
+  run pacman -S --needed --noconfirm rustup
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- bash -lc 'rustup default stable' || \
+      warn "rustup default stable failed; paru build may fail"
+  else
+    rustup default stable || warn "rustup default stable failed; paru build may fail"
+  fi
+}
+
 # build paru first if needed (it is the AUR helper for the rest)
 if [[ "${HAVE_PARU}" == "false" ]] && [[ -d "${RECIPES_DIR}/paru" ]]; then
   log "paru not installed; building paru first..."
+  ensure_rust
   install_recipe paru
 fi
 

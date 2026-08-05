@@ -117,8 +117,9 @@ main() {
   sys_dashboard
 
   # Module scripts run as child processes; export the selections so they
-  # can read MACHINE_TYPE/DESKTOP_ENV without re-prompting.
-  export MACHINE_TYPE DESKTOP_ENV
+  # can read MACHINE_TYPE/DESKTOP_ENV without re-prompting. TARGET_USER/
+  # TARGET_HOME (resolved in 00-utils) are exported for the root/strap path.
+  export MACHINE_TYPE DESKTOP_ENV TARGET_USER TARGET_HOME
 
   section "Pre-Flight" "System update"
   run pacman -Sy --noconfirm archlinux-keyring
