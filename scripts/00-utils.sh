@@ -62,6 +62,10 @@ run() {
 ensure_fzf() {
   if ! command -v fzf >/dev/null 2>&1; then
     log "installing fzf for the selection menu..."
+    # Sync the package database first: on a fresh install the local db is
+    # stale and the mirror has already pruned the old fzf version, which
+    # would otherwise 404 on every mirror.
+    run pacman -Sy --noconfirm || die "pacman -Sy failed; cannot install fzf"
     run pacman -S --noconfirm --needed fzf
   fi
 }
