@@ -36,7 +36,10 @@ vt = 1
 command = "/usr/bin/dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl"
 user = "greeter"
 EOF'
-if systemctl list-unit-files greetd >/dev/null 2>&1; then
+# list-unit-files can report "0 unit files listed" before a daemon-reload;
+# check the unit file on disk and enable directly instead.
+run systemctl daemon-reload || true
+if [[ -f /usr/lib/systemd/system/greetd.service ]]; then
   run systemctl enable greetd && log "Service: greetd"
 fi
 

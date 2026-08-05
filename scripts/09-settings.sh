@@ -11,7 +11,10 @@ section "System settings"
 
 # --- locale ---
 log "Configuring locale (zh_CN.UTF-8, en_US.UTF-8)..."
-run bash -c 'sed -i "s/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/; s/^#zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/" /etc/locale.gen'
+# A fresh base may ship a minimal locale.gen (e.g. cloud-init image) with no
+# commented zh_CN line; sed-uncommenting then misses it. Enable lines that
+# exist, and append missing ones.
+run bash -c 'sed -i "s/^#en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/; s/^#zh_CN.UTF-8 UTF-8/zh_CN.UTF-8 UTF-8/" /etc/locale.gen; grep -q "^en_US.UTF-8 UTF-8" /etc/locale.gen || echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen; grep -q "^zh_CN.UTF-8 UTF-8" /etc/locale.gen || echo "zh_CN.UTF-8 UTF-8" >> /etc/locale.gen'
 run locale-gen
 run bash -c 'printf "LANG=zh_CN.UTF-8\nLC_CTYPE=en_US.UTF-8\n" > /etc/locale.conf'
 success "Locale: LANG=zh_CN.UTF-8, LC_CTYPE=en_US.UTF-8"
