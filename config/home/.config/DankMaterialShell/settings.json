@@ -636,6 +636,10 @@
         {
           "id": "weather",
           "enabled": true
+        },
+        {
+          "id": "dankmaintenance",
+          "enabled": true
         }
       ],
       "rightWidgets": [
