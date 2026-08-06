@@ -36,7 +36,7 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（阿里/中科大/清华多镜像）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 安装软件包清单（物理与 VM 一致：156 官方/archlinuxcn + 14 AUR，驱动包由 04-drivers 专责） |
+| 03-packages | 安装软件包清单（物理与 VM 一致：173 官方/archlinuxcn + 14 AUR，按桌面选择过滤 wm 专用包；驱动包由 04-drivers 专责） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制；VM 跳过） |
 | 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（14 个，全部自动下载，含 paru/greetd-dms-greeter） |
