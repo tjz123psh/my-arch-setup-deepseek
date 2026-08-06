@@ -34,6 +34,8 @@ if [[ -d "${PROJECT_DIR}/.aur-sources" ]] && \
   if [[ -d "${PROJECT_DIR}/.aur-sources/cargo" ]]; then
     export CARGO_HOME="${PROJECT_DIR}/.aur-sources/cargo"
   fi
+else
+  warn "AUR source cache NOT found at ${PROJECT_DIR}/.aur-sources - AUR recipes will download from the network (and paru/greetd builds need crates.io/proxy.golang.org). If this machine has no overseas access, extract aur-sources.tar.gz into the repo directory first (tar -xzf aur-sources.tar.gz -C ${PROJECT_DIR}/)."
 fi
 
 # makepkg's stock DLAGENTS curl has NO timeout: a stalled source host (e.g.
