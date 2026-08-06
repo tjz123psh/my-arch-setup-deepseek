@@ -76,11 +76,17 @@ if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
   log "Configuring archlinuxcn repository and keyring..."
   if ! grep -q '^\[archlinuxcn\]' /etc/pacman.conf; then
     # Multiple mirrors for failover, matching the 01-mirror strategy.
+    # All seven verified to serve archlinuxcn/x86_64/archlinuxcn.db
+    # (163 and sjtu do NOT mirror archlinuxcn and are omitted).
     run bash -c 'printf "%s\n" \
       "[archlinuxcn]" \
       "Server = https://mirrors.aliyun.com/archlinuxcn/\$arch" \
       "Server = https://mirrors.ustc.edu.cn/archlinuxcn/\$arch" \
       "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinuxcn/\$arch" \
+      "Server = https://mirrors.cloud.tencent.com/archlinuxcn/\$arch" \
+      "Server = https://mirrors.huaweicloud.com/archlinuxcn/\$arch" \
+      "Server = https://mirrors.lzu.edu.cn/archlinuxcn/\$arch" \
+      "Server = https://mirrors.zju.edu.cn/archlinuxcn/\$arch" \
       >> /etc/pacman.conf'
   fi
   if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
