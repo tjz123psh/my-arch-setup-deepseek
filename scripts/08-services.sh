@@ -14,7 +14,10 @@ section "Enabling system and user services (${MACHINE_TYPE})"
 # user units (always; run as the target user so systemctl --user works)
 as_user() {
   if [[ "$(id -u)" -eq 0 ]]; then
-    runuser -u "${TARGET_USER}" -- "$@"
+    # runuser does not inherit the caller's session env; systemctl --user
+    # needs XDG_RUNTIME_DIR to reach the user bus (else enable silently
+    # fails and e.g. dms.service stays disabled -> no desktop shell).
+    runuser -u "${TARGET_USER}" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "${TARGET_USER}")" "$@"
   else
     "$@"
   fi
