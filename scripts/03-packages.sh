@@ -82,12 +82,20 @@ if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
 fi
 
 # install official packages
+# rustup conflicts with the rust/cargo packages but provides them too.
+# Install it first so any package depending on cargo/rust (e.g. cargo-audit)
+# is satisfied via rustup's provides instead of pulling the conflicting rust
+# package during the batch dependency resolve.
+if [[ " ${OFFICIAL[*]} " == *" rustup "* ]]; then
+  log "Installing rustup first (it conflicts with rust/cargo)..."
+  run pacman -S --needed --noconfirm rustup
+fi
 log "Installing official/archlinuxcn packages..."
 run pacman -S --needed --noconfirm "${OFFICIAL[@]}" || {
   error "Official package install failed; retrying once (mirror stalls are common)..."
   if ! run pacman -S --needed --noconfirm "${OFFICIAL[@]}"; then
     error "Retry failed; installing individually to locate the problem..."
-    local failed=0
+    failed=0
     for p in "${OFFICIAL[@]}"; do
       if ! run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1; then
         warn "failed: ${p}"
