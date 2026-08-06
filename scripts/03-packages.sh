@@ -84,11 +84,21 @@ fi
 # install official packages
 log "Installing official/archlinuxcn packages..."
 run pacman -S --needed --noconfirm "${OFFICIAL[@]}" || {
-  error "Official package install failed"
-  warn "Possible individual package conflict; trying one by one..."
-  for p in "${OFFICIAL[@]}"; do
-    run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1 || warn "failed: ${p}"
-  done
+  error "Official package install failed; retrying once (mirror stalls are common)..."
+  if ! run pacman -S --needed --noconfirm "${OFFICIAL[@]}"; then
+    error "Retry failed; installing individually to locate the problem..."
+    local failed=0
+    for p in "${OFFICIAL[@]}"; do
+      if ! run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1; then
+        warn "failed: ${p}"
+        failed=$((failed + 1))
+      fi
+    done
+    if (( failed > 0 )); then
+      error "${failed} official package(s) failed to install; rerun install.sh to resume (03 will be retried)"
+      exit 1
+    fi
+  fi
 }
 
 success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 05)"
