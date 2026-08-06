@@ -66,4 +66,25 @@ else
 fi
 success "Standard user directories ready"
 
+# --- dms plugin runtime dependencies ---
+# dankmaintenance and ShorinScreenrec run a startup check that requires these
+# paths; a fresh install lacks them, so the plugins report "启动失败" until the
+# directories exist. Create them so the plugins load right after deployment.
+# shorin-screenrec-menu (user script, kept under config/home/.local/bin) is
+# installed to /usr/local/bin because the plugin's startup check runs under
+# `sh -c 'command -v ...'` whose PATH does not include ~/.local/bin.
+log "Creating dms plugin dependency paths..."
+mkdir -p "${TARGET_HOME}/.cache/checkallupdates"
+if [[ "$(id -u)" -eq 0 ]]; then
+  chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.cache/checkallupdates"
+fi
+run mkdir -p /.snapshots /home/.snapshots
+if [[ -f "${PROJECT_DIR}/config/home/.local/bin/shorin-screenrec-menu" ]]; then
+  run install -m 755 "${PROJECT_DIR}/config/home/.local/bin/shorin-screenrec-menu" /usr/local/bin/shorin-screenrec-menu
+  log "Deployed shorin-screenrec-menu to /usr/local/bin"
+else
+  warn "shorin-screenrec-menu not found in config; ShorinScreenrec plugin may fail its startup check"
+fi
+success "dms plugin dependencies ready"
+
 success "System settings complete"
