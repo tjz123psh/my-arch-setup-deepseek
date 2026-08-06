@@ -54,5 +54,19 @@ if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
   run bash -c 'sed -i "/^#\[multilib\]/,/^#Include/s/^#//" /etc/pacman.conf'
 fi
 
+# Download timeout/retry: pacman's built-in libcurl downloader has NO total
+# timeout, so a stalled mirror connection hangs the installer forever (seen
+# with fuzzel-ime-git's fcft/tllist deps on aliyun). Route downloads through
+# curl with a short connect timeout (a dead mirror must fail over quickly),
+# a per-file cap for slow transfers, retries and -f (a failed fetch must not
+# leave an error page behind as the .db, which pacman then rejects as a bad
+# PGP signature). Only set it if the operator has not customized XferCommand.
+# NOTE: XferCommand must sit in the global [options] section - appending at
+# EOF lands inside the trailing [multilib] block and pacman ignores it.
+if ! grep -q '^XferCommand' /etc/pacman.conf; then
+  log "Setting pacman XferCommand (download timeout + retry)..."
+  run bash -c "sed -i '/^\[options\]/a XferCommand = /usr/bin/curl -L -f --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 2 -C - -o %o %u' /etc/pacman.conf"
+fi
+
 run pacman -Sy
 success "Mirror source ready"

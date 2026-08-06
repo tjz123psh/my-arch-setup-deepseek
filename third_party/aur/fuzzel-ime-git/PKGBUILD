@@ -10,8 +10,13 @@ makedepends=('meson' 'ninja' 'scdoc' 'wayland-protocols')
 provides=("fuzzel=${pkgver}")
 conflicts=('fuzzel' 'fuzzel-git')
 _commit=302f228bb87d3c861a8debd39b9d8e4a0ea81037
-source=("fuzzel-${_commit}.tar.gz::${url}/archive/${_commit}.tar.gz")
-sha256sums=('8208887cc93899c560e7543b118c0763167b2096bc9407135f2bee952cef0447')
+# Local modification (2026-08-06): upstream AUR uses codeberg's
+# /archive/<commit>.tar.gz, but that archive endpoint is unreachable from
+# CN networks while the git smart-HTTP endpoint works fine. Clone via git
+# instead (same pinned commit, same $srcdir/fuzzel layout, sha256 SKIP as
+# is conventional for git sources).
+source=("fuzzel::git+https://codeberg.org/dnkl/fuzzel.git#commit=${_commit}")
+sha256sums=('SKIP')
 
 build() {
   arch-meson fuzzel build

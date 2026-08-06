@@ -102,7 +102,9 @@ if [[ " ${OFFICIAL[*]} " == *" rustup "* ]]; then
   for p in rust cargo rustfmt; do
     if pacman -Q "${p}" >/dev/null 2>&1; then
       log "Removing ${p} first (rustup provides it)..."
-      run pacman -Rdd --noconfirm "${p}"
+      # tolerate a stale local-db entry (e.g. after an interrupted run)
+      # where -Q reports the package but -Rdd cannot find it
+      run pacman -Rdd --noconfirm "${p}" 2>/dev/null || warn "could not remove ${p}; continuing"
     fi
   done
   log "Installing rustup first (it conflicts with rust/cargo)..."

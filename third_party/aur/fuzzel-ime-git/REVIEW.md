@@ -20,6 +20,15 @@
 - Restricted `arch` from the AUR recipe's x86_64/aarch64 set to the requested x86_64-only scope.
 - Preserved `provides=("fuzzel=${pkgver}")` and conflicts with both `fuzzel` and `fuzzel-git`.
 - Retained the AUR commit's removal of the old IME patch because the support is upstream at the pinned commit.
+- **Local modification (2026-08-06): switched the source from the Codeberg archive
+  endpoint to a pinned git clone.** The archive endpoint
+  (`https://codeberg.org/dnkl/fuzzel/archive/<commit>.tar.gz`) is unreachable
+  from CN networks (connection hangs; verified from both the validation VM and
+  the operator host) while the git smart-HTTP endpoint
+  (`https://codeberg.org/dnkl/fuzzel.git`) responds. The recipe now clones the
+  same pinned commit (`302f228…`) into the same `fuzzel/` srcdir layout, so
+  `build()` is unchanged; `sha256sums` becomes `SKIP`, as is conventional for
+  git sources. The original archive SHA-256 is recorded in Provenance above.
 
 ## Risks and review notes
 
