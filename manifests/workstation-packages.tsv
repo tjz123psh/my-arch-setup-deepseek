@@ -33,7 +33,8 @@ coreutils	pacman	core	verify-only	base-preconditions	manual-precondition	verify	
 cups-pk-helper	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	A helper that makes system-config-printer use PolicyKit
 devtools	pacman	extra	pacman	build-foundation	package-only	install	confirmed-desired	Official Arch clean-chroot tooling for isolated fixed AUR package builds
 dgop	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	System monitoring CLI + REST API
-dms-shell	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A Quickshell-based desktop shell with Material 3 design principles
+dms-shell-hyprland	pacman	extra	pacman	wm-hyprland	package-only	install	confirmed-desired	DankMaterialShell Quickshell provider for Hyprland (compositor glue)
+dms-shell-niri	pacman	extra	pacman	wm-niri	package-only	install	current-explicit	DankMaterialShell Quickshell provider for Niri (compositor glue)
 dnsmasq	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Lightweight, easy to configure DNS forwarder and DHCP server
 docker	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Pack, ship and run any application as a lightweight container
 docker-compose	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Fast, isolated development environments using Docker

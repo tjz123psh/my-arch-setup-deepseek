@@ -22,7 +22,7 @@ VM_SKIP_PKGS=(amd-ucode nvidia-open-dkms nvidia-utils nvidia-settings \
               evtest fprintd fwupd linux-firmware powertop)
 
 module_selected() {
-  local pkg="$1"
+  local pkg="$1" module="$2"
   # Driver packages are handled by the dedicated 04-drivers step (physical
   # only), so 03-packages excludes them on BOTH machine types. This keeps
   # 03 identical between vm and physical (156 official + 14 AUR) and avoids
@@ -32,6 +32,17 @@ module_selected() {
   for p in "${VM_SKIP_PKGS[@]}"; do
     [[ "${pkg}" == "${p}" ]] && return 1
   done
+  # Desktop-specific packages follow the -d selection. The wm-* modules
+  # carry the compositor itself plus its provider glue (e.g. dms-shell-niri
+  # vs dms-shell-hyprland); installing the other WM's packages on a niri-only
+  # machine is dead weight and, for dms-shell-compositor, forces pacman to
+  # silently pick a provider (it used to default to the hyprland one).
+  case "${DESKTOP_ENV:-both}" in
+    niri)     [[ "${module}" == "wm-hyprland" ]] && return 1 ;;
+    hyprland) [[ "${module}" == "wm-niri" ]] && return 1 ;;
+    none)     [[ "${module}" == "wm-niri" || "${module}" == "wm-hyprland" ]] && return 1 ;;
+    *) : ;; # both (or unknown): install everything, like before
+  esac
   return 0
 }
 
@@ -47,7 +58,7 @@ AUR_PKGS=()
 HAVE_ARCHLINUXCN=false
 while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpose; do
   [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
-  module_selected "${pkg}" || continue
+  module_selected "${pkg}" "${module}" || continue
   # verify-only rows are handoff preconditions (base/grub/linux/mkinitcpio/...)
   # checked for presence, never installed; deferred rows are never installed.
   [[ "${pol}" == "verify" || "${pol}" == "deferred" ]] && continue
@@ -98,22 +109,26 @@ if [[ " ${OFFICIAL[*]} " == *" rustup "* ]]; then
   run pacman -S --needed --noconfirm rustup
 fi
 log "Installing official/archlinuxcn packages..."
-run pacman -S --needed --noconfirm "${OFFICIAL[@]}" || {
-  error "Official package install failed; retrying once (mirror stalls are common)..."
-  if ! run pacman -S --needed --noconfirm "${OFFICIAL[@]}"; then
-    error "Retry failed; installing individually to locate the problem..."
-    failed=0
-    for p in "${OFFICIAL[@]}"; do
-      if ! run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1; then
-        warn "failed: ${p}"
-        failed=$((failed + 1))
+if (( ${#OFFICIAL[@]} > 0 )); then
+  run pacman -S --needed --noconfirm "${OFFICIAL[@]}" || {
+    error "Official package install failed; retrying once (mirror stalls are common)..."
+    if ! run pacman -S --needed --noconfirm "${OFFICIAL[@]}"; then
+      error "Retry failed; installing individually to locate the problem..."
+      failed=0
+      for p in "${OFFICIAL[@]}"; do
+        if ! run pacman -S --needed --noconfirm "${p}" >/dev/null 2>&1; then
+          warn "failed: ${p}"
+          failed=$((failed + 1))
+        fi
+      done
+      if (( failed > 0 )); then
+        error "${failed} official package(s) failed to install; rerun install.sh to resume (03 will be retried)"
+        exit 1
       fi
-    done
-    if (( failed > 0 )); then
-      error "${failed} official package(s) failed to install; rerun install.sh to resume (03 will be retried)"
-      exit 1
     fi
-  fi
-}
+  }
+else
+  log "No official packages selected for this desktop/machine combination"
+fi
 
 success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 05)"
