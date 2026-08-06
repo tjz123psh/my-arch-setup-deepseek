@@ -85,8 +85,15 @@ fi
 # rustup conflicts with the rust/cargo packages but provides them too.
 # Install it first so any package depending on cargo/rust (e.g. cargo-audit)
 # is satisfied via rustup's provides instead of pulling the conflicting rust
-# package during the batch dependency resolve.
+# package during the batch dependency resolve. A previous partial install may
+# have pulled rust/cargo/rustfmt (per-package fallback), so remove them first.
 if [[ " ${OFFICIAL[*]} " == *" rustup "* ]]; then
+  for p in rust cargo rustfmt; do
+    if pacman -Q "${p}" >/dev/null 2>&1; then
+      log "Removing ${p} first (rustup provides it)..."
+      run pacman -Rdd --noconfirm "${p}"
+    fi
+  done
   log "Installing rustup first (it conflicts with rust/cargo)..."
   run pacman -S --needed --noconfirm rustup
 fi
