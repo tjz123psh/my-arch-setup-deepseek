@@ -128,6 +128,13 @@ main() {
   run pacman -Sy --noconfirm archlinux-keyring
   run pacman -Syyu --noconfirm
 
+  # Extend the sudo timestamp so the whole install (including long AUR
+  # builds) needs the password typed only once above. Removed by 99-cleanup.
+  if [[ "$(id -u)" -ne 0 ]] && [[ ! -f /etc/sudoers.d/99-install-timeout ]]; then
+    run bash -c 'echo "Defaults timestamp_timeout=240" > /etc/sudoers.d/99-install-timeout && chmod 440 /etc/sudoers.d/99-install-timeout' \
+      || warn "could not extend sudo timeout; you may be prompted again"
+  fi
+
   local total="${#MODULES[@]}" current=0
   for module in "${MODULES[@]}"; do
     [[ -z "${module}" ]] && continue

@@ -133,6 +133,7 @@ else
 fi
 
 if (( failed > 0 )); then
-  warn "${failed} AUR package(s) failed; rerun this step to retry"
+  error "${failed} AUR package(s) failed to build; rerun install.sh to resume (06 will be retried)"
+  exit 1
 fi
 success "AUR stage complete"
