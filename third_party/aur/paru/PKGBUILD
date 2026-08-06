@@ -22,8 +22,11 @@ options=('!debug')
 
 prepare() {
   cd "${srcdir}/paru-${pkgver}"
-  cargo update alpm alpm-utils
-  cargo fetch --locked --target "$(rustc -vV | sed -n 's|host: ||p')"
+  # --offline: with the pre-fetched CARGO_HOME cache (aur-sources) both the
+  # dependency bump and the fetch resolve from the local registry, so a
+  # machine with no crates.io access (offline physical install) still builds.
+  cargo update --offline alpm alpm-utils
+  cargo fetch --locked --offline --target "$(rustc -vV | sed -n 's|host: ||p')"
 }
 
 build() {

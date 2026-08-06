@@ -17,6 +17,25 @@ RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin 
 
 section "Building and installing AUR packages (${#RECIPES[@]})"
 
+# Optional offline AUR source cache: if sources were pre-placed in
+# .aur-sources/ (makepkg SRCDEST layout - git bare mirrors + downloaded
+# files), makepkg uses them and never touches the network. This is how a
+# physical machine with no overseas access still builds every AUR recipe.
+if [[ -d "${PROJECT_DIR}/.aur-sources" ]] && \
+   find "${PROJECT_DIR}/.aur-sources" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+  log "Using local AUR source cache: ${PROJECT_DIR}/.aur-sources (offline mode)"
+  export SRCDEST="${PROJECT_DIR}/.aur-sources"
+  # Build-dependency caches for the Go (greetd-dms-greeter) and Rust (paru)
+  # recipes; without them `go build` / `cargo build` hit the network even
+  # though the PKGBUILD sources are cached.
+  if [[ -d "${PROJECT_DIR}/.aur-sources/go-mod" ]]; then
+    export GOMODCACHE="${PROJECT_DIR}/.aur-sources/go-mod"
+  fi
+  if [[ -d "${PROJECT_DIR}/.aur-sources/cargo" ]]; then
+    export CARGO_HOME="${PROJECT_DIR}/.aur-sources/cargo"
+  fi
+fi
+
 # makepkg's stock DLAGENTS curl has NO timeout: a stalled source host (e.g.
 # codeberg for fuzzel-ime-git) hangs the build forever, exactly like the
 # pacman libcurl issue fixed in 01-mirror. Add connect/max timeouts so a
