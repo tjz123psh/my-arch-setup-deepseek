@@ -137,6 +137,19 @@ elif ! grep -q '^GRUB_THEME=' /etc/default/grub; then
 else
   log "GRUB_THEME already present in /etc/default/grub"
 fi
+# Ensure a graphical terminal (gfxterm): grub-mkconfig only applies GRUB_THEME
+# when gfxterm is enabled. The legacy GRUB_TERMINAL variable (deprecated in
+# grub-mkconfig) overrides both INPUT/OUTPUT, so a handoff/base install that
+# set GRUB_TERMINAL="serial console" would silently drop the theme. Remove it
+# and force GRUB_TERMINAL_OUTPUT="gfxterm".
+run bash -c '
+  sed -i "/^GRUB_TERMINAL=/d" /etc/default/grub
+  if ! grep -q "^GRUB_TERMINAL_OUTPUT=.*gfxterm" /etc/default/grub; then
+    sed -i "s|^GRUB_TERMINAL_OUTPUT=.*|GRUB_TERMINAL_OUTPUT=\"gfxterm\"|" /etc/default/grub
+    grep -q "^GRUB_TERMINAL_OUTPUT=" /etc/default/grub || echo "GRUB_TERMINAL_OUTPUT=\"gfxterm\"" >> /etc/default/grub
+  fi
+'
+log "Enabled GRUB gfxterm for the theme"
 # regenerate the menu so the theme applies now; back up the current
 # grub.cfg first and never abort the install if regeneration fails.
 if command -v grub-mkconfig >/dev/null 2>&1; then
