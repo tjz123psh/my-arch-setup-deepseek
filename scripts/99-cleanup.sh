@@ -10,6 +10,7 @@ log "Cleaning pacman cache..."
 run pacman -Sc --noconfirm 2>/dev/null || warn "cache cleanup skipped"
 log "Cleaning AUR build directories..."
 rm -rf "${PROJECT_DIR}/.aur-build"* 2>/dev/null || true
-# restore the default sudo timeout extended by install.sh pre-flight
-run rm -f /etc/sudoers.d/99-install-timeout 2>/dev/null || true
+# restore the sudo privileges extended by install.sh pre-flight:
+# the timestamp timeout AND the temporary NOPASSWD grant
+run rm -f /etc/sudoers.d/99-install-timeout /etc/sudoers.d/99-install-nopasswd 2>/dev/null || true
 success "Cleanup complete"

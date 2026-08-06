@@ -128,11 +128,15 @@ main() {
   run pacman -Sy --noconfirm archlinux-keyring
   run pacman -Syyu --noconfirm
 
-  # Extend the sudo timestamp so the whole install (including long AUR
-  # builds) needs the password typed only once above. Removed by 99-cleanup.
-  if [[ "$(id -u)" -ne 0 ]] && [[ ! -f /etc/sudoers.d/99-install-timeout ]]; then
-    run bash -c 'echo "Defaults timestamp_timeout=240" > /etc/sudoers.d/99-install-timeout && chmod 440 /etc/sudoers.d/99-install-timeout' \
-      || warn "could not extend sudo timeout; you may be prompted again"
+  # One password for the whole install: extend the sudo timestamp AND grant
+  # a temporary NOPASSWD. timestamp_timeout alone is not enough - makepkg
+  # deliberately runs every pacman call as `sudo -k` (clearing the timestamp
+  # cache), so the AUR step would otherwise re-prompt for every missing
+  # dependency. NOPASSWD makes those a no-op. Both are removed by
+  # 99-cleanup, restoring stock sudo afterwards.
+  if [[ "$(id -u)" -ne 0 ]] && [[ ! -f /etc/sudoers.d/99-install-nopasswd ]]; then
+    run bash -c "printf 'Defaults timestamp_timeout=240\n${TARGET_USER} ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/99-install-nopasswd && chmod 440 /etc/sudoers.d/99-install-nopasswd" \
+      || warn "could not extend sudo privileges; you may be prompted repeatedly (especially during AUR builds)"
   fi
 
   local total="${#MODULES[@]}" current=0
