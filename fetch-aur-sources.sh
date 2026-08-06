@@ -99,6 +99,10 @@ fi
 
 echo
 echo "== cargo registry cache (paru) =="
+# NOTE: paru's recipe carries a committed Cargo.lock (alpm pinned to 4.0.4 /
+# alpm-sys 4.0.5) so the offline build never runs `cargo update`. Keep this
+# lock in sync with the cache: after the update below, copy the generated
+# Cargo.lock from the paru source dir into third_party/aur/paru/Cargo.lock.
 if command -v cargo >/dev/null 2>&1; then
   if [[ ! -d "$DEST/cargo" ]] || [[ -z "$(ls -A "$DEST/cargo" 2>/dev/null)" ]]; then
     rm -rf /tmp/aur-paru-src

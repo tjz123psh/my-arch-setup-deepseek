@@ -4,28 +4,34 @@
 # Aligned with the official AUR PKGBUILD: `cargo update alpm alpm-utils`
 # upgrades the alpm binding to a version that supports the current libalpm
 # before the frozen build.
+#
+# Local modification (2026-08-06): the alpm/alpm-utils bump is pinned into a
+# committed Cargo.lock instead of done at build time, so the prepare step
+# never needs crates.io access (offline physical install). Cargo.lock here
+# carries alpm 4.0.4 / alpm-sys 4.0.5 (libalpm16-compatible).
 
 pkgname=paru
 pkgver=2.1.0
 pkgrel=5
 pkgdesc='Feature packed AUR helper'
 url='https://github.com/Morganamilo/paru'
-source=("$pkgname-$pkgver.tar.gz::https://github.com/Morganamilo/paru/archive/v$pkgver.tar.gz")
+source=("$pkgname-$pkgver.tar.gz::https://github.com/Morganamilo/paru/archive/v$pkgver.tar.gz"
+        "Cargo.lock")
 backup=('etc/paru.conf')
 arch=('x86_64')
 license=('GPL-3.0-or-later')
 makedepends=('cargo')
 depends=('git' 'pacman' 'libalpm.so>=14')
 optdepends=('bat: colored PKGBUILD printing' 'devtools: build in chroot and downloading PKGBUILDs')
-sha256sums=('eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727')
+sha256sums=('eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727'
+            '683648e6dce7adb100a88cf53c7e7f5e1785e9c8f40a92973ac2ac5d713d0b63')
 options=('!debug')
 
 prepare() {
   cd "${srcdir}/paru-${pkgver}"
-  # --offline: with the pre-fetched CARGO_HOME cache (aur-sources) both the
-  # dependency bump and the fetch resolve from the local registry, so a
-  # machine with no crates.io access (offline physical install) still builds.
-  cargo update --offline alpm alpm-utils
+  # Use the committed, alpm-pinned Cargo.lock so no crates.io access (nor an
+  # offline `cargo update`) is needed on the build machine.
+  cp -f "${srcdir}/Cargo.lock" Cargo.lock
   cargo fetch --locked --offline --target "$(rustc -vV | sed -n 's|host: ||p')"
 }
 
