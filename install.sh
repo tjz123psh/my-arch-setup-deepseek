@@ -16,6 +16,7 @@ source "${SCRIPTS_DIR}/00-utils.sh"
 
 DESKTOP_ENV="${DESKTOP_ENV:-}"
 MACHINE_TYPE="${MACHINE_TYPE:-}"
+ASSUME_YES="${ASSUME_YES:-false}"
 MODULES=()
 
 usage() {
@@ -28,6 +29,7 @@ flags can specify them directly to skip the prompts.
 Options:
   -d, --desktop niri|hyprland|both|none
   -t, --machine vm|physical
+  -y, --assume-yes   auto-reboot without prompting after install
   -h, --help
 EOF
 }
@@ -48,6 +50,7 @@ parse_args() {
         esac
         shift 2 ;;
       -h|--help) usage; exit 0 ;;
+      -y|--assume-yes) ASSUME_YES="true" ;;
       *) die "unknown argument: $1 (see --help)" ;;
     esac
   done
