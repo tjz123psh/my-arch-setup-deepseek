@@ -105,15 +105,22 @@ ensure_rust() {
 if [[ "${HAVE_PARU}" == "false" ]] && [[ -d "${RECIPES_DIR}/paru" ]]; then
   log "paru not installed; building paru first..."
   ensure_rust
-  install_recipe paru
+  if install_recipe paru; then
+    HAVE_PARU=true
+  fi
 fi
 
 failed=0
 for recipe in "${RECIPES[@]}"; do
   [[ "${recipe}" == "paru" ]] && [[ "${HAVE_PARU}" == "true" ]] && continue
   if ! install_recipe "${recipe}"; then
-    warn "Skipped failed: ${recipe}"
-    failed=$((failed + 1))
+    # makepkg -s dependency resolution occasionally fails transiently
+    # (e.g. fuzzel-ime-git's fcft/tllist); one retry usually succeeds
+    warn "Retrying failed recipe once: ${recipe}"
+    if ! install_recipe "${recipe}"; then
+      warn "Skipped failed: ${recipe}"
+      failed=$((failed + 1))
+    fi
   fi
 done
 
