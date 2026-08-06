@@ -21,9 +21,10 @@ section "Building and installing AUR packages (${#RECIPES[@]})"
 # codeberg for fuzzel-ime-git) hangs the build forever, exactly like the
 # pacman libcurl issue fixed in 01-mirror. Add connect/max timeouts so a
 # dead host fails the fetch and the recipe retry/failover kicks in instead.
+# -sS silences the per-file progress spam while keeping error output.
 if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
   log "Adding timeouts to makepkg download agents..."
-  run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3|g' /etc/makepkg.conf"
+  run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - -sS --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3|g' /etc/makepkg.conf"
 fi
 
 # base-devel/git/curl are already installed by 03-packages (build-foundation

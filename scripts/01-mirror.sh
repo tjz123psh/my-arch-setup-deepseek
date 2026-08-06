@@ -65,7 +65,9 @@ fi
 # EOF lands inside the trailing [multilib] block and pacman ignores it.
 if ! grep -q '^XferCommand' /etc/pacman.conf; then
   log "Setting pacman XferCommand (download timeout + retry)..."
-  run bash -c "sed -i '/^\[options\]/a XferCommand = /usr/bin/curl -L -f --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 2 -C - -o %o %u' /etc/pacman.conf"
+  # -sS: silent progress (no per-file progress-bar spam) but still print
+  # errors, so a failed fetch is visible without the wall of progress lines.
+  run bash -c "sed -i '/^\[options\]/a XferCommand = /usr/bin/curl -L -f -sS --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 2 -C - -o %o %u' /etc/pacman.conf"
 fi
 
 run pacman -Sy
