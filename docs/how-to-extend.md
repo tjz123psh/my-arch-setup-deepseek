@@ -1,0 +1,117 @@
+# 如何增改（维护指南）
+
+本文回答一个核心问题：**以后要加软件包、加配置、加服务、换桌面组件，穿插进这个仓库，问题大吗？**
+
+结论：**不大，但有固定套路。** 仓库是「数据驱动」的——安装器不写死清单，而是读
+`manifests/` 下的表格；你加东西 = 加一行数据（+ 对应文件），极少需要改脚本本身。
+按下面的清单逐项做，跑一遍 `tests/` 就能自证没破坏现有流程。
+
+## 总原则
+
+| 想改什么 | 动哪里 | 要跑什么验证 |
+|---|---|---|
+| 加/删官方软件包 | `manifests/workstation-packages.tsv` 加一行 | reconciliation 测试 |
+| 加/删 AUR 包 | `manifests/aur-recipes.tsv` + `third_party/aur/<name>/` + 包清单 | reconciliation 测试 + fetch-aur-sources.sh 重新生成缓存 |
+| 加/改个人配置 | `config/` 放文件 + `manifests/config-mappings.tsv` 加一行 | reconciliation 测试 |
+| 加/改 `~/scripts` 脚本 | 直接改本机 `~/scripts`，跑 `sync-scripts.sh` | sync 输出无缺口 |
+| 加/改服务或 timer | `scripts/08-services.sh` 的 `SERVICES=` 或 timer 循环 | bash -n + 一次 VM 重装 |
+| 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
+| 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
+
+> 数字会漂移：`README.md` 里的包数（190 安装/18 校验）、映射数（233）、config 文件数
+> （332）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
+> `find config -type f | wc -l`、`awk` 统计清单行数核对），并重新打包
+> `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`）。
+
+## 一、加一个官方软件包
+
+1. 编辑 `manifests/workstation-packages.tsv`，按现有行格式追加一行：
+   ```
+   包名	pacman	extra	pacman	<module>	package-only	install	current-explicit	一句话用途
+   ```
+   - `module` 用现有分类（`cli-tools`/`desktop-shared`/`audio`/`bluetooth`/`fonts` 等），
+     没有合适的新建一个即可（03-packages 按 module 过滤 wm 专用包，其余全装）。
+   - 驱动类包**不要**加在这里——统一放 `scripts/04-drivers.sh`（物理机专属）。
+2. 跑 `tests/workstation-package-reconciliation-test.sh` 确认格式与引用合法。
+3. 更新 README 包数字。
+
+## 二、加一个 AUR 包（比官方包多三步）
+
+1. **准备 recipe**：在 `third_party/aur/<包名>/` 建目录，放入审阅过的 PKGBUILD
+   （+ 必要的 .install / 补丁 / Cargo.lock 等）。参照现有 recipe 的 REVIEW.md 记录来源与审查结论。
+2. **登记**：`manifests/aur-recipes.tsv` 加包名；`workstation-packages.tsv` 加一行
+   （repository=`aur`，module 按用途）。
+3. **更新离线缓存**：在有海外网络的机器跑 `fetch-aur-sources.sh`——它按
+   aur-recipes.tsv 抓源码进 `~/Downloads/aur-sources/`。**必须重新生成**，否则物理机
+   离线安装新 AUR 包会因无源码失败（在线安装不受影响）。
+4. **若新包是 Rust 且用 cargo 构建**（如 paru 这类）：注意 `Cargo.lock` 是否随源码
+   提供；paru 的 Cargo.lock 是手工固定在仓库里的（见 `third_party/aur/paru/`），
+   版本升级时要同步刷新，否则 `cargo fetch --locked` 会失败。
+5. 跑测试 + 更新 README。
+
+## 三、加/改个人配置
+
+1. 把文件放进 `config/` 对应位置（`config/home/.config/...` 或 `config/etc/...`）。
+2. 在 `manifests/config-mappings.tsv` 加一行：
+   ```
+   physical-v1	<module>	config/home/.config/xxx	.config/xxx	<mode>
+   ```
+   - mode：可执行文件 `755`，普通文件 `644`，含敏感内容（如凭据/密钥）`600`。
+   - **凭据类文件不入库**（AGENTS.md 规定）：api key/token/密码不 capture。
+3. 跑 reconciliation 测试（会校验 source 文件存在、scope 合法）。
+4. VM 重装验证配置确实部署到目标路径。
+
+## 四、加/改 `~/scripts` 脚本（最省事）
+
+本机 `~/scripts` 是日用品。改完后：
+
+```bash
+cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
+```
+
+它会把 `~/scripts` 镜像进 `config/home/scripts/` 并自动补映射行（可执行 755 /
+普通 644），输出"0 gaps"即同步完成。之后正常 commit/push。
+
+## 五、加/改服务
+
+编辑 `scripts/08-services.sh`：
+- `SERVICES=(...)` 数组加系统服务（enable --now）。
+- timer 循环加 timer 名。
+- 用户级服务在脚本后面 `as_user` 段处理。
+
+注意：新增服务如果只在物理机有意义（如 supergfxd 之类），要包在
+`[[ "${MACHINE_TYPE}" == "physical" ]]` 判断里；否则 VM 会多装一个起不来的服务。
+
+## 六、验证纪律（每次增改后）
+
+1. `bash -n scripts/*.sh install.sh strap.sh` —— 语法。
+2. `tests/workstation-package-reconciliation-test.sh` —— 清单/映射/recipe 一致性。
+3. 改脚本逻辑（非纯数据）时，**至少跑一次 VM 全新重装**（`-d niri -t vm`），
+   确认闭环 10/10。物理机专属改动用 `-t physical` 在 VM 里跑路径。
+4. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
+5. commit + push（git-push 约定见 AGENTS/仓库惯例）。
+
+## 增改的「穿插成本」到底多大
+
+- **加官方包 / 加配置 / 加脚本**：5 分钟级别，纯数据操作，风险极低（有测试兜底）。
+- **加 AUR 包**：30 分钟级别，因为要生成离线缓存 + 可能要调 PKGBUILD；
+  但只要不删旧 recipe，**不影响现有 14 个 AUR 的安装**。
+- **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
+- **唯一「伤筋动骨」的改动**：改 manifests schema（表格列含义）、改
+  config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑——这些会牵动 03/07 两个
+  步骤和全部数据，需要额外小心并完整重验。除此之外，穿插增改是安全的。
+
+## 相关文件速查
+
+| 文件 | 作用 |
+|---|---|
+| `manifests/workstation-packages.tsv` | 官方 + AUR 包清单（唯一安装来源） |
+| `manifests/aur-recipes.tsv` | AUR recipe 登记 |
+| `manifests/config-mappings.tsv` | 配置部署映射（scope=physical-v1） |
+| `third_party/aur/` | 固定 AUR recipe + 审查记录 |
+| `scripts/04-drivers.sh` | 物理机驱动（唯一按机型区分的安装逻辑） |
+| `scripts/08-services.sh` | 服务/timer 启用 |
+| `scripts/09-settings.sh` | 系统设置 + snapper + 录屏引擎 |
+| `fetch-aur-sources.sh` | 生成 AUR 离线缓存（增 AUR 后必跑） |
+| `sync-scripts.sh` | 同步本机 ~/scripts 进仓库 |
+| `tests/` | 数据一致性测试 |

@@ -6,13 +6,14 @@
 环境（Niri / Hyprland、软件包、AUR、个人配置与系统服务）。
 
 > 产品定位与已确认的产品决策见 [`docs/project-vision.md`](docs/project-vision.md)。
+> 以后要加软件包/配置/服务/脚本？见 [`docs/how-to-extend.md`](docs/how-to-extend.md)（增改维护指南）。
 
 > 本仓库同时支持**物理机**（ASUS 完整配置）与**虚拟机**两种模式：除硬件驱动
 > （04-drivers 仅物理机执行）与少量环境适配外，软件包、配置、服务完全一致。
 
 ## 下载与安装
 
-**代码包**（安装器 + 配置 + 脚本，不含 AUR 缓存，解包约 93M / tar.gz 约 75M）：
+**代码包**（安装器 + 配置 + 脚本，不含 AUR 缓存，解包约 99M / tar.gz 约 78M）：
 - 网页下载：仓库页面 Code → **Download ZIP**（永远是当前最新）
 - 或命令行：`git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
 
@@ -77,7 +78,7 @@ sudo bash strap.sh
 - `strap.sh`：一键入口（root，自动克隆仓库）
 - `install.sh`：主安装器（选择 + 分步执行）
 - `scripts/`：分步脚本（00-utils 公共函数 + 01~09 步骤 + 99 清理）
-- `config/`：审阅过的个人配置（328 个文件：.config 映射 + md 知识库 + Pictures + scripts + 字体 + /etc 配置）
+- `config/`：审阅过的个人配置（332 个文件：.config 映射 + md 知识库 + Pictures + scripts + 字体 + /etc 配置）
 - `manifests/`：数据清单（包策略、配置映射、AUR recipe）
 - `third_party/aur/`：14 个固定 AUR recipe（含审查记录）
 - `fetch-aur-sources.sh`：在有海外网络的机器上生成 AUR 离线缓存（→ `~/Downloads/aur-sources/`）
@@ -90,6 +91,8 @@ sudo bash strap.sh
 
 1. 用 archinstall 创建普通用户并启用 NetworkManager、连上 Wi-Fi
 2. `git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
+   （无海外网络 clone 不通时，用 U 盘拷贝 `my-arch-setup.tar`，见
+   [`docs/physical-offline-install.md`](docs/physical-offline-install.md)）
 3. `cd my-arch-setup-deepseek && ./install.sh`
 4. 选"物理机"，安装器自动：驱动（AMD+NVIDIA+ASUS 控制，先于桌面）→ 桌面
    → 14 个 AUR → 配置 → 服务 → 系统设置
@@ -102,4 +105,6 @@ sudo bash strap.sh
 
 软件包清单、配置映射与 AUR recipe 均基于真实 ASUS 机器检录，并经过多轮
 一次性虚拟机完整安装验证（官方包、archlinuxcn、AUR 构建安装、配置部署、
-服务启停均已跑通）。物理机完整部署留待实机验收。
+服务启停均已跑通）。vm 与 physical 两种模式均做过全新重装闭环验证
+（batch18/20/21），physical 模式在 VM 内验证驱动/服务路径 10/10。
+物理机完整部署留待实机验收。
