@@ -263,3 +263,5 @@ physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Demibold.ttf	.loc
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Medium.ttf	.local/share/fonts/MiSans/MiSans-Medium.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Regular.ttf	.local/share/fonts/MiSans/MiSans-Regular.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Semibold.ttf	.local/share/fonts/MiSans/MiSans-Semibold.ttf	644
+physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/hugepages-toggle	scripts/kvm虚拟机内存大页/hugepages-toggle	755
+physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/README.md	scripts/kvm虚拟机内存大页/README.md	644
