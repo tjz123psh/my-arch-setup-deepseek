@@ -57,17 +57,25 @@ done
 
 # --- 2. progress context binding -------------------------------------------
 echo "== progress context binding =="
+# NOTE: 00-utils resolves PROJECT_DIR from its own path and marks it readonly,
+# so PROGRESS_CONTEXT_FILE points at <repo>/.install_progress. The test
+# re-assigns PROGRESS_CONTEXT_FILE (not readonly) to a sandbox path right
+# after sourcing, so it never touches the real repo resume file.
 run_ctx() { # run_ctx <machine> <desktop>; echoes rc
   local rc=0
   PROJECT_DIR="$tmp_ctx" MACHINE_TYPE="$1" DESKTOP_ENV="$2" TARGET_USER=pang \
-    bash -c 'source "$0" >/dev/null 2>&1; setup_progress' "$utils" >/dev/null 2>&1 || rc=$?
+    bash -c 'source "$0" >/dev/null 2>&1
+             PROGRESS_CONTEXT_FILE="$PROGRESS_TEST_FILE"
+             setup_progress' "$utils" >/dev/null 2>&1 || rc=$?
   echo "$rc"
 }
 tmp_ctx="$(mktemp -d)"
+export PROGRESS_TEST_FILE="$tmp_ctx/progress"
 # write context + a done module, same as the installer would
 PROJECT_DIR="$tmp_ctx" MACHINE_TYPE=vm DESKTOP_ENV=niri TARGET_USER=pang \
   bash -c '
     source "$0" >/dev/null 2>&1
+    PROGRESS_CONTEXT_FILE="$PROGRESS_TEST_FILE"
     setup_progress
     mark_done 01-mirror.sh
   ' "$utils" >/dev/null 2>&1
@@ -78,6 +86,12 @@ check "setup_progress writes context header" $? 0
 [[ "$(run_ctx vm hyprland)" == "1" ]]; check "different desktop refuses resume (exit 1)" $? 0
 # different machine must refuse
 [[ "$(run_ctx physical niri)" == "1" ]]; check "different machine refuses resume (exit 1)" $? 0
+# the sandbox file exists and the real repo file was never touched
+if [[ -f "$tmp_ctx/progress" ]] && [[ ! -e "$root/.install_progress" ]]; then
+  pass=$((pass + 1)); echo "  ok   sandboxed progress file used; repo .install_progress untouched"
+else
+  fail=$((fail + 1)); echo "  FAIL progress test touched the real repo .install_progress"
+fi
 rm -rf "$tmp_ctx"
 
 # --- 3. config deploy symlink safety ----------------------------------------
