@@ -257,3 +257,9 @@ physical-v1	desktop-shared	config/home/.config/menus/applications-merged/xdg-des
 physical-v1	desktop-shared	config/home/.config/mimeapps.list	.config/mimeapps.list	644
 physical-v1	desktop-shared	config/home/.config/user-dirs.dirs	.config/user-dirs.dirs	644
 physical-v1	desktop-shared	config/home/.config/user-dirs.locale	.config/user-dirs.locale	644
+physical-v1	personal-user-services	config/home/.local/bin/vellum	.local/bin/vellum	755
+physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Bold.ttf	.local/share/fonts/MiSans/MiSans-Bold.ttf	644
+physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Demibold.ttf	.local/share/fonts/MiSans/MiSans-Demibold.ttf	644
+physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Medium.ttf	.local/share/fonts/MiSans/MiSans-Medium.ttf	644
+physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Regular.ttf	.local/share/fonts/MiSans/MiSans-Regular.ttf	644
+physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Semibold.ttf	.local/share/fonts/MiSans/MiSans-Semibold.ttf	644

@@ -165,6 +165,8 @@ sound-theme-freedesktop	pacman	extra	pacman	desktop-shared	package-only	install	
 spice-vdagent	pacman	extra	pacman	virtualization	package-only	install	current-explicit	SPICE VD agent for Linux guests
 starship	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	The cross-shell prompt for astronauts
 strace	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A diagnostic, debugging and instructional userspace tracer
+sshpass	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Non-interactive SSH password authentication
+tcpdump	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-line packet analyzer
 stylua	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Deterministic code formatter for Lua
 sudo	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Give certain users the ability to run some commands as root
 supergfxctl	pacman	archlinuxcn	pacman	asus-hardware	package-only	install	current-explicit	A utility for Linux graphics switching on Intel/AMD iGPU + nVidia dGPU laptops
@@ -182,6 +184,7 @@ unzip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	For ex
 uv	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	An extremely fast Python package installer and resolver written in Rust
 vhs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A tool for recording terminal GIFs
 virt-manager	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Desktop user interface for managing virtual machines
+virt-viewer	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Display and interaction with virtual machines (SPICE/VNC viewer)
 vulkan-mesa-layers	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Mesa's explicit Vulkan layers
 vulkan-radeon	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Open-source Vulkan driver for AMD GPUs
 vulkan-tools	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Vulkan tools and utilities

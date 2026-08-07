@@ -66,6 +66,19 @@ else
 fi
 success "Standard user directories ready"
 
+# --- login shell (align the host: fish) ---
+# /etc/shells must list fish before chsh/`useradd -s` accepts it; the
+# operator's login shell on the host is /usr/bin/fish.
+if command -v fish >/dev/null 2>&1; then
+  if ! grep -q '^/usr/bin/fish$' /etc/shells; then
+    run bash -c 'echo /usr/bin/fish >> /etc/shells; echo /bin/fish >> /etc/shells'
+  fi
+  if [[ "$(getent passwd "${TARGET_USER}" | cut -d: -f7)" != "/usr/bin/fish" ]]; then
+    log "Setting login shell for ${TARGET_USER} to fish..."
+    run chsh -s /usr/bin/fish "${TARGET_USER}" || warn "could not set fish as login shell"
+  fi
+fi
+
 # --- dms plugin runtime dependencies ---
 # dankmaintenance and ShorinScreenrec run a startup check that requires these
 # paths; a fresh install lacks them, so the plugins report "启动失败" until the
@@ -103,5 +116,25 @@ if [[ "$(id -u)" -eq 0 ]]; then
 fi
 log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine")"
 success "dms plugin dependencies ready"
+
+# --- snapper snapshot configs (align the host snapshot: root + home) ---
+# 08-services enables snapper-cleanup.timer; without a per-config the
+# operator's snapshot tooling (backup-restore/quickload) reports
+# "no snapper config" for root/home. snapper needs .snapshots as btrfs
+# subvolumes, but the plugin-dependency dirs above are plain directories -
+# remove the empty ones so create-config can make real subvolumes (the
+# paths still exist afterwards, keeping the dms plugins happy).
+if command -v snapper >/dev/null 2>&1 && command -v btrfs >/dev/null 2>&1; then
+  if [[ ! -f /etc/snapper/configs/root ]]; then
+    log "Initializing snapper root config..."
+    run rmdir /.snapshots 2>/dev/null || true
+    run snapper -c root create-config / || warn "snapper root config failed; snapshots unavailable"
+  fi
+  if [[ ! -f /etc/snapper/configs/home ]]; then
+    log "Initializing snapper home config..."
+    run rmdir /home/.snapshots 2>/dev/null || true
+    run snapper -c home create-config /home || warn "snapper home config failed; home snapshots unavailable"
+  fi
+fi
 
 success "System settings complete"
