@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# 描述：审计式 sudo -A 包装器；密码提示由相邻 helper 选择 fuzzel 或明确的 systemd 回退。
-# Description: Audited sudo -A wrapper; its adjacent helper selects fuzzel or an explicit systemd fallback.
+# 描述：图形化 sudo，用 fuzzel 弹框输入密码后执行命令（sudo -A）。
+# Description: Graphical sudo wrapper; prompts for the password via fuzzel, then runs sudo -A.
 
 set -euo pipefail
 
 usage() {
-  cat <<'EOF_USAGE'
+  cat <<'EOF'
 Usage: gsudo [command [args...]]
 
-通过相邻的 askpass helper 提示密码，再交给 sudo -A 执行命令。
-密码提示优先使用 fuzzel；clean-base 尚未安装 fuzzel 时，helper 会明确告警并尝试 systemd-ask-password。
+用 fuzzel 弹出密码框，把密码交给 sudo 执行命令。
 
 Options:
   -h, --help    显示帮助并退出
@@ -18,8 +17,8 @@ Options:
   gsudo systemctl restart nginx
   gsudo -- pacman -Syu
 
-不带命令时，等价于 sudo -Av：只刷新 sudo 时间戳。
-EOF_USAGE
+不带命令时，等价于 sudo -Av：只弹框刷新 sudo 时间戳。
+EOF
 }
 
 require_deps() {
@@ -47,19 +46,11 @@ if [[ "${1:-}" == "--" ]]; then
   shift
 fi
 
-# sudo 本身是唯一必须在调用前存在的外部命令。fuzzel 由后续 AUR
-# stage 安装，不能成为 clean-base NOPASSWD bootstrap 的前置条件。
-require_deps sudo
+# --- 依赖检查 ---
+require_deps sudo fuzzel
 
-# askpass 助手必须与本脚本同目录。这里使用纯 Bash 路径拆分，避免把
-# dirname 变成 clean-base privilege bootstrap 的额外 PATH 依赖。
-script_source=${BASH_SOURCE[0]}
-if [[ $script_source == */* ]]; then
-  script_dir_part=${script_source%/*}
-else
-  script_dir_part=.
-fi
-SCRIPT_DIR=$(cd -- "$script_dir_part" && pwd)
+# askpass 助手与本脚本同目录。
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 ASKPASS="$SCRIPT_DIR/fuzzel-askpass"
 
 if [[ ! -x "$ASKPASS" ]]; then

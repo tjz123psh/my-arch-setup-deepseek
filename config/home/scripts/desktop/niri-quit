@@ -13,7 +13,7 @@ if [[ ! -r "$UI_LIB" ]]; then
   exit 1
 fi
 
-# shellcheck source=../maintenance/lib/ui.sh
+# shellcheck source=/home/pang/scripts/maintenance/lib/ui.sh
 . "$UI_LIB"
 
 usage() {
