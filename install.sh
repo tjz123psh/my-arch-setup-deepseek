@@ -85,7 +85,7 @@ select_machine() {
   [[ -n "${MACHINE_TYPE}" ]] && return
   section "Select machine type"
   local selected
-  selected="$(printf 'Physical machine (ASUS, full config)\nVirtual machine (light config)\n' \
+  selected="$(printf 'Physical machine (ASUS, full config)\nVirtual machine (same config, drivers skipped)\n' \
     | fzf --layout=reverse --border=rounded \
         --header=' Select machine type (J/K move, Enter confirm) ' \
         --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true

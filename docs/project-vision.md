@@ -42,15 +42,19 @@ and it is not an audited/reproducible engineering system.
 5. **greetd login, not SDDM.** greetd + dms-greeter auto-login into niri
    (switching to hyprland possible); SDDM-related pieces were deleted.
 6. **Services mirror the host.** bluetooth, power-profiles, docker, libvirtd,
-   NetworkManager, grub-btrfsd, paccache.timer, snapper-cleanup.timer are
-   enabled on *every* machine (VM included — operator decision 2026-08-05 for
-   consistency); the only physical-only service action is `virsh
-   net-autostart default` (skipped in a VM so the guest's libvirtd does not
-   collide with the host's virbr0 subnet). clash-verge is *installed but not
+   NetworkManager, grub-btrfsd, paccache.timer, snapper-cleanup.timer,
+   snapper-timeline.timer, btrfs-scrub@-.timer are enabled on *every* machine
+   (VM included — operator decision 2026-08-05 for consistency); the only
+   physical-only service action is `virsh net-autostart default` (skipped in a
+   VM so the guest's libvirtd does not collide with the host's virbr0 subnet).
+   clash-verge is *installed but not
    enabled* (config is private). libvirt-docker-forward is a host-maintained
    custom service and is intentionally not managed by the installer.
 7. **System settings.** locale zh_CN+en_US, timezone Asia/Shanghai, hostname
-   default (archlinux), zram with zstd.
+   default (archlinux), zram with zstd, fish as the login shell, snapper
+   root+home snapshot configs (ALLOW_GROUPS=wheel SYNC_ACL=yes, mirroring the
+   host), and a screen-recording engine preset (wf-recorder on VM,
+   wl-screenrec on physical — the only setting that differs by machine type).
 8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB
    install (`grub-install`), kernel selection, initramfs, credentials
    (SSH/GPG/tokens/passwords). GRUB *theme* deployment IS managed: the
