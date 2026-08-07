@@ -128,12 +128,20 @@ if command -v snapper >/dev/null 2>&1 && command -v btrfs >/dev/null 2>&1; then
   if [[ ! -f /etc/snapper/configs/root ]]; then
     log "Initializing snapper root config..."
     run rmdir /.snapshots 2>/dev/null || true
-    run snapper -c root create-config / || warn "snapper root config failed; snapshots unavailable"
+    run snapper -c root create-config / || {
+      warn "snapper root config failed; snapshots unavailable"
+      # keep the dms plugin dependency path readable even without snapper
+      run mkdir -p /.snapshots
+    }
   fi
   if [[ ! -f /etc/snapper/configs/home ]]; then
     log "Initializing snapper home config..."
     run rmdir /home/.snapshots 2>/dev/null || true
-    run snapper -c home create-config /home || warn "snapper home config failed; home snapshots unavailable"
+    run snapper -c home create-config /home || {
+      warn "snapper home config failed; home snapshots unavailable (VM /home is not a btrfs subvolume; physical @home succeeds)"
+      # restore the plain dir the dms plugins' startup check requires
+      run mkdir -p /home/.snapshots
+    }
   fi
 fi
 
