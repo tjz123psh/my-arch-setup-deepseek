@@ -85,8 +85,8 @@ for line_number, parts in enumerate(csv.reader(mappings_path.read_text().splitli
     if len(parts) != 5:
         raise SystemExit(f"invalid config mapping row at line {line_number}")
     scope, module, src, _tgt, mode = parts
-    if scope not in {"physical-v1", "vm-v1"}:
-        raise SystemExit(f"invalid mapping scope at line {line_number}: {scope}")
+    if scope != "physical-v1":
+        raise SystemExit(f"invalid mapping scope at line {line_number}: {scope} (only physical-v1 is deployed; the vm-v1 split was removed)")
     if not re.fullmatch(r"[0-7]{3,4}", mode):
         raise SystemExit(f"invalid mapping mode at line {line_number}: {mode}")
     mapping_modules[module] += 1

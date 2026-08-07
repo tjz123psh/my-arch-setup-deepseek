@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 07-config.sh - deploy reviewed user config mappings.
-# Reads manifests/config-mappings.tsv (reused asset): scope physical-v1 for
-# physical machines, vm-v1 for VMs. Backs up any existing target first.
+# Reads manifests/config-mappings.tsv (reused asset); every machine deploys
+# the single scope physical-v1 (VM and physical share the full config set).
+# Backs up any existing target first.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
@@ -12,8 +13,8 @@ CONFIG_SRC="${PROJECT_DIR}/config"
 BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 # Operator decision (2026-08-05): the VM restores the same full configuration
 # as the physical machine (packages minus GPU drivers; config is identical).
-# physical-v1 carries the complete reviewed mapping set (225); vm-v1 was the
-# old "lightweight VM" split and is no longer used for deployment.
+# physical-v1 carries the complete reviewed mapping set (229); the old vm-v1
+# "lightweight VM" split was removed on 2026-08-07.
 SCOPE="physical-v1"
 
 section "Deploying config mappings (scope: ${SCOPE}, target: ${TARGET_USER})"

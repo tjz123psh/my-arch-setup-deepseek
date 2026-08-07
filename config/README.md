@@ -10,9 +10,8 @@ Every deployed regular file must have one per-scope row in
 `manifests/config-mappings.tsv`, one selected module owner and a reviewed mode
 declared in that row (`600`, `644`, `744` or `755`); the declared mode, not the
 working-tree permission, is what gets deployed.
-`config/home/` owns the 162-row physical payload; `config/vm/home/` owns only the
-four VM-specific files, while the remaining VM rows deliberately reuse reviewed
-physical sources.
+`config/home/` owns the 229-row physical payload; VMs deploy the same full
+scope (operator decision 2026-08-05), so there is no separate VM tree.
 Static validation rejects symlinks, group/world-writable payload, private-key
 blocks, common token shapes and shell-style secret assignments and validates
 JSON. Runtime repeats source/target safety checks and backs up changed targets.
