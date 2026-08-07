@@ -85,8 +85,11 @@ for s in "${SERVICES[@]}"; do
     warn "could not enable ${s} (unit missing?)"
   fi
 done
-# cleanup timers
-for t in paccache.timer snapper-cleanup.timer; do
+# cleanup + timeline timers. snapper-timeline.timer is what actually
+# schedules the hourly TIMELINE_CREATE snapshots from each snapper config;
+# without it the configs say TIMELINE_CREATE=yes but no snapshot is ever
+# auto-created (matches host: snapper-timeline.timer enabled).
+for t in paccache.timer snapper-cleanup.timer snapper-timeline.timer; do
   if systemctl list-unit-files "${t}" >/dev/null 2>&1; then
     run systemctl enable --now "${t}" && log "Timer: ${t}"
   fi

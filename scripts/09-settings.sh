@@ -152,12 +152,16 @@ if command -v snapper >/dev/null 2>&1 && command -v btrfs >/dev/null 2>&1; then
     }
   fi
   # Mirror the host ACL/ALLOW_GROUPS so a normal user (wheel) can read
-  # .snapshots and run snapper without sudo. Harmless if already set.
+  # .snapshots and run snapper without sudo. Host snapshot 2026-08-07:
+  # configs carry ALLOW_GROUPS=wheel SYNC_ACL=yes, and .snapshots is 750
+  # root:root with a group:wheel:r-x ACL (other::---). Only add the ACL;
+  # do NOT chmod o+rx - that would widen the dir to world-readable, which
+  # the host does not have (snapshots contain every user's files).
   for conf in root home; do
     [[ -f /etc/snapper/configs/${conf} ]] \
       && run snapper -c "${conf}" set-config ALLOW_GROUPS=wheel SYNC_ACL=yes || true
   done
-  run bash -c 'setfacl -m g:wheel:r-x /.snapshots 2>/dev/null || true; setfacl -m g:wheel:r-x /home/.snapshots 2>/dev/null || true; chmod o+rx /.snapshots /home/.snapshots 2>/dev/null || true'
+  run bash -c 'setfacl -m g:wheel:r-x /.snapshots 2>/dev/null || true; setfacl -m g:wheel:r-x /home/.snapshots 2>/dev/null || true'
 fi
 
 success "System settings complete"
