@@ -13,7 +13,7 @@ CONFIG_SRC="${PROJECT_DIR}/config"
 BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 # Operator decision (2026-08-05): the VM restores the same full configuration
 # as the physical machine (packages minus GPU drivers; config is identical).
-# physical-v1 carries the complete reviewed mapping set (229); the old vm-v1
+# physical-v1 carries the complete reviewed mapping set (233); the old vm-v1
 # "lightweight VM" split was removed on 2026-08-07.
 SCOPE="physical-v1"
 

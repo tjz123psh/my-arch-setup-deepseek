@@ -23,6 +23,7 @@ physical-v1	desktop-shared	config/home/.config/fish/conf.d/rustup.fish	.config/f
 physical-v1	desktop-shared	config/home/.config/fish/functions/paru.fish	.config/fish/functions/paru.fish	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/colors.ini	.config/fuzzel/colors.ini	644
 physical-v1	desktop-shared	config/home/.config/fuzzel/fuzzel.ini	.config/fuzzel/fuzzel.ini	644
+physical-v1	build-foundation	config/home/.gitconfig	.gitconfig	644
 physical-v1	build-foundation	config/home/.config/git/ignore	.config/git/ignore	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/gtk.css	.config/gtk-3.0/gtk.css	644
 physical-v1	desktop-shared	config/home/.config/gtk-3.0/dank-colors.css	.config/gtk-3.0/dank-colors.css	644
@@ -222,6 +223,9 @@ physical-v1	desktop-shared	config/home/.config/mimeapps.list	.config/mimeapps.li
 physical-v1	desktop-shared	config/home/.config/user-dirs.dirs	.config/user-dirs.dirs	644
 physical-v1	desktop-shared	config/home/.config/user-dirs.locale	.config/user-dirs.locale	644
 physical-v1	personal-user-services	config/home/.local/bin/vellum	.local/bin/vellum	755
+physical-v1	personal-user-services	config/home/.local/bin/vellum-tray	.local/bin/vellum-tray	755
+physical-v1	personal-user-services	config/home/.local/bin/vellumctl	.local/bin/vellumctl	755
+physical-v1	personal-user-services	config/home/.local/bin/vellum-ui	.local/bin/vellum-ui	755
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Bold.ttf	.local/share/fonts/MiSans/MiSans-Bold.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Demibold.ttf	.local/share/fonts/MiSans/MiSans-Demibold.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Medium.ttf	.local/share/fonts/MiSans/MiSans-Medium.ttf	644

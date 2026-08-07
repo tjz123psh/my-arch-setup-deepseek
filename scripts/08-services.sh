@@ -91,6 +91,13 @@ for t in paccache.timer snapper-cleanup.timer; do
     run systemctl enable --now "${t}" && log "Timer: ${t}"
   fi
 done
+# btrfs scrub monthly timer (matches host: btrfs-scrub@-.timer enabled).
+# Only meaningful on btrfs roots, so skip when the root is not btrfs.
+if command -v btrfs >/dev/null 2>&1 \
+  && [[ "$(findmnt -no FSTYPE / 2>/dev/null)" == "btrfs" ]] \
+  && systemctl list-unit-files 'btrfs-scrub@-.timer' >/dev/null 2>&1; then
+  run systemctl enable --now 'btrfs-scrub@-.timer' && log "Timer: btrfs-scrub@-.timer"
+fi
 # libvirt default network (physical only). In the VM the operator's host
 # already provides a virbr0 on 192.168.122.0/24; if the guest's own
 # libvirtd autostarts its default network it creates a colliding virbr0

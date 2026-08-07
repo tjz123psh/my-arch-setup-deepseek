@@ -122,8 +122,16 @@ success "dms plugin dependencies ready"
 # operator's snapshot tooling (backup-restore/quickload) reports
 # "no snapper config" for root/home. snapper needs .snapshots as btrfs
 # subvolumes, but the plugin-dependency dirs above are plain directories -
-# remove the empty ones so create-config can make real subvolumes (the
-# paths still exist afterwards, keeping the dms plugins happy).
+# remove the empty ones so create-config can make real subvolumes.
+#
+# Permission alignment (host snapshot 2026-08-07): on the host,
+# /etc/snapper/configs/{root,home} carry ALLOW_GROUPS=wheel and the
+# .snapshots subvolumes carry a group:wheel:r-x ACL, so the operator can
+# run snapper as a normal user. A bare `create-config` sets neither:
+# the config is root-only and the .snapshots subvolume is 750 root:root,
+# which makes the dms plugin StartupCheck (`test -r /.snapshots`) fail
+# and quicksave/term-menu report "No permissions"/"配置不存在". Mirror the
+# host: grant wheel after create-config (success or failure path).
 if command -v snapper >/dev/null 2>&1 && command -v btrfs >/dev/null 2>&1; then
   if [[ ! -f /etc/snapper/configs/root ]]; then
     log "Initializing snapper root config..."
@@ -143,6 +151,13 @@ if command -v snapper >/dev/null 2>&1 && command -v btrfs >/dev/null 2>&1; then
       run mkdir -p /home/.snapshots
     }
   fi
+  # Mirror the host ACL/ALLOW_GROUPS so a normal user (wheel) can read
+  # .snapshots and run snapper without sudo. Harmless if already set.
+  for conf in root home; do
+    [[ -f /etc/snapper/configs/${conf} ]] \
+      && run snapper -c "${conf}" set-config ALLOW_GROUPS=wheel SYNC_ACL=yes || true
+  done
+  run bash -c 'setfacl -m g:wheel:r-x /.snapshots 2>/dev/null || true; setfacl -m g:wheel:r-x /home/.snapshots 2>/dev/null || true; chmod o+rx /.snapshots /home/.snapshots 2>/dev/null || true'
 fi
 
 success "System settings complete"

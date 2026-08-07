@@ -183,7 +183,7 @@ fi
 for conf in "${TARGETS[@]}"; do
     config_error=""
     if ! config_error="$(LC_ALL=C snapper -c "$conf" get-config 2>&1)"; then
-        if ! grep -Eqi 'permission denied|access denied|not authorized|not permitted|not allowed|NoPermission|AccessDenied|authorization' \
+        if ! grep -Eqi 'permission denied|access denied|not authorized|not permitted|not allowed|no ?permission|NoPermission|AccessDenied|authorization' \
             <<< "$config_error"; then
             notify_err "Snapper 配置 [%s] 查询失败，错误并非权限不足，已拒绝修改授权。\n%s" \
                 "$conf" "${config_error:-无错误输出}"

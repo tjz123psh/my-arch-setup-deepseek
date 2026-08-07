@@ -59,7 +59,7 @@ sudo bash strap.sh
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制；VM 跳过） |
 | 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（14 个，含 paru/greetd-dms-greeter；有 `.aur-sources/` 离线缓存时全离线构建） |
-| 07-config | 部署个人配置映射（物理与 VM 一致 229 映射，先备份） |
+| 07-config | 部署个人配置映射（物理与 VM 一致 233 映射，先备份） |
 | 08-services | 启用服务：greetd 登录（dms-greeter→niri）+ 用户服务（dms/dsearch）+ 蓝牙/电源/Docker/libvirt 等 + GRUB 主题 + paru.conf（libvirt 默认网络自动启动仅物理机） |
 | 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（VM=wf-recorder，物理=wl-screenrec） |
 | 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
