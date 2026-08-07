@@ -9,6 +9,24 @@
 
 > 本仓库同时支持**物理机**（ASUS 完整配置）与**虚拟机**（除显卡驱动外全量一致）两种模式。
 
+## 下载与安装
+
+**代码包**（安装器 + 配置 + 脚本，不含 AUR 缓存，约 48M）：
+- 网页下载：仓库页面 Code → **Download ZIP**（永远是当前最新）
+- 或命令行：`git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
+
+**AUR 离线缓存**（可选，仅无海外网络时用，约 1G）：存放在仓库的
+[GitHub Releases](https://github.com/tjz123psh/my-arch-setup-deepseek/releases)
+（`aur-cache-*` 标签），**不在 git clone 里**，需要时单独下载：
+```bash
+gh release download --pattern 'aur-sources.tar.gz'   # 或在网页点 Releases 下载
+# 解压进仓库目录（缓存不联网构建 AUR）：
+tar -xzf aur-sources.tar.gz -C my-arch-setup-deepseek/
+```
+
+**离线安装完整流程**（物理机无海外网络）：见
+[`docs/physical-offline-install.md`](docs/physical-offline-install.md)。
+
 ## 使用
 
 ```bash
