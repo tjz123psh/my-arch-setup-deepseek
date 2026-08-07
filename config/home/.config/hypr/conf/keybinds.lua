@@ -161,7 +161,7 @@ hl.bind(mainMod .. " + SHIFT + CTRL + Right", hl.dsp.window.move({ monitor = "r"
 -- ===== 系统 =====
 hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exit()) -- 退出 Hyprland（同 niri Mod+Shift+E）
 -- 快捷键速查（kitty + fzf 浮动小窗，同 niri Mod+Slash）
-hl.bind(mainMod .. " + Slash", hl.dsp.exec_cmd("$HOME/scripts/desktop/hypr-keys")) -- 快捷键速查面板
+hl.bind(mainMod .. " + Slash", hl.dsp.exec_cmd("$HOME/.local/bin/hypr-keys")) -- 快捷键速查面板
 -- 伪概览（无插件）：临时把 scrolling 切成 dwindle 平铺展开全部窗口，点选窗口后自动切回。
 -- 近似 niri 的 Super+D overview（Hyprland 无原生 overview，故用布局切换模拟）。
 hl.bind(mainMod .. " + D", hl.dsp.exec_cmd("$HOME/.config/hypr/scripts/fake-overview.sh")) -- 伪概览

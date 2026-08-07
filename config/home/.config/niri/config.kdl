@@ -86,6 +86,9 @@ spawn-at-startup "udiskie" "-t"
 // 截图音效守护：监听剪贴板，配合截图键的 SIGUSR1 "上膛" 播放快门声（Hyprland 会话同样启用）
 spawn-at-startup "/home/pang/scripts/desktop/screenshot-sound"
 
+// polkit 认证代理：GUI 应用（如 rjsupplicant-gui 的开机自启/重启服务）通过 pkexec 提权时需要弹窗
+spawn-at-startup "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"
+
 
 // 启动时不显示快捷键提示浮层
 hotkey-overlay {
@@ -130,3 +133,8 @@ include "dms/input.kdl"
 include "dms/cursor.kdl"
 include "dms/windowrules.kdl"
 include "animations-spring.kdl"
+
+// VM 测试模式开关：Win+Shift+D 进入测试模式
+binds {
+    Mod+Shift+D { spawn "niri" "msg" "action" "load-config-file" "--path" "/home/pang/.config/niri/config.kdl.vmtest"; }
+}

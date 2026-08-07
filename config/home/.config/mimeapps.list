@@ -11,8 +11,10 @@ x-scheme-handler/ccswitch=cc-switch-handler.desktop
 x-scheme-handler/claude-cli=claude-code-url-handler.desktop
 text/markdown=typora.desktop
 inode/directory=nemo.desktop
+image/png=org.nomacs.ImageLounge.desktop
 
 [Added Associations]
 text/markdown=typora.desktop;
 x-scheme-handler/clash=clash-verge.desktop;
 x-scheme-handler/clash-verge=clash-verge.desktop;
+image/png=org.nomacs.ImageLounge.desktop;

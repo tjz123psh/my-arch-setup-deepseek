@@ -5,30 +5,28 @@
 -- See https://wiki.hypr.land/Configuring/Basics/Autostart/
 
 -- Autostart necessary processes (like notifications daemons, status bars, etc.)
--- DMS (DankMaterialShell) 说明：
+-- DMS (DankMaterialShell) 说明（2026-08-08 整改，review 6.2/6.3）：
 --   niri 会话由 systemd 用户服务 dms.service（WantedBy=graphical-session.target）拉起 DMS。
---   但 Hyprland 的 start-hyprland 不触达 graphical-session.target，dms.service 不会自启，
---   所以这里显式用 `dms run -d`（daemon 模式）在 Hyprland 会话内启动 DMS。
---   这只影响 Hyprland 会话；niri 侧的 systemd 自启动机制完全不受影响（两条路径互不干扰，
---   且不会在同一会话里重复启动——Hyprland 会话下 dms.service 本就是 inactive）。
---   启动后状态栏/通知/壁纸/所有 `dms ipc call` 键位与 niri 一致。
+--   之前 Hyprland 用 `dms run -d` 直接绕过 systemd 启动 DMS，绕开了 dms.service 的
+--   restart/状态/日志管理和 graphical-session.target 生命周期。现在改为：
+--     1) dbus-update-activation-environment --systemd --all 把 Wayland/XDG 环境导入
+--        systemd 用户环境（dms.service 才能拿到 WAYLAND_DISPLAY 等）；
+--     2) systemctl --user start hyprland-session.target，该 target Wants=
+--        graphical-session.target + xdg-desktop-autostart.target，从而由 dms.service
+--        （带 Restart=on-failure）统一管理 DMS 生命周期，与 niri 会话完全一致。
+--   退出 Hyprland（登出）时 systemd --user 实例随 greetd 会话结束而停止，DMS 随之停止。
 -- 与 niri 保持一致：U 盘自动挂载托盘。
--- XDG 自启动补齐：
---   niri.service 带 Wants=xdg-desktop-autostart.target，登录时自动拉起 ~/.config/autostart
---   和 /etc/xdg/autostart 里的 .desktop（fcitx5 输入法、blueman 蓝牙托盘、FlClash 代理）。
---   start-hyprland 是纯二进制、不触达该 target，故这些在 Hyprland 会话不会自启，这里手动补。
---   全部用 pgrep 守卫做幂等，避免与残留进程重复。只影响 Hyprland 会话，niri 侧不受影响：
---   niri 仍走 systemd 的 xdg-desktop-autostart.target，两条路径互不干扰。
+-- XDG 自启动：hyprland-session.target Wants=xdg-desktop-autostart.target，登录时自动
+--   拉起 ~/.config/autostart 和 /etc/xdg/autostart 里的 .desktop（fcitx5 输入法、
+--   blueman 蓝牙托盘、FlClash 代理）。下面手动 exec 用 pgrep 守卫做幂等兜底，
+--   避免与残留进程重复（XDG 自启动失败时仍有保障）。只影响 Hyprland 会话。
 --   已由 socket/dbus 激活、无需补的：pipewire/wireplumber（音频）、xdg-desktop-portal(-gtk)、
 --   gvfs、polkitd（系统级）。图形 polkit 授权 agent 由 DMS（quickshell Polkit）接管。
 --   fcitx5 的 IM 环境变量（QT_IM_MODULE/XMODIFIERS）在 /etc/environment 全局生效，仅需起进程。
 hl.on("hyprland.start", function()
-	-- 幂等守卫：仅当对应进程未在跑时才启动。exec_cmd 自身已通过 /bin/sh -c 执行，
-	-- 故不再嵌套 sh -c（嵌套 + 转义双引号会导致解析失败）。
-	-- DMS：pgrep -f 匹配完整命令行，但执行守卫的 sh 进程命令行里也含该字符串，会
-	-- 自匹配导致永远"已在跑"而从不启动。用字符类 [q]s 让正则仍匹配 qs 开头的真实
-	-- 进程，但模式串本身不含 "qs" 字面量，从而不匹配守卫命令自身。
-	hl.exec_cmd("pgrep -f '[q]s -p /usr/share/quickshell/dms' >/dev/null || dms run -d")
+	-- 环境导入 + systemd 会话生命周期：DMS 由 dms.service 管理（见上）。
+	hl.exec_cmd("dbus-update-activation-environment --systemd --all")
+	hl.exec_cmd("systemctl --user start hyprland-session.target")
 	-- U 盘自动挂载托盘（同 niri config.kdl 的 spawn-at-startup "udiskie" "-t"）
 	hl.exec_cmd("pgrep -x udiskie >/dev/null || udiskie -t")
 	-- 输入法（IM 变量走 /etc/environment，这里只保证进程起来）

@@ -335,7 +335,7 @@ binds {
     // Super+Shift+/: 显示快捷键帮助界面（按 Esc 关闭）
     Mod+Shift+Slash { show-hotkey-overlay; }
     // Super+/
-    Mod+Slash hotkey-overlay-title="快捷键速查" { spawn-sh "kitty --class=niri-keys --override initial_window_width=700 --override initial_window_height=500 $HOME/scripts/desktop/niri-keys"; }
+    Mod+Slash hotkey-overlay-title="快捷键速查" { spawn-sh "kitty --class=niri-keys --override initial_window_width=700 --override initial_window_height=500 $HOME/.local/bin/niri-keys"; }
     // Super+Tab: 打开/关闭窗口概览（同 Super+D）
     Mod+Tab repeat=false { toggle-overview; }
 }

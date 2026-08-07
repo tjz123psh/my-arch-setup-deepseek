@@ -19,7 +19,7 @@ pkgbase = fuzzel-ime-git
 	provides = fuzzel=1.14.1.r26.g302f228
 	conflicts = fuzzel
 	conflicts = fuzzel-git
-	source = fuzzel-302f228bb87d3c861a8debd39b9d8e4a0ea81037.tar.gz::https://codeberg.org/dnkl/fuzzel/archive/302f228bb87d3c861a8debd39b9d8e4a0ea81037.tar.gz
-	sha256sums = 8208887cc93899c560e7543b118c0763167b2096bc9407135f2bee952cef0447
+	source = fuzzel::git+https://codeberg.org/dnkl/fuzzel.git#commit=302f228bb87d3c861a8debd39b9d8e4a0ea81037
+	sha256sums = SKIP
 
 pkgname = fuzzel-ime-git

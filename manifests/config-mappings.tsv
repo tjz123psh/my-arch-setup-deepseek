@@ -173,7 +173,6 @@ physical-v1	personal-user-services	config/home/.config/systemd/user/penpot-mcp.s
 physical-v1	personal-user-services	config/home/.config/systemd/user/vellum-tray.service	.config/systemd/user/vellum-tray.service	644
 physical-v1	personal-user-services	config/home/.config/systemd/user/vellum.service	.config/systemd/user/vellum.service	644
 physical-v1	developer-editor	config/home/md/archlinux/Shorin-ArchLinux-Guide-合集.md	md/archlinux/Shorin-ArchLinux-Guide-合集.md	644
-physical-v1	developer-editor	config/home/md/kvm虚拟机/KVM虚拟机优化记录.md	md/kvm虚拟机/KVM虚拟机优化记录.md	644
 physical-v1	developer-editor	config/home/md/linux/.gitignore	md/linux/.gitignore	644
 physical-v1	developer-editor	config/home/md/linux/Btrfs快照与滚挂恢复流程.md	md/linux/Btrfs快照与滚挂恢复流程.md	644
 physical-v1	developer-editor	config/home/md/linux/arch系统调优.md	md/linux/arch系统调优.md	644
@@ -215,11 +214,9 @@ physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】�
 physical-v1	desktop-shared	config/home/Pictures/背景图片/【哲风壁纸】樱花-电脑.png	Pictures/背景图片/【哲风壁纸】樱花-电脑.png	644
 physical-v1	desktop-shared	config/home/Pictures/archlinux头像/头像.png	Pictures/archlinux头像/头像.png	644
 physical-v1	desktop-shared	config/home/.config/mako/config	.config/mako/config	644
-physical-v1	virtualization	config/home/.config/libvirt/storage/default.xml	.config/libvirt/storage/default.xml	644
-physical-v1	virtualization	config/home/.config/libvirt/storage/disks.xml	.config/libvirt/storage/disks.xml	644
 physical-v1	desktop-shared	config/home/.config/menus/applications-merged/user-chrome-apps.menu	.config/menus/applications-merged/user-chrome-apps.menu	644
 physical-v1	desktop-shared	config/home/.config/menus/applications-merged/xdg-desktop-menu-dummy.menu	.config/menus/applications-merged/xdg-desktop-menu-dummy.menu	644
-physical-v1	desktop-shared	config/home/.config/mimeapps.list	.config/mimeapps.list	644
+physical-v1	desktop-apps	config/home/.config/mimeapps.list	.config/mimeapps.list	644
 physical-v1	desktop-shared	config/home/.config/user-dirs.dirs	.config/user-dirs.dirs	644
 physical-v1	desktop-shared	config/home/.config/user-dirs.locale	.config/user-dirs.locale	644
 physical-v1	personal-user-services	config/home/.local/bin/vellum	.local/bin/vellum	755
@@ -231,5 +228,6 @@ physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Demibold.ttf	.loc
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Medium.ttf	.local/share/fonts/MiSans/MiSans-Medium.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Regular.ttf	.local/share/fonts/MiSans/MiSans-Regular.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Semibold.ttf	.local/share/fonts/MiSans/MiSans-Semibold.ttf	644
-physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/hugepages-toggle	scripts/kvm虚拟机内存大页/hugepages-toggle	755
-physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/README.md	scripts/kvm虚拟机内存大页/README.md	644
+physical-v1	desktop-shared	config/home/md/vmware/VMware-使用与运维笔记.md	md/vmware/VMware-使用与运维笔记.md	644
+physical-v1	personal-user-services	config/home/.config/systemd/user/hyprland-session.target	.config/systemd/user/hyprland-session.target	644
+physical-v1	wm-niri	config/home/scripts/desktop/niri-vmtest-gen	scripts/desktop/niri-vmtest-gen	755

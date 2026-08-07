@@ -10,10 +10,14 @@ source "${SCRIPT_DIR}/00-utils.sh"
 RECIPES_DIR="${PROJECT_DIR}/third_party/aur"
 BUILD_BASE="${PROJECT_DIR}/.aur-build"
 mkdir -p "${BUILD_BASE}"
+# vmware-workstation is an AUR->AUR edge: it depends on vmware-keymaps,
+# which must be INSTALLED before makepkg -s can resolve it. vmware-keymaps
+# is therefore bootstrapped (build+install) before the batch below and is
+# deliberately NOT in this array (it is a dependency, not an install target).
 RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin \
          fuzzel-ime-git google-chrome greetd-dms-greeter-git \
          leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin opencode-bin \
-         paru wechat-appimage wooz-git)
+         paru vmware-workstation wechat-appimage wooz-git)
 
 section "Building and installing AUR packages (${#RECIPES[@]})"
 
@@ -72,15 +76,15 @@ install_recipe() {
   local build_cmd
   build_cmd="cd '${work}' && makepkg -s --noconfirm"
   if [[ "$(id -u)" -eq 0 ]]; then
-    runuser -u "${TARGET_USER}" -- bash -c "${build_cmd}" || { rm -rf "${work}"; return 1; }
+    runuser -u "${TARGET_USER}" -- bash -c "${build_cmd}" || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
   else
-    ( cd "${work}" && makepkg -s --noconfirm ) || { rm -rf "${work}"; return 1; }
+    ( cd "${work}" && makepkg -s --noconfirm ) || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
   fi
   # collect the built artifact; a single sudo installs everything at the end
   local pkg
   pkg="$(find "${work}" -maxdepth 1 -name '*.pkg.tar.*' | head -1)"
   if [[ -z "${pkg}" ]]; then
-    rm -rf "${work}"
+    mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"
     warn "No package artifact produced: ${recipe}"
     return 1
   fi
@@ -141,6 +145,32 @@ if [[ "${HAVE_PARU}" == "false" ]] && [[ -d "${RECIPES_DIR}/paru" ]]; then
   fi
 fi
 
+# AUR->AUR dependency bootstrap: vmware-workstation's `makepkg -s` requires
+# vmware-keymaps to already be installed (its PKGBUILD does
+# `depends+=(vmware-keymaps)`). The old build-all-then-install-all model
+# cannot satisfy that, so vmware-keymaps gets its own build + dedicated
+# install before the main batch (review 5.5).
+if [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
+  log "Bootstrapping vmware-keymaps (AUR dependency of vmware-workstation)..."
+  if install_recipe vmware-keymaps; then
+    mapfile -t km_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'vmware-keymaps*.pkg.tar.*')
+    if (( ${#km_pkgs[@]} > 0 )); then
+      run pacman -U --noconfirm "${km_pkgs[@]}" || {
+        error "could not install bootstrapped vmware-keymaps"
+        exit 1
+      }
+      rm -f "${km_pkgs[@]}"
+      log "Installed vmware-keymaps"
+    else
+      error "vmware-keymaps built no artifact; cannot proceed to vmware-workstation"
+      exit 1
+    fi
+  else
+    error "vmware-keymaps bootstrap build failed; vmware-workstation cannot resolve its AUR dependency"
+    exit 1
+  fi
+fi
+
 failed=0
 for recipe in "${RECIPES[@]}"; do
   [[ "${recipe}" == "paru" ]] && [[ "${HAVE_PARU}" == "true" ]] && continue
@@ -161,9 +191,28 @@ done
 mapfile -t pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name '*.pkg.tar.*' | sort)
 if (( ${#pkgs[@]} > 0 )); then
   log "Installing ${#pkgs[@]} built AUR packages (single sudo)..."
-  run pacman -U --noconfirm "${pkgs[@]}" || {
-    warn "bulk AUR install failed; retry with: sudo pacman -U ${BUILD_BASE}/*.pkg.tar.*"
-  }
+  if ! run pacman -U --noconfirm "${pkgs[@]}"; then
+    # C-03: a failed final install must FAIL the step, not warn-and-continue;
+    # keep the artifacts so the failure is diagnosable.
+    error "bulk AUR install failed; artifacts preserved at ${BUILD_BASE}/ for manual diagnosis"
+    exit 1
+  fi
+  # verify every built artifact is actually installed (C-03): pacman -U is
+  # transactional, but a failed hook or interrupted transaction can still
+  # leave a gap; check each package by name from its own metadata.
+  missing=0
+  for p in "${pkgs[@]}"; do
+    name=
+    name="$(pacman -Qp "${p}" 2>/dev/null | awk -F': ' '/^Name/{print $2; exit}')"
+    if [[ -z "${name}" ]] || ! pacman -Q "${name}" >/dev/null 2>&1; then
+      error "AUR package not verifiably installed: ${p} (name=${name:-unknown})"
+      missing=$((missing + 1))
+    fi
+  done
+  if (( missing > 0 )); then
+    error "${missing} AUR package(s) failed to install; artifacts preserved at ${BUILD_BASE}/"
+    exit 1
+  fi
   rm -f "${pkgs[@]}"
   success "Installed ${#pkgs[@]} AUR packages"
 else

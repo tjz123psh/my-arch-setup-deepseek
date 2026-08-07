@@ -22,3 +22,6 @@ __pycache__/
 
 # Editor and OS noise.
 .DS_Store
+
+# nightly validation artifacts (review 12.5): never committed
+artifacts/

@@ -1,0 +1,11 @@
+[Unit]
+# Hyprland session lifecycle target (review 6.2/6.3).
+# start-hyprland does not touch graphical-session.target, so dms.service
+# (WantedBy=graphical-session.target) never auto-starts in a Hyprland
+# session. Hyprland's exec-once starts THIS target, which pulls in
+# graphical-session.target (and with it dms.service, running under systemd
+# with restart/status/journal) plus the XDG autostart target, mirroring the
+# niri.service lifecycle (BindsTo=graphical-session.target).
+Description=Hyprland session
+Wants=graphical-session.target xdg-desktop-autostart.target
+After=graphical-session.target xdg-desktop-autostart.target

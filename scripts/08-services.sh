@@ -42,40 +42,54 @@ for u in "${TARGET_HOME}/.config/systemd/user/"*.service; do
   as_user systemctl --user enable "${unit}" 2>/dev/null && log "User service: ${unit}"
 done
 
-# greetd login manager (every machine; niri session via dms-greeter)
-log "Configuring greetd (dms-greeter -> niri)..."
-# greetd's config uses user="greeter"; the package does NOT create that user
-# (verified: greetd ships no install hook). Ensure it exists so the greeter
-# session can start; matches the host snapshot (greeter uid 961).
-if ! getent passwd greeter >/dev/null 2>&1; then
-  log "Creating greeter user for greetd..."
-  run useradd --system --home-dir / --shell /bin/bash greeter || \
-    warn "could not create greeter user; greetd login may fail"
-fi
-run bash -c 'mkdir -p /etc/greetd/niri && cat > /etc/greetd/config.toml <<EOF
+# greetd login manager (skipped when DESKTOP_ENV=none: TTY login is the
+# target). The greeter command follows the desktop selection (review C-02):
+# dms-greeter supports --command niri|hyprland|sway|scroll|miracle|mango|
+# labwc. For 'both', default to niri; dms-greeter remembers the last session
+# so the operator can switch to Hyprland from DMS and have it stick.
+if [[ "${DESKTOP_ENV}" != "none" ]]; then
+  greeter_cmd="dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl"
+  if [[ "${DESKTOP_ENV}" == "hyprland" ]]; then
+    greeter_cmd="dms-greeter --command hyprland"
+  fi
+  log "Configuring greetd (${greeter_cmd})..."
+  # greetd's config uses user="greeter"; the package does NOT create that user
+  # (verified: greetd ships no install hook). Ensure it exists so the greeter
+  # session can start; matches the host snapshot (greeter uid 961).
+  if ! getent passwd greeter >/dev/null 2>&1; then
+    log "Creating greeter user for greetd..."
+    run useradd --system --home-dir / --shell /bin/bash greeter || \
+      warn "could not create greeter user; greetd login may fail"
+  fi
+  run bash -c "mkdir -p /etc/greetd/niri && cat > /etc/greetd/config.toml <<EOF
 [terminal]
 vt = 1
 
 [default_session]
-command = "/usr/bin/dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl"
-user = "greeter"
-EOF'
-# dms-greeter reads /etc/greetd/niri/config.kdl (which includes dms.kdl);
-# deploy the reviewed greeter configs so the login screen starts.
-run bash -c "cp -f '${PROJECT_DIR}/config/etc/greetd/niri/config.kdl' /etc/greetd/niri/config.kdl && cp -f '${PROJECT_DIR}/config/etc/greetd/niri/dms.kdl' /etc/greetd/niri/dms.kdl && chown root:greeter /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl && chmod 644 /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl"
-# list-unit-files can report "0 unit files listed" before a daemon-reload;
-# check the unit file on disk and enable directly instead.
-run systemctl daemon-reload || true
-if [[ -f /usr/lib/systemd/system/greetd.service ]]; then
-  run systemctl enable greetd && log "Service: greetd"
+command = \"/usr/bin/${greeter_cmd}\"
+user = \"greeter\"
+EOF"
+  # dms-greeter reads /etc/greetd/niri/config.kdl (which includes dms.kdl);
+  # deploy the reviewed greeter configs so the login screen starts. Only
+  # needed for the niri-based greeter command.
+  if [[ "${DESKTOP_ENV}" != "hyprland" ]]; then
+    run bash -c "cp -f '${PROJECT_DIR}/config/etc/greetd/niri/config.kdl' /etc/greetd/niri/config.kdl && cp -f '${PROJECT_DIR}/config/etc/greetd/niri/dms.kdl' /etc/greetd/niri/dms.kdl && chown root:greeter /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl && chmod 644 /etc/greetd/niri/config.kdl /etc/greetd/niri/dms.kdl"
+  fi
+  # list-unit-files can report "0 unit files listed" before a daemon-reload;
+  # check the unit file on disk and enable directly instead.
+  run systemctl daemon-reload || true
+  if [[ -f /usr/lib/systemd/system/greetd.service ]]; then
+    run systemctl enable greetd && log "Service: greetd"
+  fi
 fi
 
 # Operator decision (2026-08-05): the VM enables the same services as the
-# physical machine (consistency); the services are harmless in a VM. Only the
-# libvirt-docker-forward helper stays manual (host-custom iptables, not a
-# package) and supergfxd is not present in the VM.
+# physical machine (consistency); the services are harmless in a VM. Since
+# 2026-08-08 the project runs on VMware (KVM removed from the restore
+# payload), so libvirtd is no longer in the service set; VMware host/guest
+# services are handled below per machine role.
 SERVICES=(bluetooth.service power-profiles-daemon.service docker.service \
-          libvirtd.service NetworkManager.service grub-btrfsd.service \
+          NetworkManager.service grub-btrfsd.service \
           systemd-timesyncd.service)
 run systemctl daemon-reload
 for s in "${SERVICES[@]}"; do
@@ -104,25 +118,55 @@ if command -v btrfs >/dev/null 2>&1 \
   && systemctl list-unit-files 'btrfs-scrub@.timer' >/dev/null 2>&1; then
   run systemctl enable --now 'btrfs-scrub@-.timer' && log "Timer: btrfs-scrub@-.timer"
 fi
-# libvirt default network (physical only). In the VM the operator's host
-# already provides a virbr0 on 192.168.122.0/24; if the guest's own
-# libvirtd autostarts its default network it creates a colliding virbr0
-# on the same subnet, breaking guest networking. So skip it on vm.
-if [[ "${MACHINE_TYPE}" == "physical" ]] && command -v virsh >/dev/null 2>&1; then
-  run virsh net-autostart default 2>/dev/null && log "libvirt default network autostart"
-fi
+# --- VMware role services (KVM removed from the restore payload 2026-08-08) ---
+# physical / VMware host: vmware-networks + vmware-usbarbitrator (matches the
+# host snapshot). vmware-networks-configuration.service is static (oneshot)
+# and is NOT enabled; there is no vmware-vmnet.service unit (host ops notes
+# 2026-08-07). In the simulated-physical profile inside a VMware guest,
+# starting the host network stack would nest VMware networking - record the
+# action as NOT_APPLICABLE_SIMULATED instead of executing it.
 if [[ "${MACHINE_TYPE}" == "physical" ]]; then
-  log "Note: docker/libvirt group membership and supergfxd mode are manual"
+  if [[ "${TEST_PROFILE:-}" == "physical-sim-vmware" ]]; then
+    log "NOT_APPLICABLE_SIMULATED: vmware-networks.service enable (no nested host networking in guest)"
+    log "NOT_APPLICABLE_SIMULATED: vmware-usbarbitrator.service enable (no host USB arbitration in guest)"
+  else
+    for s in vmware-networks.service vmware-usbarbitrator.service; do
+      if [[ -f "/usr/lib/systemd/system/${s}" ]]; then
+        run systemctl enable --now "${s}" && log "Service: ${s}"
+      else
+        warn "VMware host service unit missing: ${s} (is vmware-workstation installed?)"
+      fi
+    done
+    # DKMS module verification: vmmon/vmnet must build and load. The unit
+    # check above is not enough - a DKMS rebuild after a kernel upgrade can
+    # silently break module loading.
+    if command -v dkms >/dev/null 2>&1; then
+      if ! dkms status 2>/dev/null | grep -q vmmon; then
+        warn "dkms status shows no vmmon module; run: sudo dkms autoinstall (kernel headers required)"
+      fi
+    fi
+  fi
+  log "Note: docker group membership and supergfxd mode are manual"
   log "Note: clash-verge-service is intentionally NOT enabled (private config)"
+elif [[ "${MACHINE_TYPE}" == "vm" ]]; then
+  # vm / VMware guest: open-vm-tools services. Both units carry
+  # ConditionVirtualization=vmware, so they no-op on non-VMware hosts; enable
+  # them only when the unit files exist (package installed).
+  for s in vmtoolsd.service vmware-vmblock-fuse.service; do
+    if [[ -f "/usr/lib/systemd/system/${s}" ]]; then
+      run systemctl enable --now "${s}" && log "Service: ${s}"
+    fi
+  done
 fi
 
 # --- required user groups ---
 # dms (DankMaterialShell) needs the 'input' group to read evdev devices for
 # its plugins (dankmaintenance collect-status, ShorinScreenrec); without it
 # dms logs 'insufficient permissions to access input devices' and the plugins
-# appear inactive even though the files are deployed. docker/libvirt groups
-# are added too so the services are usable after a relogin.
-REQUIRED_GROUPS=(input docker libvirt)
+# appear inactive even though the files are deployed. The docker group is
+# added too so docker is usable after a relogin. (libvirt group was removed
+# with the KVM->VMware migration on 2026-08-08.)
+REQUIRED_GROUPS=(input docker)
 for g in "${REQUIRED_GROUPS[@]}"; do
   if ! getent group "${g}" >/dev/null 2>&1; then
     run groupadd "${g}" 2>/dev/null || true
@@ -141,7 +185,7 @@ done
 # config refresh (grub.cfg is a text menu generated from /etc/default/grub);
 # the actual boot install (grub-install) remains the operator's handoff step.
 THEME_DIR="/boot/grub/themes/Elegant-mountain-blur-left-dark"
-log "Deploying GRUB theme (Elegant-mountain-blur-left-dark)..."
+log "Deploying GRUB theme (${THEME_DIR})..."
 # Use cp -r (not -a): /boot is often a vfat ESP where chown/chmod are not
 # supported, so -a would print a "failed to preserve ownership" error per
 # file. The theme needs no special permissions; -r copies contents cleanly.
@@ -149,7 +193,7 @@ run bash -c "mkdir -p /boot/grub/themes && cp -r '${PROJECT_DIR}/config/etc/grub
 if [[ ! -f /etc/default/grub ]]; then
   warn "/etc/default/grub missing; GRUB theme not configured (is grub installed?)"
 elif ! grep -q '^GRUB_THEME=' /etc/default/grub; then
-  run bash -c 'echo "GRUB_THEME=\"/boot/grub/themes/Elegant-mountain-blur-left-dark/theme.txt\"" >> /etc/default/grub'
+  run bash -c "echo 'GRUB_THEME=\"${THEME_DIR}/theme.txt\"' >> /etc/default/grub"
 else
   log "GRUB_THEME already present in /etc/default/grub"
 fi

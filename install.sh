@@ -16,8 +16,26 @@ source "${SCRIPTS_DIR}/00-utils.sh"
 
 DESKTOP_ENV="${DESKTOP_ENV:-}"
 MACHINE_TYPE="${MACHINE_TYPE:-}"
+TEST_PROFILE="${TEST_PROFILE:-}"
 ASSUME_YES="${ASSUME_YES:-false}"
 MODULES=()
+
+# Temporary scoped sudo drop-in used during the install. Scoped to pacman
+# only (see main pre-flight); removed on EVERY exit path via the EXIT trap
+# AND by 99-cleanup, so an interrupted/failed run never leaves a
+# passwordless grant behind (review C-01).
+SUDOERS_DROPIN=/etc/sudoers.d/99-install-nopasswd
+
+cleanup_install_sudoers() {
+  if [[ -f "${SUDOERS_DROPIN}" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      rm -f "${SUDOERS_DROPIN}"
+    else
+      sudo rm -f "${SUDOERS_DROPIN}" 2>/dev/null || true
+    fi
+  fi
+}
+trap cleanup_install_sudoers EXIT
 
 usage() {
   cat <<'EOF'
@@ -29,6 +47,8 @@ flags can specify them directly to skip the prompts.
 Options:
   -d, --desktop niri|hyprland|both|none
   -t, --machine vm|physical
+      --test-profile physical-sim-vmware   run the physical branch in a VMware guest,
+                                           marking hardware-only effects NOT_APPLICABLE_SIMULATED
   -y, --assume-yes   auto-reboot without prompting after install
   -h, --help
 EOF
@@ -47,6 +67,17 @@ parse_args() {
         case "$2" in
           vm|physical) MACHINE_TYPE="$2" ;;
           *) die "invalid --machine value: $2 (vm|physical)" ;;
+        esac
+        shift 2 ;;
+      --test-profile)
+        case "$2" in
+          physical-sim-vmware)
+            TEST_PROFILE="$2"
+            # The simulated-physical profile forces the physical branch even
+            # when running inside a VMware guest; it must be combined with
+            # -t physical (checked in main).
+            ;;
+          *) die "invalid --test-profile value: $2 (physical-sim-vmware)" ;;
         esac
         shift 2 ;;
       -h|--help) usage; exit 0 ;;
@@ -113,6 +144,9 @@ build_modules() {
 main() {
   parse_args "$@"
   check_root
+  if [[ -n "${TEST_PROFILE}" ]] && [[ "${MACHINE_TYPE}" != "physical" ]]; then
+    die "--test-profile physical-sim-vmware requires -t physical"
+  fi
   ensure_fzf_ui
   select_machine
   select_desktop
@@ -123,20 +157,37 @@ main() {
   # can read MACHINE_TYPE/DESKTOP_ENV without re-prompting. TARGET_USER/
   # TARGET_HOME (resolved in 00-utils) are exported for the root/strap path.
   export MACHINE_TYPE DESKTOP_ENV TARGET_USER TARGET_HOME
+  [[ -n "${TEST_PROFILE}" ]] && export TEST_PROFILE
+
+  # Bind the resume file to this install context (desktop/machine/user/
+  # commit/manifest hashes); a mismatched stale progress file aborts here
+  # instead of resume-skipping modules (review H-02).
+  setup_progress
 
   section "Pre-Flight" "System update"
   run pacman -Sy --noconfirm archlinux-keyring
   run pacman -Syyu --noconfirm
 
-  # One password for the whole install: extend the sudo timestamp AND grant
-  # a temporary NOPASSWD. timestamp_timeout alone is not enough - makepkg
-  # deliberately runs every pacman call as `sudo -k` (clearing the timestamp
-  # cache), so the AUR step would otherwise re-prompt for every missing
-  # dependency. NOPASSWD makes those a no-op. Both are removed by
-  # 99-cleanup, restoring stock sudo afterwards.
-  if [[ "$(id -u)" -ne 0 ]] && [[ ! -f /etc/sudoers.d/99-install-nopasswd ]]; then
-    run bash -c "printf 'Defaults timestamp_timeout=240\n${TARGET_USER} ALL=(ALL) NOPASSWD: ALL\n' > /etc/sudoers.d/99-install-nopasswd && chmod 440 /etc/sudoers.d/99-install-nopasswd" \
-      || warn "could not extend sudo privileges; you may be prompted repeatedly (especially during AUR builds)"
+  # One password for the whole install: extend the sudo timestamp AND grant a
+  # SCOPED NOPASSWD for /usr/bin/pacman only. makepkg deliberately runs every
+  # pacman call as `sudo -k` (clearing the timestamp cache), so the AUR step
+  # would otherwise re-prompt for every missing dependency. Scoping the grant
+  # to pacman (instead of ALL) keeps the blast radius to package management;
+  # every other privileged step (systemctl/useradd/grub-mkconfig/...) still
+  # needs the timestamp. The drop-in is removed by the EXIT trap above AND by
+  # 99-cleanup, restoring stock sudo on every exit path.
+  if [[ "$(id -u)" -ne 0 ]]; then
+    # Stale drop-in from an interrupted previous run: validate its syntax and
+    # remove it before creating a fresh one. Never reuse an untested sudoers
+    # file, and never leave an old ALL grant lying around.
+    if [[ -f "${SUDOERS_DROPIN}" ]]; then
+      log "Removing stale ${SUDOERS_DROPIN} from a previous run..."
+      run bash -c "visudo -cf '${SUDOERS_DROPIN}' && rm -f '${SUDOERS_DROPIN}'" \
+        || warn "could not remove stale ${SUDOERS_DROPIN}; remove it manually: sudo rm -f ${SUDOERS_DROPIN}"
+    fi
+    run bash -c "printf 'Defaults timestamp_timeout=240\n${TARGET_USER} ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > '${SUDOERS_DROPIN}' && chmod 440 '${SUDOERS_DROPIN}' && visudo -cf '${SUDOERS_DROPIN}'" \
+      || { error "could not create scoped sudoers drop-in"; exit 1; }
+    log "Scoped sudo grant active (pacman only, auto-removed on exit)"
   fi
 
   local total="${#MODULES[@]}" current=0
@@ -144,7 +195,10 @@ main() {
     [[ -z "${module}" ]] && continue
     current=$((current + 1))
     local script_path="${SCRIPTS_DIR}/${module}"
-    [[ -f "${script_path}" ]] || { warn "Missing script: ${module}"; continue; }
+    if [[ ! -f "${script_path}" ]]; then
+      error "Missing required script: ${module}"
+      exit 1
+    fi
     if is_done "${module}"; then
       log "Module ${module} already done, skipping"
       continue

@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # 03-packages.sh - install the reviewed workstation package policy.
 # Reads manifests/workstation-packages.tsv (reused asset); selects packages
-# by module set: physical -> all modules; vm -> everything except the
-# GPU/hardware-specific packages (NVIDIA driver, AMD ucode, ASUS control,
-# hardware tools). mesa/vulkan stay (the compositor needs GL to render).
+# by module set via the shared module_selected() (see 00-utils.sh):
+#   - hardware modules (graphics-*/hardware-tools/asus-hardware) are handled
+#     by the dedicated 04-drivers step (physical only) and excluded here on
+#     both machine types;
+#   - machine-role modules follow MACHINE_TYPE (vmware-host / vmware-guest);
+#   - desktop modules (wm-niri / wm-hyprland) follow DESKTOP_ENV.
+# policy=verify rows are handoff preconditions and are checked for presence
+# up front (never installed); policy=deferred rows are never installed.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
@@ -11,43 +16,35 @@ source "${SCRIPT_DIR}/00-utils.sh"
 
 POLICY="${PROJECT_DIR}/manifests/workstation-packages.tsv"
 
-# Driver/hardware-specific packages are excluded from the package step on
-# BOTH machine types and installed by the dedicated 04-drivers step
-# (physical only). amd-ucode is a CPU microcode update; the NVIDIA stack,
-# ASUS control and hardware tools are host-only. mesa and the vulkan
-# user-space layers stay: niri/hyprland need GL to render.
-VM_SKIP_PKGS=(amd-ucode nvidia-open-dkms nvidia-utils nvidia-settings \
-              nvidia-prime lib32-nvidia-utils libva-nvidia-driver libva-utils \
-              asusctl rog-control-center supergfxctl \
-              evtest fprintd fwupd linux-firmware powertop)
-
-module_selected() {
-  local pkg="$1" module="$2"
-  # Driver packages are handled by the dedicated 04-drivers step (physical
-  # only), so 03-packages excludes them on BOTH machine types. This keeps
-  # 03 identical between vm and physical (176 official + 14 AUR) and avoids
-  # double-installing the 16 hardware driver packages. The mesa/vulkan
-  # user-space GL layers are intentionally NOT excluded: VMs need them to
-  # render, and on physical 04-drivers re-lists them (a no-op via --needed).
-  for p in "${VM_SKIP_PKGS[@]}"; do
-    [[ "${pkg}" == "${p}" ]] && return 1
-  done
-  # Desktop-specific packages follow the -d selection. The wm-* modules
-  # carry the compositor itself plus its provider glue (e.g. dms-shell-niri
-  # vs dms-shell-hyprland); installing the other WM's packages on a niri-only
-  # machine is dead weight and, for dms-shell-compositor, forces pacman to
-  # silently pick a provider (it used to default to the hyprland one).
-  case "${DESKTOP_ENV:-both}" in
-    niri)     [[ "${module}" == "wm-hyprland" ]] && return 1 ;;
-    hyprland) [[ "${module}" == "wm-niri" ]] && return 1 ;;
-    none)     [[ "${module}" == "wm-niri" || "${module}" == "wm-hyprland" ]] && return 1 ;;
-    *) : ;; # both (or unknown): install everything, like before
-  esac
-  return 0
-}
-
 section "Installing packages (${MACHINE_TYPE})"
 log "Reading package policy from ${POLICY} ..."
+
+# --- verify-only preflight (review H-03) ---
+# policy=verify rows are handoff preconditions (base system, bootloader,
+# kernel, initramfs, filesystem, network) that the operator's manual base
+# install must satisfy. Check them for real instead of silently skipping: a
+# missing precondition means the restore would build on a broken base.
+VERIFY_FAILED=0
+VERIFY_COUNT=0
+while IFS=$'\t' read -r pkg channel _repo _acq _module _restore pol _origin purpose; do
+  [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
+  [[ "${pol}" != "verify" ]] && continue
+  VERIFY_COUNT=$((VERIFY_COUNT + 1))
+  if [[ "${channel}" == "pacman" ]]; then
+    if ! pacman -Q "${pkg}" >/dev/null 2>&1; then
+      warn "precondition NOT satisfied: ${pkg} (${purpose})"
+      VERIFY_FAILED=$((VERIFY_FAILED + 1))
+    fi
+  else
+    warn "verify row with non-pacman channel: ${pkg} (${purpose})"
+    VERIFY_FAILED=$((VERIFY_FAILED + 1))
+  fi
+done < "${POLICY}"
+if (( VERIFY_FAILED > 0 )); then
+  error "${VERIFY_FAILED}/${VERIFY_COUNT} base precondition(s) missing; fix the base install before restoring"
+  exit 1
+fi
+log "Base preconditions: ${VERIFY_COUNT}/${VERIFY_COUNT} present"
 
 # official packages (pacman channel, install policy), filtered by module.
 # NOTE: column 2 is the channel (pacman/aur), column 3 is the repository
@@ -59,8 +56,8 @@ HAVE_ARCHLINUXCN=false
 while IFS=$'\t' read -r pkg channel repo acq module _restore pol _origin _purpose; do
   [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
   module_selected "${pkg}" "${module}" || continue
-  # verify-only rows are handoff preconditions (base/grub/linux/mkinitcpio/...)
-  # checked for presence, never installed; deferred rows are never installed.
+  # verify-only rows are handoff preconditions (checked above); deferred rows
+  # are never installed.
   [[ "${pol}" == "verify" || "${pol}" == "deferred" ]] && continue
   case "${channel}" in
     pacman) OFFICIAL+=("${pkg}") ;;

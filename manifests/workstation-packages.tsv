@@ -35,13 +35,13 @@ devtools	pacman	extra	pacman	build-foundation	package-only	install	confirmed-des
 dgop	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	System monitoring CLI + REST API
 dms-shell-hyprland	pacman	extra	pacman	wm-hyprland	package-only	install	confirmed-desired	DankMaterialShell Quickshell provider for Hyprland (compositor glue)
 dms-shell-niri	pacman	extra	pacman	wm-niri	package-only	install	current-explicit	DankMaterialShell Quickshell provider for Niri (compositor glue)
-dnsmasq	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Lightweight, easy to configure DNS forwarder and DHCP server
+dnsmasq	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Lightweight, easy to configure DNS forwarder and DHCP server [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 docker	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Pack, ship and run any application as a lightweight container
 docker-compose	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Fast, isolated development environments using Docker
 dosfstools	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	DOS filesystem utilities
 downgrade	pacman	archlinuxcn	pacman	repository-tools	package-only	install	current-explicit	Bash script for downgrading one or more packages to a version in your cache or the A.L.A.
 dsearch-bin	aur	aur	aur-build	desktop-shared	config-backed	install	current-explicit	Dank desktop search application
-edk2-ovmf	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Firmware for Virtual Machines (x86_64, i686 on x86_64)
+edk2-ovmf	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Firmware for Virtual Machines (x86_64, i686 on x86_64) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 efibootmgr	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Linux user-space application to modify the EFI Boot Manager
 evtest	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	Input device event monitor and query tool
 exfat-utils	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Utilities for exFAT file system
@@ -94,7 +94,7 @@ libnotify	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desi
 libpulse	pacman	extra	pacman	audio	package-only	install	current-explicit	A featureful, general-purpose sound server (client library)
 libva-nvidia-driver	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	VA-API implementation that uses NVDEC as a backend
 libva-utils	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	Intel VA-API Media Applications and Scripts for libva
-libvirt	pacman	extra	pacman	virtualization	package-only	install	current-explicit	API for controlling virtualization engines (openvz,kvm,qemu,virtualbox,xen,etc)
+libvirt	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	API for controlling virtualization engines (openvz,kvm,qemu,virtualbox,xen,etc) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 linux	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	The Linux kernel and modules
 linux-firmware	pacman	core	pacman	hardware-tools	package-only	install	current-explicit	Firmware files for Linux - Default set
 linux-headers	pacman	core	pacman	kernel-support	package-only	install	current-explicit	Headers and scripts for building modules for the Linux kernel
@@ -144,8 +144,8 @@ python-markdown-it-py	pacman	extra	pacman	development-toolchain	package-only	ins
 python-opencv	pacman	extra	pacman	recording	package-only	install	current-explicit	Python bindings for OpenCV
 python-pillow	pacman	extra	pacman	recording	package-only	install	current-explicit	Python Imaging Library (PIL) fork
 python-pygments	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	Python syntax highlighter
-qemu-desktop	pacman	extra	pacman	virtualization	package-only	install	current-explicit	A QEMU setup for desktop environments
-qemu-guest-agent	pacman	extra	pacman	virtualization	package-only	install	current-explicit	QEMU guest agent
+qemu-desktop	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	A QEMU setup for desktop environments [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
+qemu-guest-agent	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	QEMU guest agent [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 quickshell	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Flexible toolkit for making desktop shells with QtQuick
 reflector	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	A Python 3 module and script to retrieve and filter the latest Pacman mirror list.
 rime-ice-git	pacman	archlinuxcn	pacman	input-fcitx-rime	config-backed	install	current-explicit	Rime 配置：雾凇拼音 | 长期维护的简体词库
@@ -162,7 +162,7 @@ snapper	pacman	extra	pacman	storage-maintenance	package-only	install	current-exp
 socat	pacman	extra	pacman	wm-hyprland	package-only	install	current-explicit	Multipurpose relay
 sof-firmware	pacman	extra	pacman	audio	package-only	install	current-explicit	Sound Open Firmware
 sound-theme-freedesktop	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Freedesktop sound theme
-spice-vdagent	pacman	extra	pacman	virtualization	package-only	install	current-explicit	SPICE VD agent for Linux guests
+spice-vdagent	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	SPICE VD agent for Linux guests [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 starship	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	The cross-shell prompt for astronauts
 strace	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A diagnostic, debugging and instructional userspace tracer
 sshpass	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Non-interactive SSH password authentication
@@ -183,8 +183,8 @@ udisks2	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desire
 unzip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	For extracting and viewing files in .zip archives
 uv	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	An extremely fast Python package installer and resolver written in Rust
 vhs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A tool for recording terminal GIFs
-virt-manager	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Desktop user interface for managing virtual machines
-virt-viewer	pacman	extra	pacman	virtualization	package-only	install	current-explicit	Display and interaction with virtual machines (SPICE/VNC viewer)
+virt-manager	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Desktop user interface for managing virtual machines [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
+virt-viewer	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Display and interaction with virtual machines (SPICE/VNC viewer) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 vulkan-mesa-layers	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Mesa's explicit Vulkan layers
 vulkan-radeon	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Open-source Vulkan driver for AMD GPUs
 vulkan-tools	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Vulkan tools and utilities
@@ -210,3 +210,6 @@ ydotool	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit
 yt-dlp	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A youtube-dl fork with additional features and fixes
 zoxide	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A smarter cd command for your terminal
 zram-generator	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Systemd unit generator for zram devices
+vmware-workstation	aur	aur	makepkg	virtualization-vmware-host	package-only	install	current-explicit	VMware Workstation Pro host (AUR; vmware-keymaps bootstrapped first by 06-aur)
+open-vm-tools	pacman	extra	pacman	virtualization-vmware-guest	package-only	install	current-explicit	VMware guest tools (vmtoolsd + vmware-vmblock-fuse)
+nomacs	pacman	archlinuxcn	pacman	desktop-apps	config-backed	install	current-explicit	Qt image viewer; PNG default app restored via mimeapps.list

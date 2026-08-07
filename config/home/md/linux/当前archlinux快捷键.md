@@ -273,3 +273,15 @@
 | 移动窗口/列（方向键） | `Super+Shift+箭头` | `Alt+Shift+箭头` |
 | 切工作区 1~9 | `Super+1~9` | `Alt+1~9` |
 | 移到工作区 1~9 | `Super+Shift+1~9` | `Alt+Shift+1~9` |
+
+---
+
+## VM 测试模式开关（2026-08-07 新增）
+
+| 快捷键 | 功能 | 说明 |
+|---|---|---|
+| `Super+Shift+D` | 切换 VM 测试模式 | 在 VMware 里测试与 host 同款键位的系统时使用：**进** = host 快捷键全关（按键全部透传 VM）；**再按一次** = 恢复 host 快捷键 |
+
+- 测试模式只保留这一个键有效，其余键全部进入 VM；
+- VM 全屏时先按 `Ctrl+Alt` 释放键盘，再按 `Super+Shift+D`；
+- 相关文件：`~/.config/niri/config.kdl`（开关绑定）、`~/.config/niri/config.kdl.vmtest`（测试配置，由 `~/scripts/desktop/niri-vmtest-gen` 生成）；改过 config.kdl 后跑一次生成器刷新。

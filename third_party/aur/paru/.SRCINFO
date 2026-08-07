@@ -14,10 +14,8 @@ pkgbase = paru
 	options = !debug
 	backup = etc/paru.conf
 	source = paru-2.1.0.tar.gz::https://github.com/Morganamilo/paru/archive/v2.1.0.tar.gz
-	source = Cargo.lock.libalpm16
-	source = paru-vendor-2.1.0.tar.zst
+	source = Cargo.lock
 	sha256sums = eea4dbb524db765d5316f540f9ee670c0bf81aae4827b5417eebb4c9b5651727
-	sha256sums = 4231e3bfa8172ad2c0c79322921fd974be97f1dec00bf970e9892ada9a98b323
-	sha256sums = 18e89a233df4cb6eafca594b072489a4c81b7aa27b5aa043afe58f793fdcb7ea
+	sha256sums = 683648e6dce7adb100a88cf53c7e7f5e1785e9c8f40a92973ac2ac5d713d0b63
 
 pkgname = paru
