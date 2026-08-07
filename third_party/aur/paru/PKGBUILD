@@ -29,10 +29,14 @@ options=('!debug')
 
 prepare() {
   cd "${srcdir}/paru-${pkgver}"
-  # Use the committed, alpm-pinned Cargo.lock so no crates.io access (nor an
-  # offline `cargo update`) is needed on the build machine.
+  # Use the committed, alpm-pinned Cargo.lock so the alpm binding version is
+  # correct regardless of connectivity (no `cargo update` needed).
   cp -f "${srcdir}/Cargo.lock" Cargo.lock
-  cargo fetch --locked --offline --target "$(rustc -vV | sed -n 's|host: ||p')"
+  # Prefer an online fetch; fall back to the offline cache (CARGO_HOME set by
+  # 06-aur when .aur-sources is present). Networked machines build without
+  # any cache; offline machines use the pre-fetched registry.
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's|host: ||p')" 2>/dev/null \
+    || cargo fetch --locked --offline --target "$(rustc -vV | sed -n 's|host: ||p')"
 }
 
 build() {
