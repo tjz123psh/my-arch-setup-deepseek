@@ -7,11 +7,12 @@
 
 > 产品定位与已确认的产品决策见 [`docs/project-vision.md`](docs/project-vision.md)。
 
-> 本仓库同时支持**物理机**（ASUS 完整配置）与**虚拟机**（除显卡驱动外全量一致）两种模式。
+> 本仓库同时支持**物理机**（ASUS 完整配置）与**虚拟机**两种模式：除硬件驱动
+> （04-drivers 仅物理机执行）与少量环境适配外，软件包、配置、服务完全一致。
 
 ## 下载与安装
 
-**代码包**（安装器 + 配置 + 脚本，不含 AUR 缓存，约 48M）：
+**代码包**（安装器 + 配置 + 脚本，不含 AUR 缓存，解包约 93M / tar.gz 约 75M）：
 - 网页下载：仓库页面 Code → **Download ZIP**（永远是当前最新）
 - 或命令行：`git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
 
@@ -44,7 +45,7 @@ sudo bash strap.sh
 
 交互流程：
 
-1. 选择机器类型：物理机（ASUS 完整配置）/ 虚拟机（除显卡驱动外全量）
+1. 选择机器类型：物理机（ASUS 完整配置）/ 虚拟机（除硬件驱动及少量环境适配外全量一致）
 2. 选择桌面环境：Niri / Hyprland / 双会话 / 不装桌面
 3. 自动执行分步安装（每步记录 `.install_progress`，中断后重跑续传）
 
@@ -52,16 +53,16 @@ sudo bash strap.sh
 
 | 步骤 | 内容 |
 | --- | --- |
-| 01-mirror | 镜像源优化（阿里/中科大/清华多镜像）+ multilib 启用 |
+| 01-mirror | 镜像源优化（8 个国内镜像：阿里/中科大/清华/腾讯/华为/网易/兰大/浙大）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 安装软件包清单（物理与 VM 一致：173 官方/archlinuxcn + 14 AUR，按桌面选择过滤 wm 专用包；驱动包由 04-drivers 专责） |
+| 03-packages | 安装软件包清单（物理与 VM 一致：190 安装 = 176 官方/archlinuxcn + 14 AUR，另 18 项交接点校验；按桌面选择过滤 wm 专用包；驱动包由 04-drivers 专责） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制；VM 跳过） |
 | 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
-| 06-aur | 构建安装固定 AUR recipe（14 个，全部自动下载，含 paru/greetd-dms-greeter） |
-| 07-config | 部署个人配置映射（物理与 VM 一致 225 映射，先备份） |
-| 08-services | 启用服务：greetd 登录（dms-greeter→niri）+ 蓝牙/电源/Docker/libvirt 等（物理与 VM 一致） |
-| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram |
-| 99-cleanup | 清理缓存与构建目录 |
+| 06-aur | 构建安装固定 AUR recipe（14 个，含 paru/greetd-dms-greeter；有 `.aur-sources/` 离线缓存时全离线构建） |
+| 07-config | 部署个人配置映射（物理与 VM 一致 229 映射，先备份） |
+| 08-services | 启用服务：greetd 登录（dms-greeter→niri）+ 用户服务（dms/dsearch）+ 蓝牙/电源/Docker/libvirt 等 + GRUB 主题 + paru.conf（libvirt 默认网络自动启动仅物理机） |
+| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（VM=wf-recorder，物理=wl-screenrec） |
+| 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
 
 ## 项目边界
 
@@ -76,9 +77,11 @@ sudo bash strap.sh
 - `strap.sh`：一键入口（root，自动克隆仓库）
 - `install.sh`：主安装器（选择 + 分步执行）
 - `scripts/`：分步脚本（00-utils 公共函数 + 01~09 步骤 + 99 清理）
-- `config/`：审阅过的个人配置（325 个文件：.config 映射 + md 知识库 + Pictures + /etc 配置）
+- `config/`：审阅过的个人配置（328 个文件：.config 映射 + md 知识库 + Pictures + scripts + 字体 + /etc 配置）
 - `manifests/`：数据清单（包策略、配置映射、AUR recipe）
 - `third_party/aur/`：14 个固定 AUR recipe（含审查记录）
+- `fetch-aur-sources.sh`：在有海外网络的机器上生成 AUR 离线缓存（→ `~/Downloads/aur-sources/`）
+- `sync-scripts.sh`：同步本机 `~/scripts` 到 `config/home/scripts/` 并自动补映射
 - `tests/`：数据完整性校验
 
 ## 物理机部署

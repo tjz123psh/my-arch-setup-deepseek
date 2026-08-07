@@ -66,7 +66,7 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d niri -t physical
 - **某 AUR 构建失败**：06 会自动重试一次；仍失败则报错退出，网络环境恢复后重跑
   `./install.sh` 会从失败步骤续跑（已装的不会重装）。
 - **重新生成缓存**：在能联网的机器 `fetch-aur-sources.sh`（需 go/cargo 工具链）。
-- **strap.sh 不可用**：它是 https clone 私有仓库入口，无海外网络时用本指南的 U 盘方式。
+- **strap.sh 不可用**：strap.sh 靠 https clone 拉代码（仓库是公开的，无需认证），但物理机无海外网络连不上 GitHub；此时用本指南的 U 盘方式即可。
 
 ## 不需要担心的事
 

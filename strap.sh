@@ -17,25 +17,26 @@ BRANCH="${BRANCH:-main}"
 
 die() { echo "strap.sh: $*" >&2; exit 1; }
 
-# The default REPO_URL points at a private GitHub repo; an unauthenticated
-# https clone is refused. Give the operator actionable ways out (and stay
-# useful for a plain network failure too).
+# The default REPO_URL points at a public GitHub repo, so an unauthenticated
+# https clone works wherever GitHub is reachable. If the clone still fails,
+# it is a network problem (typically no overseas access on the target
+# machine); the hint below offers the offline USB path.
 hint_clone_failed() {
   cat >&2 <<'EOF'
 
-The clone/update failed. If this is the private my-arch-setup repo, GitHub
-refuses an unauthenticated https clone. Fix one of these and re-run:
+The clone/update failed. The repo is public, so this is almost always a
+network issue (no route to GitHub, e.g. a CN-only network). Options:
 
-  1) Authenticate git as the user who will run install.sh afterwards:
-       gh auth login
-     (or configure a credential helper / PAT for https://github.com)
+  1) Check connectivity first:
+       curl -m 10 -sI https://github.com
+     (on a CN-only network, use a proxy or the offline path below)
 
-  2) Point REPO_URL at a reachable clone URL, e.g. the SSH form:
-       sudo REPO_URL=git@github.com:tjz123psh/my-arch-setup-deepseek.git \
-            bash strap.sh
+  2) Offline path (no overseas access): copy the repo onto the machine via
+     USB and run its install.sh directly. Pre-download the AUR cache too -
+     see docs/physical-offline-install.md for the full procedure.
 
-  3) Skip strap.sh entirely: copy the repo onto the machine another way
-     (host HTTP share / tar) and run its install.sh directly.
+  3) Point REPO_URL at a reachable clone URL if you have a mirror:
+       sudo REPO_URL=<reachable clone URL> bash strap.sh
 EOF
 }
 
