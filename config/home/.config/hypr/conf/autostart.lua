@@ -33,8 +33,8 @@ hl.on("hyprland.start", function()
 	hl.exec_cmd("pgrep -x fcitx5 >/dev/null || fcitx5 -d")
 	-- 蓝牙托盘
 	hl.exec_cmd("pgrep -x blueman-applet >/dev/null || blueman-applet")
-	-- FlClash 代理（可执行在 /usr/lib/flclash/FlClash）
-	hl.exec_cmd("pgrep -x FlClash >/dev/null || /usr/lib/flclash/FlClash")
+	-- FlClash 代理（由 archlinuxcn 的 flclash 提供 /usr/bin/flclash）
+	hl.exec_cmd("pgrep -x FlClash >/dev/null || flclash")
 	-- 截图音效守护：监听剪贴板，配合截图键的 `screenshot-sound arm` 上膛播放快门声（同 niri）。
 	-- 脚本内部用 flock 保证单实例，直接启动即可；不要再加 pgrep 守卫，
 	-- 因为守卫命令行自身含 "screenshot-sound" 字样会被 pgrep 自匹配，导致永不启动。

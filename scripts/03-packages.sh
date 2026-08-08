@@ -100,6 +100,28 @@ if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
   run pacman -Sy
 fi
 
+# flclash migration: the old AUR flclash-bin package provides the virtual
+# name `flclash` but conflicts with the archlinuxcn package. pacman does not
+# have a Replaces field to make this transaction automatic, and --noconfirm
+# answers the conflict prompt with the default (abort). Remove only the old
+# package (not its dependencies) before the official batch, then verify the
+# exact target package after installation. This is intentionally explicit so
+# a machine restored from the previous manifest does not silently keep the
+# AUR build.
+if [[ " ${OFFICIAL[*]} " == *" flclash "* ]]; then
+  installed_packages="$(pacman -Qq)" || {
+    error "could not query the installed package database; refusing flclash migration"
+    exit 1
+  }
+  if grep -Fx flclash-bin >/dev/null <<<"${installed_packages}"; then
+    log "Migrating flclash-bin (AUR) -> flclash (archlinuxcn)..."
+    if ! run pacman -R --noconfirm flclash-bin; then
+      error "could not remove conflicting flclash-bin; flclash migration is required"
+      exit 1
+    fi
+  fi
+fi
+
 # install official packages
 # rustup conflicts with the rust/cargo packages but provides them too.
 # Install it first so any package depending on cargo/rust (e.g. cargo-audit)
@@ -141,4 +163,40 @@ else
   log "No official packages selected for this desktop/machine combination"
 fi
 
-success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 05)"
+# Verify the migration by exact installed package names. `pacman -Q flclash`
+# resolves virtual provides (and would report flclash-bin on the old system),
+# so filter the complete quiet package list for an exact line.
+if [[ " ${OFFICIAL[*]} " == *" flclash "* ]]; then
+  installed_packages="$(pacman -Qq)" || {
+    error "could not query the installed package database; refusing flclash acceptance"
+    exit 1
+  }
+  if ! grep -Fx flclash >/dev/null <<<"${installed_packages}"; then
+    error "flclash (archlinuxcn) is not installed after the official package stage"
+    exit 1
+  fi
+  if grep -Fx flclash-bin >/dev/null <<<"${installed_packages}"; then
+    error "legacy flclash-bin remains installed; refusing to mark package stage done"
+    exit 1
+  fi
+  # FlClash C.3: verify the target package ships the expected binaries and a
+  # real desktop entry (queried from the installed package, not assumed).
+  flclash_missing=0
+  for f in /usr/bin/flclash /usr/lib/flclash/FlClash; do
+    if [[ ! -x "${f}" ]]; then
+      error "flclash package missing expected file: ${f}"
+      flclash_missing=$((flclash_missing + 1))
+    fi
+  done
+  if ! pacman -Ql flclash 2>/dev/null | grep -q '[^ ]\.desktop$'; then
+    error "flclash package ships no desktop entry (pacman -Ql flclash)"
+    flclash_missing=$((flclash_missing + 1))
+  fi
+  if (( flclash_missing > 0 )); then
+    error "flclash acceptance failed (${flclash_missing} missing file(s))"
+    exit 1
+  fi
+  log "Verified flclash package migration: flclash present, flclash-bin absent, binaries + desktop entry OK"
+fi
+
+success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 06)"

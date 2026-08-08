@@ -1845,7 +1845,7 @@ openSUSE 开发的快照软件，超级好用。
     | `firefox` `python-pywalfox` | 火狐浏览器和主题同步        |
     | `linuxqq-appimage`          | (AUR) QQ                    |
     | `wechat-appimage`           | (AUR) 微信                  |
-    | `flclash-bin`               | (AUR) 网络代理工具          |
+    | `flclash`                   | (archlinuxcn) 网络代理工具  |
     | `localsend`                 | 局域网传输神器              |
     | `nm-connection-editor`      | 高级网络配置管理            |
     | `transmission-gtk`          | 种子下载器                  |
@@ -11331,6 +11331,9 @@ flclash 支持随壁纸更换颜色，强推！
     ```bash
     pacman -S flclash
     ```
+
+    `flclash` 来自 `archlinuxcn`，不是 AUR 的 `flclash-bin`。如果系统还装着
+    旧的 `flclash-bin`，两者冲突；迁移时先确认删除旧包，再安装新包。
 
 3. 启动
 

@@ -59,7 +59,7 @@ ffmpegthumbnailer	pacman	extra	pacman	desktop-apps	package-only	install	current-
 file-roller	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Create and modify archives
 fish	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	Smart and user friendly shell intended mostly for interactive use
 flatpak	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Linux application sandboxing and distribution framework (formerly xdg-app)
-flclash-bin	aur	aur	aur-build	personal-autostart	config-backed	install	current-explicit	Graphical multi-platform proxy client with reviewed autostart entry
+flclash	pacman	archlinuxcn	pacman	personal-autostart	config-backed	install	current-explicit	Graphical multi-platform proxy client from archlinuxcn with reviewed autostart entry
 fprintd	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	D-Bus service to access fingerprint readers
 fuzzel-ime-git	aur	aur	aur-build	desktop-shared	config-backed	install	current-explicit	Wayland application launcher with input-method support
 fwupd	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	Simple daemon to allow session software to update firmware

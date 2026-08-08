@@ -2,6 +2,6 @@
 Type=Application
 Name=FlClash
 Comment=FlClash startup script
-Exec=/usr/lib/flclash/FlClash
+Exec=flclash
 StartupNotify=false
 Terminal=false
