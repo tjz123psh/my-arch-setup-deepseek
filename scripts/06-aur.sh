@@ -209,10 +209,14 @@ if (( ${#pkgs[@]} > 0 )); then
   # verify every built artifact is actually installed (C-03): pacman -U is
   # transactional, but a failed hook or interrupted transaction can still
   # leave a gap; check each package by name from its own metadata.
+  # NOTE: `pacman -Qp <file>` prints "name version" (one line, no label),
+  # unlike `pacman -Qi`. The previous awk '/^Name/' matched nothing and made
+  # every package report name=unknown (observed 2026-08-08, all 14 AUR
+  # targets "not verifiably installed" after a successful pacman -U).
   missing=0
   for p in "${pkgs[@]}"; do
     name=
-    name="$(pacman -Qp "${p}" 2>/dev/null | awk -F': ' '/^Name/{print $2; exit}')"
+    name="$(LC_ALL=C pacman -Qp "${p}" 2>/dev/null | awk '{print $1}')"
     if [[ -z "${name}" ]] || ! pacman -Q "${name}" >/dev/null 2>&1; then
       error "AUR package not verifiably installed: ${p} (name=${name:-unknown})"
       missing=$((missing + 1))
