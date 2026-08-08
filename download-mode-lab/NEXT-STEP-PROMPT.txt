@@ -1,0 +1,41 @@
+你现在接手 `/home/pang/Projects/my-arch-setup-deepseek`。先完整阅读：
+
+- `AGENTS.md`
+- `download-mode-lab/FINAL.md`
+- `download-mode-lab/01-inventory.md`
+- `download-mode-lab/02-design.md`
+- `download-mode-lab/results/`
+
+目标是改善安装下载模式，但**本轮不要直接修改主安装器、宿主系统、VMware/KVM 或任何 VM 资产**。
+实验候选只在 `download-mode-lab/`，主工作树已有 dirty diff，禁止用全局 `git restore/reset/clean` 覆盖它。
+
+先执行并保存结果：
+
+```bash
+bash download-mode-lab/run-lab.sh
+bash tests/installer-behavior-test.sh
+bash tests/workstation-package-reconciliation-test.sh
+bash tests/flclash-migration-test.sh
+bash tests/nvim-config-test.sh
+```
+
+然后只做以下只读审查并展示 dry-run 计划：
+
+1. 核对 `install.sh` 首次同步早于 `01-mirror.sh` 的时序；
+2. 核对 `scripts/01-mirror.sh` 默认写入 `XferCommand` 会使 pacman 原生并发退化；
+3. 核对重复 `pacman -Sy/-Syyu/-Syu` 的调用序列；
+4. 核对 `fetch-aur-sources.sh` 的非空 cache skip、删除 `.part`、共享 `/tmp` 错误日志和 VMware 大文件串行问题；
+5. 不要把 mock 速度当成真实安装速度，也不要默认安装 aria2/axel。
+
+只有在我明确批准后，才允许做第一小步主代码补丁：
+
+- 默认删除/禁用 `scripts/01-mirror.sh` 写入外部 `XferCommand`；
+- 保留 pacman native downloader 与 `ParallelDownloads`；
+- 不设置 `DisableDownloadTimeout` 掩盖卡死；
+- 不顺便重构 AUR、keyring、服务或桌面配置；
+- 运行 native/Xfer mock、stall、Shell syntax、现有项目测试并报告真实 PASS/FAIL/UNAVAILABLE。
+
+第一小步通过后再次停下，展示 diff 和回滚方式，等待我批准第二小步（减少重复同步）。
+之后才设计 AUR source manifest/有界预取；禁止并发全部 makepkg，必须保留 checksum、`.part`、Range、原子 rename、逐项失败和非零退出语义。
+
+任何需要 root 的操作都必须先 inventory → dry-run/reviewable plan → 明确批准，并使用项目约定的 audited wrapper；不要索取、记录或输出任何密码/token/cookie/private key。不要删除宿主 KVM/VMware 资产，也不要自行选择或操作 VM。

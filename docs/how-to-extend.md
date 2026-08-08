@@ -18,8 +18,8 @@
 | 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
 
-> 数字会漂移：`README.md` 里的包数（190 安装/18 校验）、映射数（233）、config 文件数
-> （332）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
+> 数字会漂移：`README.md` 里的包数（191 安装/12 校验；当前为 177 pacman + 14 AUR）、映射数（231）、config 文件数
+> （330）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
 > `find config -type f | wc -l`、`awk` 统计清单行数核对），并重新打包
 > `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`）。
 
@@ -34,6 +34,12 @@
    - 驱动类包**不要**加在这里——统一放 `scripts/04-drivers.sh`（物理机专属）。
 2. 跑 `tests/workstation-package-reconciliation-test.sh` 确认格式与引用合法。
 3. 更新 README 包数字。
+
+**archlinuxcn 包的迁移例外：**如果旧 AUR 包提供同名虚拟包（本项目的
+`flclash-bin` 提供 `flclash`），不能只把一行的 channel 改成 pacman。必须
+同时删除旧 AUR recipe/离线源，确认目标仓库元数据，并在安装器中显式处理
+冲突和逐名验收；`pacman -Q flclash` 可能只显示 provider，不能替代对
+`flclash` 与 `flclash-bin` 的精确检查。
 
 ## 二、加一个 AUR 包（比官方包多三步）
 
@@ -95,7 +101,7 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 
 - **加官方包 / 加配置 / 加脚本**：5 分钟级别，纯数据操作，风险极低（有测试兜底）。
 - **加 AUR 包**：30 分钟级别，因为要生成离线缓存 + 可能要调 PKGBUILD；
-  但只要不删旧 recipe，**不影响现有 14 个 AUR 的安装**。
+  当前有 14 个 AUR 目标（另有 vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、离线缓存脚本和 manifest。
 - **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
 - **唯一「伤筋动骨」的改动**：改 manifests schema（表格列含义）、改
   config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑——这些会牵动 03/07 两个

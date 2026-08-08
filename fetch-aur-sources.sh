@@ -15,10 +15,20 @@ DEST="${1:-$HOME/Downloads/aur-sources}"
 mkdir -p "$DEST"
 FAILED=0
 
-dl() { # name url
-  local name="$1" url="$2"
+dl() { # name url [sha256]
+  local name="$1" url="$2" want="${3:-}"
   if [[ -s "$DEST/$name" ]]; then echo "SKIP  $name"; return; fi
   if curl -fL -sS --connect-timeout 20 --max-time 1800 -o "$DEST/$name.part" "$url" 2>/tmp/aur-dl.err; then
+    if [[ -n "$want" ]]; then
+      local got
+      got="$(sha256sum "$DEST/$name.part" | cut -d' ' -f1)"
+      if [[ "$got" != "$want" ]]; then
+        echo "FAIL  $name :: sha256 mismatch (got $got, want $want)"
+        rm -f "$DEST/$name.part"
+        FAILED=$((FAILED + 1))
+        return
+      fi
+    fi
     mv "$DEST/$name.part" "$DEST/$name"
     echo "OK    $name ($(du -h "$DEST/$name" | cut -f1))"
   else
@@ -52,9 +62,6 @@ dl README-0.3.2.md      "https://raw.githubusercontent.com/AvengeMedia/danksearc
 dl dsearch-x86_64-0.3.2.gz "https://github.com/AvengeMedia/danksearch/releases/download/v0.3.2/dsearch-linux-amd64.gz"
 # fcitx5-skin-fluentdark-git
 dl Fluent-fcitx5-399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz "https://github.com/Reverier-Xu/Fluent-fcitx5/archive/399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz"
-# flclash-bin
-dl flclash-0.8.94-x86_64.deb "https://github.com/chen08209/FlClash/releases/download/v0.8.94/FlClash-0.8.94-linux-amd64.deb"
-dl libquickjs_c_bridge_plugin.so.base64 "https://gist.githubusercontent.com/dongfengweixiao/bbddee34d6456326200fac3463761296/raw/c18484d78449d0e3b376a6e2a49852486305ff1e/libquickjs_c_bridge_plugin.so.base64"
 # google-chrome
 dl google-chrome-stable_151.0.7922.71-1_amd64.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_151.0.7922.71-1_amd64.deb"
 # leaf-markdown-viewer-bin
@@ -132,8 +139,13 @@ dl_vmware "winVistaSP1.iso" "https://packages-prod.broadcom.com/tools/frozen/win
   "3b8f9d6e43f5d1dff0576cb93d008c14e0434d7233872f6c63988513d2bda5d1"
 dl_vmware "winVistaSP2.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/WindowsToolsVista/SP2/windows.iso" \
   "8f1cc3181055891b98672f715e0ca7bbe4018960eae945d7a4b9f640c44c3d79"
-# vmware-keymaps (AUR dependency of vmware-workstation; small GitHub tarball)
-dl vmware-keymaps-1.0.tar.gz "https://github.com/chowbok/vmware-keymaps/archive/refs/tags/v1.0.tar.gz"
+# vmware-keymaps (AUR dependency of vmware-workstation; small GitHub tarball).
+# The download NAME must equal the PKGBUILD source alias
+# (vmware-keymaps-1.0-3.tar.gz, pkgver=1.0 pkgrel=3) or makepkg cannot find
+# it in SRCDEST offline (review P1-7). The sha256 is pinned from the
+# PKGBUILD sha256sums so a supply-chain change fails the fetch.
+dl vmware-keymaps-1.0-3.tar.gz "https://github.com/chowbok/vmware-keymaps/archive/refs/tags/v1.0.tar.gz" \
+   "e8ee0df9e35c4a28ab46bc9f9cefc6e2934fe382b93f115bd2e61a2b74490649"
 
 echo
 echo "== Go module cache (greetd-dms-greeter) =="

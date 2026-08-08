@@ -23,6 +23,12 @@ as_user() {
   fi
 }
 
+# P1-4: 07-config deploys user units (hyprland-session.target, custom
+# services) into ~/.config/systemd/user. Reload the USER manager first so
+# enable/cat below sees the freshly deployed units; without this the enable
+# loop silently misses them and the Hyprland target stays unknown.
+as_user systemctl --user daemon-reload || warn "user daemon-reload failed"
+
 # Package-provided user units that must be enabled to match the host snapshot:
 # dms.service (DankMaterialShell, wants of niri.service) and dsearch.service
 # (DankSearch, wants of default.target). These live in /usr/lib/systemd/user,
@@ -79,7 +85,24 @@ EOF"
   # check the unit file on disk and enable directly instead.
   run systemctl daemon-reload || true
   if [[ -f /usr/lib/systemd/system/greetd.service ]]; then
-    run systemctl enable greetd && log "Service: greetd"
+    # greetd is the login manager for the selected desktop; a failed enable
+    # leaves the machine without a login UI (P1-8).
+    if run systemctl enable greetd; then
+      log "Service: greetd"
+    else
+      error "could not enable greetd.service"
+      exit 1
+    fi
+  fi
+  # P1-4: when Hyprland is part of the selection, prove the session target
+  # that autostart.lua starts (hyprland-session.target -> graphical-session
+  # -> dms.service) is actually readable by the user manager after deploy.
+  if [[ "${DESKTOP_ENV}" == "hyprland" || "${DESKTOP_ENV}" == "both" ]]; then
+    if as_user systemctl --user cat hyprland-session.target >/dev/null 2>&1; then
+      log "Hyprland session target deployed and readable by user manager"
+    else
+      warn "hyprland-session.target not visible to the user manager; Hyprland DMS autostart may not run"
+    fi
   fi
 fi
 
@@ -139,24 +162,36 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
     done
     # DKMS module verification: vmmon/vmnet must build and load. The unit
     # check above is not enough - a DKMS rebuild after a kernel upgrade can
-    # silently break module loading.
-    if command -v dkms >/dev/null 2>&1; then
+    # silently break module loading. Required when Workstation is installed:
+    # a missing vmmon module means the VMware host stack cannot run (P1-8).
+    if [[ -f /usr/lib/systemd/system/vmware-networks.service ]] \
+       && command -v dkms >/dev/null 2>&1; then
       if ! dkms status 2>/dev/null | grep -q vmmon; then
-        warn "dkms status shows no vmmon module; run: sudo dkms autoinstall (kernel headers required)"
+        error "dkms status shows no vmmon module; VMware host stack cannot load (run: sudo dkms autoinstall; kernel headers required)"
+        exit 1
       fi
     fi
   fi
   log "Note: docker group membership and supergfxd mode are manual"
   log "Note: clash-verge-service is intentionally NOT enabled (private config)"
 elif [[ "${MACHINE_TYPE}" == "vm" ]]; then
-  # vm / VMware guest: open-vm-tools services. Both units carry
-  # ConditionVirtualization=vmware, so they no-op on non-VMware hosts; enable
-  # them only when the unit files exist (package installed).
-  for s in vmtoolsd.service vmware-vmblock-fuse.service; do
-    if [[ -f "/usr/lib/systemd/system/${s}" ]]; then
-      run systemctl enable --now "${s}" && log "Service: ${s}"
+  # vm / VMware guest: vmtoolsd is the required guest core (P1-8) - a
+  # missing unit or a failed enable FAILS the step. vmware-vmblock-fuse is
+  # optional (copy/paste + drag&drop) and only enabled when present.
+  if [[ -f /usr/lib/systemd/system/vmtoolsd.service ]]; then
+    if run systemctl enable --now vmtoolsd.service; then
+      log "Service: vmtoolsd.service"
+    else
+      error "could not enable vmtoolsd.service"
+      exit 1
     fi
-  done
+  else
+    error "vmtoolsd.service unit missing (open-vm-tools not installed?)"
+    exit 1
+  fi
+  if [[ -f /usr/lib/systemd/system/vmware-vmblock-fuse.service ]]; then
+    run systemctl enable --now vmware-vmblock-fuse.service && log "Service: vmware-vmblock-fuse.service"
+  fi
 fi
 
 # --- required user groups ---

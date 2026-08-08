@@ -1,0 +1,65 @@
+你是 `/home/pang/Projects/my-arch-setup-deepseek` 这个项目的后续执行模型，不是另一个项目的 agent，也不是只做口头建议的审查者。请接着当前工作树继续工作；不要重建、覆盖或猜测项目状态。
+
+【必读文件】
+1. 先读项目级 `AGENTS.md`；它优先于本提示词。
+2. 再读 `docs/comprehensive-review-20260807.md`，把它当作当前审查和验收合同。
+3. 用 `git status --short --branch`、`git log -1 --oneline` 和清单统计确认实际状态；不要相信旧 handoff、旧 artifact 或旧模型的“已完成”文字。
+
+【当前已知事实】
+- 工作区：`/home/pang/Projects/my-arch-setup-deepseek/`；唯一允许写入的路径。
+- 当前 HEAD 基线：`f44066d2a07b13a7bf542f17bde048d803ab2e6c`；本次 flclash/文档修改可能是 dirty diff，必须以实际 `git diff` 为准。
+- 包统计目标：total=211，install=191，verify=12，deferred=8；install 为 pacman=177、AUR=14。
+- AUR recipe 树目标：15（14 个目标 + `vmware-keymaps` 构建依赖）。
+- `flclash` 已迁移为 `archlinuxcn/flclash` pacman 包；旧 AUR `flclash-bin` recipe 已从工作区删除，启动配置使用 `flclash` 命令。
+- 目标仓库元数据显示 `flclash 0.8.94-3` 没有 conflicts/replaces；旧包 `flclash-bin 0.8.94-1` 提供并冲突 `flclash`。宿主当前仍是旧包；本项目没有在本轮对宿主做迁移。
+- nomacs 已在宿主只读状态存在，PNG MIME 映射在项目中；仍须做 required acceptance。
+- 宿主 KVM/libvirt 是用户资产，必须保留；项目 payload 不再主动安装 KVM host 栈，但不得删除/停用宿主 KVM 或任何 VM 资产。
+- 用户报告物理机实战部署完成；没有独立重新 apply 的授权时只做只读核对。
+- VMware VM 两轮 + `physical-sim-vmware` 仿物理两轮尚未形成同一最终 TEST_ID 的四个 PASS。
+
+【绝对安全规则】
+- 不读取、索要、打印、写入或保存任何密码、token、cookie、私钥、guest 凭据；日志只报告存在性/权限/退出码。
+- 不修改工作区外任何文件或其他项目；不操作宿主 KVM/VMware 资产、服务、网络、内核模块、GRUB。
+- 任何 Arch 系统变更先 inventory，再给 dry-run/reviewable plan，得到明确批准后才 apply；批准的 root 命令优先使用 `~/scripts/desktop/gsudo -- <command>`，不要直接自行换成另一种提权方式。
+- 工作区外 VM 只有在用户明确指定专用测试 VMX、明确授权启动/snapshot/revert/guest 安装后才可操作；不得自行从 `vmrun list` 选择 VM，不得 hard stop、删盘或改真实 VMX。
+- 查询失败和空结果分开写；非零检查绝不能称为 healthy/empty/pass。
+- 不 commit/push/release，除非用户另行明确要求。
+
+【执行顺序】
+
+A. 先验证当前工作树（只读）
+1. 检查 status、diff、manifest/recipe/config 统计和 active `flclash-bin` 引用。
+2. 运行 bash -n、reconciliation、flclash migration test、nvim test、behavior test（行为测试必须在工作区内 sandbox，不能碰真实 HOME）。
+3. 运行 `.SRCINFO`、JSON/TOML/Fish、desktop-file、gitleaks 和 ShellCheck；把 ShellCheck error、不可用检查分别记录。
+4. 检查 README/project-vision/offline/handoff 是否把历史 KVM、旧数字或旧 AUR 状态误写成当前事实。
+
+B. 先修 P0/P1，再测试；不要只为了让测试变绿而削弱测试
+1. 让 `scripts/06-aur.sh` 按 manifest + `module_selected()` 过滤：VM 不构建/安装 `vmware-workstation`/`vmware-keymaps`，physical 才 bootstrap host recipe。
+2. 给 `physical-sim-vmware` 加 `systemd-detect-virt` 必须为 VMware 的 preflight，并把 profile/结果写入 artifact；普通 physical 不得冒充仿物理。
+3. 修 `sync-scripts.sh`：secret hit fail-closed、plan 零写入、staging/backup/rollback、完整退出码传播；不要把 `--delete` 当成回滚。
+4. 修 ShellCheck 的真实 error、`timeout 60 run reflector` 的 function 调用、progress context（加入 TEST_PROFILE、脚本/config/recipe/cache/harness hash）。
+5. 修行为 harness 的 MAPPINGS/CONFIG_SRC 注入和精确 counter 解析；确保所有临时 HOME/TMP 都在工作区 sandbox。
+6. 修 hardware config mapping 与 package selection 的语义分离；required 服务、DKMS、greetd、nomacs、guest tools 失败必须正确传播。
+7. 使 Hyprland target/DBus/DMS 的部署、daemon-reload、退出清理和重登可证明；不要只把 `dms run -d` 或关闭 blur 当作修复。
+8. 修 niri-vmtest-gen 的安装后生成/幂等/validate；补齐或明确 `.local/bin` symlink 入口。
+9. 修 vmware-keymaps cache filename/alias/checksum，并固定 VCS recipe commit；禁止 `go test ./... || true` 吞失败。
+
+C. FlClash 专项（必须保留迁移语义）
+1. active manifest/aur-recipes/06/fetch/recipe tree 中不得再把 flclash 当 AUR target。
+2. 由于目标包没有 replaces，旧包迁移必须显式且可诊断；精确检查用完整 `pacman -Qq` 列表配 `grep -Fx`，不能用会解析 provides 的 `pacman -Q flclash` 当作精确包名证明。
+3. 目标包安装后验收 `/usr/bin/flclash`、`/usr/lib/flclash/FlClash` 和实际 desktop entry；确认自启动不重复。
+4. 旧 `.aur-sources` 中的 FlClash AUR 源只在明确清理/重建缓存时处理；不要把缓存清理误当宿主包卸载。
+5. 真正迁移宿主前仍须 inventory + review plan + 用户明确批准；不要在本轮自行 `pacman -R/-S`。
+
+D. VMware 四轮（仅在外部授权条件全部满足时）
+1. 冻结最终 payload、source-cache manifest、clean snapshot，并生成新的 TEST_ID；任意代码/清单/recipe/harness/cache 变化都使旧 PASS 失效。
+2. VM-R1、VM-R2：`./install.sh -d both -t vm`，每轮从 clean snapshot 开始，验证 `systemd-detect-virt=vmware`、open-vm-tools/vmtoolsd、无 Workstation/KVM host 栈、Niri/Hyprland/DMS。
+3. PHY-R1、PHY-R2：`./install.sh -d both -t physical --test-profile physical-sim-vmware`，验证 `MACHINE_TYPE=physical`、host-only 动作为 `NOT_APPLICABLE_SIMULATED`，不能在 guest 中真的启用 VMware host networking。
+4. 每轮都保存 metadata、payload/hash、stdout/stderr、退出码、包/服务 delta、config validation、DMS/hyprland 日志和 result.json；不得保存凭据。
+5. 真实 Hyprland 从项目 greetd 入口登录、退出、重登；分开比较 VMware 3D、DMS blur、Hyprland blur/animation。
+6. 失败/超时/快照未恢复/日志缺失/UNAVAILABLE 不计 PASS；没有指定 VMX 或授权时立即写 UNAVAILABLE checkpoint，不要假装测试。
+
+E. 最终交付
+- 更新 `docs/comprehensive-review-20260807.md` 和 checkpoint，明确 PASS、PRODUCT_FAIL、INFRA_FAIL、CHECK_FAILED、UNAVAILABLE、N/A。
+- 给出最终 payload 的 commit/hash、四轮 TEST_ID 和每轮结果；若没有四个 PASS，明确写“未完成”。
+- 列出修改路径、备份/rollback 位置、未执行的系统/VM 操作和唯一下一步；不要输出任何凭据值。

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 06-aur.sh - build and install the 14 reviewed AUR recipes.
+# 06-aur.sh - build and install the 14 reviewed AUR target recipes.
 # Recipes are pinned in third_party/aur/ (reused asset); built with makepkg
 # in a clean per-recipe dir. Uses paru if available, else builds paru first.
 set -Eeuo pipefail
@@ -10,16 +10,24 @@ source "${SCRIPT_DIR}/00-utils.sh"
 RECIPES_DIR="${PROJECT_DIR}/third_party/aur"
 BUILD_BASE="${PROJECT_DIR}/.aur-build"
 mkdir -p "${BUILD_BASE}"
-# vmware-workstation is an AUR->AUR edge: it depends on vmware-keymaps,
-# which must be INSTALLED before makepkg -s can resolve it. vmware-keymaps
-# is therefore bootstrapped (build+install) before the batch below and is
-# deliberately NOT in this array (it is a dependency, not an install target).
-RECIPES=(clash-verge-rev-bin dsearch-bin fcitx5-skin-fluentdark-git flclash-bin \
-         fuzzel-ime-git google-chrome greetd-dms-greeter-git \
-         leaf-markdown-viewer-bin linuxqq-appimage obsidian-bin opencode-bin \
-         paru vmware-workstation wechat-appimage wooz-git)
+# AUR targets come from the package manifest (channel=aur, policy=install)
+# filtered by the SAME module_selected() used by 03/07, so machine roles are
+# honored here too: vmware-workstation lives in virtualization-vmware-host
+# and is therefore built only on physical; -t vm never builds the host stack.
+# vmware-keymaps is a pure AUR->AUR build dependency of vmware-workstation
+# (installed before makepkg -s can resolve it), NOT an install target, so it
+# is deliberately absent from this list and bootstrapped separately below.
+RECIPES=()
+while IFS=$'\t' read -r pkg channel _repo _acq module _restore pol _origin _purpose; do
+  [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
+  [[ "${channel}" == "aur" && "${pol}" == "install" ]] || continue
+  module_selected "${pkg}" "${module}" || continue
+  RECIPES+=("${pkg}")
+done < "${PROJECT_DIR}/manifests/workstation-packages.tsv"
+# paru is the AUR helper used elsewhere; build it first when missing (below).
+# Keep it first in the batch so a bare system gets the helper early.
 
-section "Building and installing AUR packages (${#RECIPES[@]})"
+section "Building and installing AUR target packages (${#RECIPES[@]})"
 
 # Optional offline AUR source cache: if sources were pre-placed in
 # .aur-sources/ (makepkg SRCDEST layout - git bare mirrors + downloaded
@@ -149,8 +157,9 @@ fi
 # vmware-keymaps to already be installed (its PKGBUILD does
 # `depends+=(vmware-keymaps)`). The old build-all-then-install-all model
 # cannot satisfy that, so vmware-keymaps gets its own build + dedicated
-# install before the main batch (review 5.5).
-if [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
+# install before the main batch (review 5.5). Only relevant when the host
+# stack is actually selected (physical); a vm guest never builds it.
+if [[ "${RECIPES[*]}" == *"vmware-workstation"* ]] && [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
   log "Bootstrapping vmware-keymaps (AUR dependency of vmware-workstation)..."
   if install_recipe vmware-keymaps; then
     mapfile -t km_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'vmware-keymaps*.pkg.tar.*')

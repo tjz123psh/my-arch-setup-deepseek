@@ -25,3 +25,8 @@ __pycache__/
 
 # nightly validation artifacts (review 12.5): never committed
 artifacts/
+
+# download-mode-lab experiment: keep docs/scripts/results, never the
+# generated mock fixtures or bytecode (30M+ of throwaway pacman roots).
+download-mode-lab/fixtures/
+download-mode-lab/**/__pycache__/

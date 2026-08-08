@@ -147,6 +147,15 @@ main() {
   if [[ -n "${TEST_PROFILE}" ]] && [[ "${MACHINE_TYPE}" != "physical" ]]; then
     die "--test-profile physical-sim-vmware requires -t physical"
   fi
+  # P0-2 (review): physical-sim-vmware must ONLY run inside a real VMware
+  # guest. A bare `-t physical` on the physical host (or in KVM/QEMU) must
+  # never be able to masquerade as a simulated-physical acceptance run.
+  if [[ "${TEST_PROFILE}" == "physical-sim-vmware" ]]; then
+    if [[ "$(systemd-detect-virt 2>/dev/null || true)" != "vmware" ]]; then
+      die "--test-profile physical-sim-vmware requires systemd-detect-virt == vmware (detected: $(systemd-detect-virt 2>/dev/null || echo unknown))"
+    fi
+    log "physical-sim-vmware preflight: systemd-detect-virt=vmware confirmed"
+  fi
   ensure_fzf_ui
   select_machine
   select_desktop

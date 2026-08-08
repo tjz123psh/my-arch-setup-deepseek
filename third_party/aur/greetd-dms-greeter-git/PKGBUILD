@@ -21,8 +21,11 @@ makedepends=('git' 'go')
 provides=("greetd-dms-greeter" "$_binname=$pkgver")
 conflicts=('greetd-dms-greeter' 'greetd-dms-greeter-bin' 'dms-greeter')
 install=greetd-dms-greeter.install
-source=('dank-greeter::git+https://github.com/AvengeMedia/dank-greeter.git'
-        'dank-qml-common::git+https://github.com/AvengeMedia/dank-qml-common.git')
+# review P1-11: VCS sources pinned to reviewed upstream commits (queried
+# 2026-08-08) so a rebuild is reproducible and a supply-chain change fails
+# the fetch; checksum SKIP is inherent to git+ sources, the commit is the pin.
+source=('dank-greeter::git+https://github.com/AvengeMedia/dank-greeter.git#commit=f353eafdee856a2e1c6ce87ce551304e8a6ed404'
+        'dank-qml-common::git+https://github.com/AvengeMedia/dank-qml-common.git#commit=28fde7311296cbd041e5b704e54a481082b92b18')
 sha256sums=('SKIP'
             'SKIP')
 
@@ -70,7 +73,8 @@ build() {
 check() {
 	cd "$srcdir/dank-greeter/core"
 	export CGO_ENABLED=0 GOMODCACHE="$srcdir/gomodcache"
-	go test ./... || true
+	# review P1-11: a failing test must FAIL the build, not be swallowed.
+	go test ./...
 }
 
 package() {

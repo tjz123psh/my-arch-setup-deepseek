@@ -44,6 +44,15 @@ for m in graphics-amd graphics-nvidia hardware-tools asus-hardware; do
   [[ "$(modsel physical both "$m")" == "1" ]]; check "hardware module $m excluded (physical)" $? 0
   [[ "$(modsel vm both "$m")" == "1" ]]; check "hardware module $m excluded (vm)" $? 0
 done
+# P1-1: config context - hardware config rows deploy on physical, skip on vm
+modsel_cfg() { # modsel_cfg <machine> <desktop> <module>  -> echoes 0/1
+  MACHINE_TYPE="$1" DESKTOP_ENV="$2" bash -c '
+    source "$0" >/dev/null 2>&1
+    module_selected x "$1" config && echo 0 || echo 1
+  ' "$utils" "$3"
+}
+[[ "$(modsel_cfg physical both asus-hardware)" == "0" ]]; check "asus-hardware config selected on physical" $? 0
+[[ "$(modsel_cfg vm both asus-hardware)" == "1" ]]; check "asus-hardware config excluded on vm" $? 0
 # desktop wm modules follow DESKTOP_ENV
 [[ "$(modsel vm niri wm-hyprland)" == "1" ]]; check "wm-hyprland excluded on niri" $? 0
 [[ "$(modsel vm niri wm-niri)" == "0" ]]; check "wm-niri selected on niri" $? 0
@@ -110,8 +119,12 @@ printf 'physical-v1\tdesktop-shared\tconfig/home/.config/fish/config.fish\t.conf
 out="$(HOME="$tmp_home" MAPPINGS="$minmap" CONFIG_SRC="$root/config" TARGET_USER=pang \
   SCOPE=physical-v1 MACHINE_TYPE=vm DESKTOP_ENV=niri \
   bash "$root/scripts/07-config.sh" 2>&1 || true)"
-# the deploy must have refused (skipped=1) and the outside file must be intact
-if [[ "$out" == *"refusing to deploy"* ]] && [[ "$out" == *"skipped: 1"* ]] \
+# P1-3: parse the structured CONFIG_RESULT line and compare the EXACT counter
+# (a bare substring "skipped: 1" would falsely match "skipped: 114").
+skipped_n="$(printf '%s\n' "$out" | sed -n 's/.*CONFIG_RESULT deployed=[0-9][0-9]* skipped=\([0-9][0-9]*\).*/\1/p' | tail -1)"
+# the deploy must have refused exactly one row (skipped=1) and the outside
+# file must be intact
+if [[ "$out" == *"refusing to deploy"* ]] && [[ "${skipped_n}" == "1" ]] \
    && [[ "$(cat "$outside/evil/compromised")" == "do-not-touch" ]]; then
   pass=$((pass + 1)); echo "  ok   symlinked .config refused; outside file untouched"
 else

@@ -166,22 +166,51 @@ fi
 
 success "System settings complete"
 
-# --- nomacs acceptance (review 4.2) ---
+# --- nomacs acceptance (review 4.2 / P1-8) ---
 # nomacs is the PNG default image viewer (mimeapps.list is deployed by
-# 07-config). Verify package + desktop entry + MIME association for real.
-if command -v nomacs >/dev/null 2>&1; then
-  nomacs_ok=1
-  pacman -Q nomacs >/dev/null 2>&1 || { warn "nomacs not installed (package policy?)"; nomacs_ok=0; }
-  [[ -f /usr/share/applications/org.nomacs.ImageLounge.desktop ]] || { warn "nomacs desktop entry missing"; nomacs_ok=0; }
-  mime_default=
-  mime_default="$(xdg-mime query default image/png 2>/dev/null || true)"
-  if [[ "${mime_default}" != *"org.nomacs.ImageLounge.desktop"* ]]; then
-    warn "image/png default is '${mime_default:-none}' (expected org.nomacs.ImageLounge.desktop)"
+# 07-config) and a manifest required install row (desktop-apps). Missing
+# package / desktop entry / MIME association must FAIL the step, not
+# log-and-continue; xdg-mime query failure is reported, not swallowed.
+nomacs_ok=1
+if pacman -Q nomacs >/dev/null 2>&1; then
+  log "nomacs package present: $(pacman -Q nomacs | awk '{print $2}')"
+else
+  error "nomacs not installed (required desktop-apps row)"
+  nomacs_ok=0
+fi
+if [[ -f /usr/share/applications/org.nomacs.ImageLounge.desktop ]]; then
+  if ! desktop-file-validate /usr/share/applications/org.nomacs.ImageLounge.desktop >/dev/null 2>&1; then
+    error "nomacs desktop entry failed desktop-file-validate"
     nomacs_ok=0
   fi
-  if (( nomacs_ok == 1 )); then
-    success "nomacs + PNG MIME association verified"
-  fi
 else
-  log "nomacs not present; PNG default association left as-is"
+  error "nomacs desktop entry missing: /usr/share/applications/org.nomacs.ImageLounge.desktop"
+  nomacs_ok=0
+fi
+# xdg-mime reads ~/.config/mimeapps.list, which 07 deployed for the target
+# user; run it as that user (root/strap path needs runuser) and do not let a
+# query failure abort via set -e before it can be reported.
+query_png_mime() {
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- xdg-mime query default image/png
+  else
+    xdg-mime query default image/png
+  fi
+}
+mime_default=
+if ! mime_default="$(query_png_mime 2>/dev/null)"; then
+  error "xdg-mime query default image/png failed (CHECK_FAILED)"
+  nomacs_ok=0
+elif [[ -z "${mime_default}" ]]; then
+  error "xdg-mime query default image/png returned nothing (CHECK_FAILED)"
+  nomacs_ok=0
+elif [[ "${mime_default}" != *"org.nomacs.ImageLounge.desktop"* ]]; then
+  error "image/png default is '${mime_default}' (expected org.nomacs.ImageLounge.desktop)"
+  nomacs_ok=0
+fi
+if (( nomacs_ok == 1 )); then
+  success "nomacs + PNG MIME association verified"
+else
+  error "nomacs acceptance failed; PNG default viewer not ready"
+  exit 1
 fi

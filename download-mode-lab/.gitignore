@@ -1,0 +1,16 @@
+fixtures/repo/
+fixtures/cache/
+fixtures/db/
+fixtures/root/
+fixtures/*.log
+fixtures/*.port
+results/pacman-*.log
+results/server-*.json
+bin/__pycache__/
+tests/__pycache__/
+fixtures/tmp/
+fixtures/trial-*/
+fixtures/test.*
+fixtures/*.err
+fixtures/run-*.log
+fixtures/stall-*

@@ -53,12 +53,21 @@ else
   log "Aliyun not reachable; running reflector (60s hard cap)..."
   run pacman -S --noconfirm --needed reflector
   # Hard timeout prevents a multi-minute global scan on a restricted network.
-  timeout 60 run reflector --protocol https -a 5 -f 3 --sort rate \
-    --save /etc/pacman.d/mirrorlist || {
-    warn "reflector timed out or failed; keeping existing mirror"
-    true
-  }
-  success "Mirror selection finished"
+  # `run` wraps sudo; the timeout must wrap the ACTUAL command, so run executes
+  # `timeout 60 reflector ...` as root. The previous `timeout 60 run ...`
+  # could not resolve the shell function `run` as an external command and
+  # always died with rc=127 (review P1-9). timeout rc=124 means it fired.
+  if run timeout 60 reflector --protocol https -a 5 -f 3 --sort rate \
+      --save /etc/pacman.d/mirrorlist; then
+    success "Mirror selection finished"
+  else
+    rc=$?
+    if (( rc == 124 )); then
+      warn "reflector timed out after 60s; keeping existing mirror"
+    else
+      warn "reflector failed (rc=${rc}); keeping existing mirror"
+    fi
+  fi
 fi
 
 # enable multilib (needed for lib32 packages)
@@ -67,20 +76,22 @@ if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
   run bash -c 'sed -i "/^#\[multilib\]/,/^#Include/s/^#//" /etc/pacman.conf'
 fi
 
-# Download timeout/retry: pacman's built-in libcurl downloader has NO total
-# timeout, so a stalled mirror connection hangs the installer forever (seen
-# with fuzzel-ime-git's fcft/tllist deps on aliyun). Route downloads through
-# curl with a short connect timeout (a dead mirror must fail over quickly),
-# a per-file cap for slow transfers, retries and -f (a failed fetch must not
-# leave an error page behind as the .db, which pacman then rejects as a bad
-# PGP signature). Only set it if the operator has not customized XferCommand.
-# NOTE: XferCommand must sit in the global [options] section - appending at
-# EOF lands inside the trailing [multilib] block and pacman ignores it.
-if ! grep -q '^XferCommand' /etc/pacman.conf; then
-  log "Setting pacman XferCommand (download timeout + retry)..."
-  # -sS: silent progress (no per-file progress-bar spam) but still print
-  # errors, so a failed fetch is visible without the wall of progress lines.
-  run bash -c "sed -i '/^\[options\]/a XferCommand = /usr/bin/curl -L -f -sS --connect-timeout 15 --max-time 300 --retry 3 --retry-delay 2 -C - -o %o %u' /etc/pacman.conf"
+# Downloader policy (download-mode-lab FINAL.md, D-01; merged step 1,
+# 2026-08-08). pacman's NATIVE downloader is the default and
+# `ParallelDownloads` (5 in this project's /etc/pacman.conf) gives real
+# concurrency. An external XferCommand takes over EVERY remote file and
+# serializes downloads (mock-verified ~2.9x slower at p=3/5), so we
+# deliberately do NOT write one. pacman >= 7 also has a native low-speed
+# abort (fails after ~10 s under 1 byte/s) plus per-mirror failover - that
+# is the stall protection that matters for a dead mirror. Only an operator
+# who explicitly wants an external downloader sets XferCommand manually;
+# note that ParallelDownloads then no longer applies.
+if grep -q '^XferCommand' /etc/pacman.conf; then
+  warn "XferCommand already set in /etc/pacman.conf; ParallelDownloads is bypassed (native concurrency disabled)"
+elif grep -q '^ParallelDownloads' /etc/pacman.conf; then
+  log "pacman native downloader active; ParallelDownloads in effect"
+else
+  log "ParallelDownloads not set in /etc/pacman.conf; pacman defaults to 1 (see pacman.conf(5))"
 fi
 
 run pacman -Sy

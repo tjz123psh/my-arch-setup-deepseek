@@ -10,8 +10,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
 source "${SCRIPT_DIR}/00-utils.sh"
 
-MAPPINGS="${PROJECT_DIR}/manifests/config-mappings.tsv"
-CONFIG_SRC="${PROJECT_DIR}/config"
+# P1-3: allow controlled dependency injection (the behavior harness binds
+# MAPPINGS/CONFIG_SRC to a workspace sandbox); production uses the defaults.
+MAPPINGS="${MAPPINGS:-${PROJECT_DIR}/manifests/config-mappings.tsv}"
+CONFIG_SRC="${CONFIG_SRC:-${PROJECT_DIR}/config}"
 BACKUP_DIR="${TARGET_HOME}/.config-backup-my-arch-$(date +%Y%m%d%H%M%S)"
 # Operator decision (2026-08-05): the VM restores the same full configuration
 # as the physical machine (packages minus GPU drivers; config is identical).
@@ -72,12 +74,74 @@ deploy_one() {
 while IFS=$'\t' read -r scope module src tgt mode; do
   [[ -z "${src}" || "${src}" == "#"* ]] && continue
   [[ "${scope}" != "${SCOPE}" ]] && continue
-  # same module selection as packages (P1-2): hardware modules are never
-  # deployed here (04 handles them), machine-role modules follow
-  # MACHINE_TYPE, desktop modules follow DESKTOP_ENV.
-  module_selected "${src}" "${module}" || continue
+  # same module selection as packages (P1-2), but with ctx=config so hardware
+  # config rows (graphics-*/hardware-tools/asus-hardware) deploy on physical
+  # instead of being unconditionally skipped like their package rows are.
+  module_selected "${src}" "${module}" config || continue
   deploy_one "${src}" "${tgt}" "${mode}"
 done < "${MAPPINGS}"
 
 log "Deployed: ${deployed} file(s), skipped: ${skipped}"
+echo "CONFIG_RESULT deployed=${deployed} skipped=${skipped}"
+
+# P1-5: niri VM test config generation. After the normal config.kdl is
+# deployed, regenerate config.kdl.vmtest (keybinds disabled, switch key
+# retained) so the toggle in config.kdl never points at a missing file.
+# Idempotent by construction (pure python transform); verify the output
+# exists and validate BOTH configs with niri when the binary is present.
+if [[ "${DESKTOP_ENV}" == "niri" || "${DESKTOP_ENV}" == "both" ]] \
+   && [[ -f "${TARGET_HOME}/scripts/desktop/niri-vmtest-gen" ]] \
+   && [[ -f "${TARGET_HOME}/.config/niri/config.kdl" ]]; then
+  gen="${TARGET_HOME}/scripts/desktop/niri-vmtest-gen"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- bash -c "HOME='${TARGET_HOME}' '${gen}'" \
+      || warn "niri-vmtest-gen failed; VM test config not generated"
+  else
+    HOME="${TARGET_HOME}" bash "${gen}" || warn "niri-vmtest-gen failed; VM test config not generated"
+  fi
+  if [[ -f "${TARGET_HOME}/.config/niri/config.kdl.vmtest" ]]; then
+    log "niri VM test config present: config.kdl.vmtest"
+  else
+    warn "niri config.kdl.vmtest missing after generation"
+  fi
+  if command -v niri >/dev/null 2>&1; then
+    if niri validate -c "${TARGET_HOME}/.config/niri/config.kdl" >/dev/null 2>&1 \
+       && niri validate -c "${TARGET_HOME}/.config/niri/config.kdl.vmtest" >/dev/null 2>&1; then
+      log "niri validate: normal + vmtest configs both OK"
+    else
+      warn "niri validate failed for normal or vmtest config (see niri validate -c ...)"
+    fi
+  fi
+fi
+
+# P1-6: create ~/.local/bin entry points referenced by configs via
+# $HOME/.local/bin (matches the host: symlinks into ~/scripts). Targets stay
+# inside HOME; an existing regular file is never overwritten.
+if [[ "${DESKTOP_ENV}" != "none" ]]; then
+  local_bin="${TARGET_HOME}/.local/bin"
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- mkdir -p "${local_bin}" 2>/dev/null || true
+  else
+    mkdir -p "${local_bin}"
+  fi
+  while IFS='|' read -r link_name script_rel; do
+    target="${TARGET_HOME}/scripts/${script_rel}"
+    [[ -f "${target}" ]] || { warn "P1-6: ${script_rel} not deployed; skipping ${link_name}"; continue; }
+    link_path="${local_bin}/${link_name}"
+    if [[ -L "${link_path}" ]]; then
+      if [[ "$(readlink "${link_path}")" != "${target}" ]]; then
+        ln -sfn "${target}" "${link_path}" && log "P1-6: refreshed ${link_name} -> ${target}"
+      fi
+    elif [[ -e "${link_path}" ]]; then
+      warn "P1-6: ${link_path} exists as a regular file; not overwriting"
+    else
+      ln -s "${target}" "${link_path}" && log "P1-6: ${link_name} -> ${target}"
+    fi
+  done <<'ENTRIES'
+niri-keys|desktop/niri-keys
+hypr-keys|desktop/hypr-keys
+b23|media/b23
+ENTRIES
+fi
+
 success "Config deployment complete (backup in ${BACKUP_DIR})"

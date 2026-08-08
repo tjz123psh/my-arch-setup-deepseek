@@ -35,8 +35,26 @@ progress_context() {
   [[ -f "${PROJECT_DIR}/manifests/workstation-packages.tsv" ]] && ph="$(sha256sum "${PROJECT_DIR}/manifests/workstation-packages.tsv" | cut -c1-12)"
   [[ -f "${PROJECT_DIR}/manifests/config-mappings.tsv" ]] && mh="$(sha256sum "${PROJECT_DIR}/manifests/config-mappings.tsv" | cut -c1-12)"
   [[ -f "${PROJECT_DIR}/manifests/aur-recipes.tsv" ]] && rh="$(sha256sum "${PROJECT_DIR}/manifests/aur-recipes.tsv" | cut -c1-12)"
-  printf 'desktop=%s machine=%s user=%s commit=%s packages=%s mappings=%s recipes=%s' \
-    "${DESKTOP_ENV:-none}" "${MACHINE_TYPE:-physical}" "${TARGET_USER:-}" "${commit}" "${ph}" "${mh}" "${rh}"
+  # P1-2: bind the profile, installer scripts, shipped config tree, recipes
+  # and the AUR source-cache manifest (when present) as well, so a change in
+  # any of them invalidates the resume context instead of silently resuming
+  # with a different payload.
+  local sh="-" cfh="-" rch="-" cach="-"
+  if compgen -G "${PROJECT_DIR}/scripts/*.sh" >/dev/null 2>&1; then
+    sh="$(find "${PROJECT_DIR}/scripts" -maxdepth 1 -name '*.sh' -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+  fi
+  if [[ -d "${PROJECT_DIR}/config" ]]; then
+    cfh="$(find "${PROJECT_DIR}/config" -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+  fi
+  if compgen -G "${PROJECT_DIR}/third_party/aur/*/PKGBUILD" >/dev/null 2>&1; then
+    rch="$(find "${PROJECT_DIR}/third_party/aur" -maxdepth 2 \( -name PKGBUILD -o -name .SRCINFO \) -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+  fi
+  if [[ -f "${PROJECT_DIR}/.aur-sources/manifest.sha256" ]]; then
+    cach="$(sha256sum "${PROJECT_DIR}/.aur-sources/manifest.sha256" | cut -c1-12)"
+  fi
+  printf 'desktop=%s machine=%s user=%s profile=%s commit=%s packages=%s mappings=%s recipes=%s scripts=%s config=%s aur=%s cache=%s' \
+    "${DESKTOP_ENV:-none}" "${MACHINE_TYPE:-physical}" "${TARGET_USER:-}" "${TEST_PROFILE:-none}" \
+    "${commit}" "${ph}" "${mh}" "${rh}" "${sh}" "${cfh}" "${rch}" "${cach}"
 }
 
 setup_progress() {
@@ -132,14 +150,22 @@ ensure_fzf() {
 # both machine types; desktop modules follow DESKTOP_ENV
 # (niri|hyprland|both|none).
 module_selected() {
-  local pkg="$1" module="$2"
+  local pkg="$1" module="$2" ctx="${3:-package}"
   case "${module}" in
     virtualization-vmware-host)
       [[ "${MACHINE_TYPE}" == "physical" ]] || return 1 ;;
     virtualization-vmware-guest)
       [[ "${MACHINE_TYPE}" == "vm" ]] || return 1 ;;
     graphics-amd|graphics-nvidia|hardware-tools|asus-hardware)
-      return 1 ;;
+      # P1-1: package rows for hardware modules are 04-drivers' job and are
+      # excluded from the general package path on BOTH machine types. Config
+      # rows (ctx=config) are different: hardware configs (e.g.
+      # rog-control-center.cfg) must deploy on physical, only skip on vm.
+      if [[ "${ctx}" == "package" ]]; then
+        return 1
+      fi
+      [[ "${MACHINE_TYPE}" == "physical" ]] || return 1
+      ;;
   esac
   case "${DESKTOP_ENV:-both}" in
     niri)     [[ "${module}" == "wm-hyprland" ]] && return 1 ;;
