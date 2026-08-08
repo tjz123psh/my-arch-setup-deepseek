@@ -61,7 +61,7 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（8 个国内镜像：阿里/中科大/清华/腾讯/华为/网易/兰大/浙大）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 校验 18 项交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止）→ 安装软件包清单（185 安装 = 170 官方/archlinuxcn + 15 AUR；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责） |
+| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（191 安装 = 176 官方/archlinuxcn + 15 AUR；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制，required 失败即中止；VM 跳过） |
 | 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（15 个目标 + vmware-keymaps 依赖先装，共 16 recipe；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |

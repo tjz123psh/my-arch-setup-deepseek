@@ -20,10 +20,15 @@ section "Installing packages (${MACHINE_TYPE})"
 log "Reading package policy from ${POLICY} ..."
 
 # --- verify-only preflight (review H-03) ---
-# policy=verify rows are handoff preconditions (base system, bootloader,
+# policy=verify rows are HARD handoff preconditions (base system, bootloader,
 # kernel, initramfs, filesystem, network) that the operator's manual base
-# install must satisfy. Check them for real instead of silently skipping: a
-# missing precondition means the restore would build on a broken base.
+# install must satisfy and the installer cannot self-heal. Check them for
+# real instead of silently skipping: a missing precondition means the restore
+# would build on a broken base. Tool packages the base install usually has
+# but that 03 can simply install (dosfstools/efibootmgr/exfat-utils/os-prober/
+# wpa_supplicant/zram-generator) are NOT verify rows - they are install rows
+# (verified on 2026-08-08: a clean archinstall baseline lacks them, so
+# requiring them up front would block the restore).
 VERIFY_FAILED=0
 VERIFY_COUNT=0
 while IFS=$'\t' read -r pkg channel _repo _acq _module _restore pol _origin purpose; do

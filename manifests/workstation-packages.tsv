@@ -38,13 +38,13 @@ dms-shell-niri	pacman	extra	pacman	wm-niri	package-only	install	current-explicit
 dnsmasq	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Lightweight, easy to configure DNS forwarder and DHCP server [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 docker	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Pack, ship and run any application as a lightweight container
 docker-compose	pacman	extra	pacman	container-tools	package-only	install	current-explicit	Fast, isolated development environments using Docker
-dosfstools	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	DOS filesystem utilities
+dosfstools	pacman	core	verify-only	base-tools	package-only	install	confirmed-desired	DOS filesystem utilities
 downgrade	pacman	archlinuxcn	pacman	repository-tools	package-only	install	current-explicit	Bash script for downgrading one or more packages to a version in your cache or the A.L.A.
 dsearch-bin	aur	aur	aur-build	desktop-shared	config-backed	install	current-explicit	Dank desktop search application
 edk2-ovmf	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Firmware for Virtual Machines (x86_64, i686 on x86_64) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
-efibootmgr	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Linux user-space application to modify the EFI Boot Manager
+efibootmgr	pacman	core	verify-only	base-tools	package-only	install	confirmed-desired	Linux user-space application to modify the EFI Boot Manager
 evtest	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	Input device event monitor and query tool
-exfat-utils	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Utilities for exFAT file system
+exfat-utils	pacman	extra	verify-only	base-tools	package-only	install	confirmed-desired	Utilities for exFAT file system
 eza	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A modern replacement for ls (community fork of exa)
 fastfetch	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A feature-rich and performance oriented neofetch like system information tool
 fcitx5	pacman	extra	pacman	input-fcitx-rime	config-backed	install	current-explicit	Next generation of fcitx, cross-platform input method framework
@@ -127,7 +127,7 @@ nvidia-settings	pacman	extra	pacman	graphics-nvidia	package-only	install	current
 nvidia-utils	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA drivers utilities
 obsidian-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Obsidian desktop application without vault or profile migration
 opencode-bin	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	OpenCode command-line development agent
-os-prober	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Utility to detect other OSes on a set of drives
+os-prober	pacman	extra	verify-only	base-tools	package-only	install	confirmed-desired	Utility to detect other OSes on a set of drives
 pacman-contrib	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	Contributed scripts and tools for pacman systems
 paru	aur	aur	paru-bootstrap	repository-tools	package-only	install	current-explicit	Feature packed AUR helper
 pipewire	pacman	extra	pacman	audio	package-only	install	current-explicit	Low-latency audio/video router and processor
@@ -196,7 +196,7 @@ wireplumber	pacman	extra	pacman	audio	package-only	install	current-explicit	Sess
 wl-clipboard	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Command-line copy/paste utilities for Wayland
 wl-screenrec-git	pacman	archlinuxcn	pacman	recording	package-only	install	current-explicit	High performance hardware accelerated wlroots screen recorder
 wooz-git	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Wayland screen magnifier utility
-wpa_supplicant	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	A utility providing key negotiation for WPA wireless networks
+wpa_supplicant	pacman	core	verify-only	base-tools	package-only	install	confirmed-desired	A utility providing key negotiation for WPA wireless networks
 wtype	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	xdotool type for wayland
 xclip	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Command line interface to the X11 clipboard
 xdg-desktop-portal	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Desktop integration portals for sandboxed apps
@@ -209,7 +209,7 @@ yazi	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Blazing
 ydotool	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Generic command-line automation tool for Wayland
 yt-dlp	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A youtube-dl fork with additional features and fixes
 zoxide	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	A smarter cd command for your terminal
-zram-generator	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Systemd unit generator for zram devices
+zram-generator	pacman	extra	verify-only	base-tools	package-only	install	confirmed-desired	Systemd unit generator for zram devices
 vmware-workstation	aur	aur	makepkg	virtualization-vmware-host	package-only	install	current-explicit	VMware Workstation Pro host (AUR; vmware-keymaps bootstrapped first by 06-aur)
 open-vm-tools	pacman	extra	pacman	virtualization-vmware-guest	package-only	install	current-explicit	VMware guest tools (vmtoolsd + vmware-vmblock-fuse)
 nomacs	pacman	archlinuxcn	pacman	desktop-apps	config-backed	install	current-explicit	Qt image viewer; PNG default app restored via mimeapps.list
