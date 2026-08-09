@@ -73,12 +73,19 @@ install_recipe() {
   log "Building ${recipe} ..."
   local work
   work="$(mktemp -d "${BUILD_BASE}.XXXXXX")"
+  cp -a "${dir}/." "${work}/"
+
   # makepkg refuses to run as root; in the strap.sh (root) path the build must
-  # run as the target user, with the build dir owned by that user.
+  # run as the target user, with the build dir owned by that user. The chown
+  # MUST come AFTER `cp -a source/. dest`: GNU cp applies the SOURCE
+  # directory's ownership/mode to the DESTINATION directory when the source
+  # ends in `/.`, so a pre-cp chown is silently overwritten and makepkg then
+  # fails with "no write permission to $BUILDDIR" (found 2026-08-10 on the
+  # fresh strap.sh VM install; the non-root ./install.sh path was unaffected
+  # because there the build dir is already owned by the invoking user).
   if [[ "$(id -u)" -eq 0 ]]; then
     chown -R "${TARGET_USER}:${TARGET_USER}" "${work}"
   fi
-  cp -a "${dir}/." "${work}/"
 
   # PKGBUILDs carry real download URLs, so makepkg fetches them normally.
   local build_cmd

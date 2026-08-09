@@ -183,6 +183,19 @@ if grep -q 'refusing to deploy' "$root/scripts/07-config.sh"; then
 else
   fail=$((fail + 1)); echo "  FAIL symlink refusal missing"
 fi
+# 06-aur: the strap.sh (root) path must chown the makepkg build dir AFTER
+# copying the recipe. GNU `cp -a source/. dest` applies the SOURCE dir's
+# ownership/mode to DEST, so a pre-copy chown is overwritten and makepkg dies
+# with "no write permission to $BUILDDIR" (found 2026-08-10 fresh VM install;
+# the non-root path was unaffected). Structural check: in install_recipe the
+# chown line must appear after the cp -a line.
+cp_line=$(grep -n 'cp -a "\${dir}/\."' "$root/scripts/06-aur.sh" | head -1 | cut -d: -f1)
+chown_line=$(grep -n 'chown -R "\${TARGET_USER}' "$root/scripts/06-aur.sh" | head -1 | cut -d: -f1)
+if [[ -n "$cp_line" && -n "$chown_line" && "$chown_line" -gt "$cp_line" ]]; then
+  pass=$((pass + 1)); echo "  ok   06-aur chowns build dir after cp -a (lines $cp_line < $chown_line)"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur chown not after cp -a (cp=$cp_line chown=$chown_line)"
+fi
 # install.sh: -d hyprland (removed pure-Hyprland entry) must exit nonzero
 rc=0
 bash "$root/install.sh" -d hyprland -t vm >/dev/null 2>&1 || rc=$?
