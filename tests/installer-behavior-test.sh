@@ -200,6 +200,42 @@ else
   fail=$((fail + 1)); echo "  FAIL -d bogus not rejected"
 fi
 
+# --- 8. vmware graphics workaround (upstream Hyprland#7658) ---------------
+echo "== vmware graphics workaround =="
+# is_vmware_guest: pure predicate, SYSTEMD_DETECT_VIRT injectable
+is_vm() { # is_vm <detect-virt-result> -> echoes 0/1
+  SYSTEMD_DETECT_VIRT="$1" bash -c '
+    source "$0" >/dev/null 2>&1
+    is_vmware_guest && echo 0 || echo 1
+  ' "$utils"
+}
+[[ "$(is_vm vmware)" == "0" ]]; check "is_vmware_guest true on vmware" $? 0
+[[ "$(is_vm kvm)" == "1" ]]; check "is_vmware_guest false on kvm" $? 0
+[[ "$(is_vm none)" == "1" ]]; check "is_vmware_guest false on bare metal" $? 0
+# apply_vmware_graphics_workaround: writes to the given env file, idempotent
+apply_wa() { # apply_wa <detect-virt-result> <env-file>
+  SYSTEMD_DETECT_VIRT="$1" bash -c '
+    source "$0" >/dev/null 2>&1
+    apply_vmware_graphics_workaround "$1"
+  ' "$utils" "$2"
+}
+wa_tf=$(mktemp); : > "$wa_tf"
+apply_wa vmware "$wa_tf"
+grep -q '^LIBGL_ALWAYS_SOFTWARE=1$' "$wa_tf"; check "vmware: writes LIBGL_ALWAYS_SOFTWARE=1" $? 0
+apply_wa vmware "$wa_tf"
+[[ "$(grep -c '^LIBGL_ALWAYS_SOFTWARE=1$' "$wa_tf")" == "1" ]]; check "vmware: idempotent (single line)" $? 0
+: > "$wa_tf"
+apply_wa kvm "$wa_tf"
+[[ ! -s "$wa_tf" ]]; check "non-vmware: no write to env file" $? 0
+rm -f "$wa_tf"
+# 09-settings: the workaround call site exists and is gated by is_vmware_guest
+if grep -q 'apply_vmware_graphics_workaround' "$root/scripts/09-settings.sh" \
+   && grep -q 'is_vmware_guest' "$root/scripts/09-settings.sh"; then
+  pass=$((pass + 1)); echo "  ok   09-settings applies workaround gated on is_vmware_guest"
+else
+  fail=$((fail + 1)); echo "  FAIL 09-settings workaround gate missing"
+fi
+
 echo
 echo "installer behavior tests: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

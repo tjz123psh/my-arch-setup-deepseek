@@ -505,6 +505,31 @@ module_selected() {
   return 0
 }
 
+# --- VMware guest graphics workaround (upstream Hyprland#7658) ---
+# Hyprland (aquamarine) cannot import client dma-bufs produced by mesa's EGL
+# on the VMware SVGA3D (vmwgfx) driver: every GL client dies with
+# "wl_surface.attach: invalid arguments" (kitty, quickshell/DMS and GTK apps
+# alike; upstream hyprwm/Hyprland#7658, unfixed - vaxerski attributes it to
+# mesa). Forcing software GL makes mesa hand wl_shm buffers to the compositor
+# instead, which imports fine, so terminals and DMS work inside the VM.
+# Applied ONLY when the installer runs inside VMware (matches install.sh's
+# physical-sim-vmware preflight); bare-metal installs keep hardware GL.
+# SYSTEMD_DETECT_VIRT is injectable for tests (same pattern as UWSM_BIN).
+is_vmware_guest() {
+  local virt="${SYSTEMD_DETECT_VIRT:-$(systemd-detect-virt 2>/dev/null || true)}"
+  [[ "${virt}" == "vmware" ]]
+}
+apply_vmware_graphics_workaround() { # apply_vmware_graphics_workaround [env-file]
+  local envf="${1:-/etc/environment}"
+  if ! is_vmware_guest; then
+    return 0
+  fi
+  # idempotent: never duplicate the line if a previous run (or the operator)
+  # already set it.
+  grep -q '^LIBGL_ALWAYS_SOFTWARE=' "${envf}" 2>/dev/null \
+    || printf 'LIBGL_ALWAYS_SOFTWARE=1\n' >> "${envf}"
+}
+
 # --- diagnostics panel (plain text) ---
 sys_dashboard() {
   section "System"

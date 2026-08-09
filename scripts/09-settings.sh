@@ -47,6 +47,27 @@ EOF'
 run systemctl daemon-reload
 success "zram configured (zstd, size=ram)"
 
+# --- VMware guest graphics workaround ---
+# Hyprland cannot import mesa/vmwgfx dma-bufs (upstream Hyprland#7658), so on
+# VMware guests every GL client dies with "wl_surface.attach: invalid
+# arguments". LIBGL_ALWAYS_SOFTWARE=1 routes clients through llvmpipe (wl_shm
+# buffers), which imports fine - terminals, apps and DMS all work. Physical
+# (bare-metal) installs must NOT get this: they keep hardware GL. The guard is
+# the same systemd-detect-virt == vmware check install.sh uses for the
+# physical-sim-vmware preflight.
+if is_vmware_guest; then
+  log "VMware guest detected: forcing software GL (LIBGL_ALWAYS_SOFTWARE=1) for Hyprland client buffer compatibility"
+  apply_vmware_graphics_workaround
+  if grep -q '^LIBGL_ALWAYS_SOFTWARE=1' /etc/environment; then
+    success "LIBGL_ALWAYS_SOFTWARE=1 set in /etc/environment (VMware guest)"
+  else
+    error "failed to write LIBGL_ALWAYS_SOFTWARE=1 to /etc/environment"
+    exit 1
+  fi
+else
+  log "Not a VMware guest; keeping hardware GL (no LIBGL_ALWAYS_SOFTWARE)"
+fi
+
 # --- standard user directories (empty, xdg defaults) ---
 # Operator decision (2026-08-05): only create the default empty dirs that a
 # fresh xdg-user-dirs setup provides; the host's existing files in them are
