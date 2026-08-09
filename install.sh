@@ -88,8 +88,12 @@ parse_args() {
         esac
         shift 2 ;;
       -h|--help) usage; exit 0 ;;
-      --force-refresh) FORCE_REFRESH="1" ;;
-      -y|--assume-yes) ASSUME_YES="true" ;;
+      # flag args take no value: shift exactly once. Without the shift the
+      # while loop re-matches $1 forever (100% CPU spin) - caught by the
+      # fresh-VM install run (2026-08-10) and regression-tested in
+      # installer-behavior-test.sh (parse_args with -y / --force-refresh).
+      --force-refresh) FORCE_REFRESH="1"; shift ;;
+      -y|--assume-yes) ASSUME_YES="true"; shift ;;
       *) die "unknown argument: $1 (see --help)" ;;
     esac
   done

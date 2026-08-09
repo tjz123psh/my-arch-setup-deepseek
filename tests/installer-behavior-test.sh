@@ -199,6 +199,20 @@ if [[ "$rc" -ne 0 ]]; then
 else
   fail=$((fail + 1)); echo "  FAIL -d bogus not rejected"
 fi
+# install.sh: flag args (-y / --force-refresh) must be consumed by parse_args.
+# Regression: before 2026-08-10 these cases lacked `shift`, so $1 never
+# advanced and the while loop spun at 100% CPU (fresh-VM install hang).
+# --help exits during parse_args, so a working parse returns 0 quickly;
+# a looping parse hits the timeout and returns 124.
+for flag in -y --force-refresh; do
+  rc=0
+  timeout 10 bash "$root/install.sh" -t vm -d both "$flag" --help >/dev/null 2>&1 || rc=$?
+  if [[ "$rc" -eq 0 ]]; then
+    pass=$((pass + 1)); echo "  ok   parse_args consumes $flag (rc=0, no hang)"
+  else
+    fail=$((fail + 1)); echo "  FAIL parse_args loops on $flag (rc=$rc)"
+  fi
+done
 
 # --- 8. vmware graphics workaround (upstream Hyprland#7658) ---------------
 echo "== vmware graphics workaround =="
