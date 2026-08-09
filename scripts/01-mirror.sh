@@ -18,14 +18,14 @@ section "Mirror optimization"
 
 # Candidate China mirrors, in preference order (pacman tries them in order
 # and fails over to the next on error, so listing several is pure resilience).
-# aliyun first (usually fastest), then USTC and Tsinghua as fallbacks, then
-# more verified CN mirrors (tencent/huaweicloud/163/lzu/zju, each confirmed
+# tsinghua (tuna) first - operator preference (2026-08-10) - then USTC/aliyun
+# and more verified CN mirrors (tencent/huaweicloud/163/lzu/zju, each confirmed
 # to serve core.db; sjtu redirects to ftp.sjtu.edu.cn and cqu is dead, so
 # they are intentionally not listed).
 MIRROR_BASE=(
-  "https://mirrors.aliyun.com/archlinux"
-  "https://mirrors.ustc.edu.cn/archlinux"
   "https://mirrors.tuna.tsinghua.edu.cn/archlinux"
+  "https://mirrors.ustc.edu.cn/archlinux"
+  "https://mirrors.aliyun.com/archlinux"
   "https://mirrors.cloud.tencent.com/archlinux"
   "https://mirrors.huaweicloud.com/archlinux"
   "https://mirrors.163.com/archlinux"
@@ -33,22 +33,31 @@ MIRROR_BASE=(
   "https://mirrors.zju.edu.cn/archlinux"
 )
 
-ALIYUN="${MIRROR_BASE[0]}/core/os/x86_64/core.db"
+# Probe the top mirrors until one answers (max 3). pacman fails over
+# per-download in list order, so the CN list stays useful as long as ANY
+# listed mirror is reachable - a down leader must not discard the whole CN
+# preference (a single-mirror probe did exactly that before 2026-08-10).
+probe_ok=0
+for base in "${MIRROR_BASE[@]:0:3}"; do
+  if curl -fsS --connect-timeout 4 --max-time 8 -o /dev/null "${base}/core/os/x86_64/core.db" 2>/dev/null; then
+    probe_ok=1
+    break
+  fi
+done
 
-if [[ "${CN_MIRROR:-0}" == "1" ]] || \
-   curl -fsS --connect-timeout 4 --max-time 8 -o /dev/null "${ALIYUN}" 2>/dev/null; then
-  log "Aliyun mirror reachable; writing China mirror list (8 mirrors)."
+if [[ "${CN_MIRROR:-0}" == "1" ]] || (( probe_ok == 1 )); then
+  log "CN mirror reachable (first: ${MIRROR_BASE[0]}); writing China mirror list (${#MIRROR_BASE[@]} mirrors)."
   run bash -c 'printf "%s\n" \
-    "Server = https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch" \
-    "Server = https://mirrors.ustc.edu.cn/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.tuna.tsinghua.edu.cn/archlinux/\$repo/os/\$arch" \
+    "Server = https://mirrors.ustc.edu.cn/archlinux/\$repo/os/\$arch" \
+    "Server = https://mirrors.aliyun.com/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.cloud.tencent.com/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.huaweicloud.com/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.163.com/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.lzu.edu.cn/archlinux/\$repo/os/\$arch" \
     "Server = https://mirrors.zju.edu.cn/archlinux/\$repo/os/\$arch" \
     > /etc/pacman.d/mirrorlist'
-  success "Switched to China mirror list (8 mirrors)"
+  success "Switched to China mirror list (${#MIRROR_BASE[@]} mirrors)"
 else
   # Step 2 (D-05): this script performs NO pacman install/sync - 02-system
   # owns the single official sync/upgrade. If reflector is already installed
