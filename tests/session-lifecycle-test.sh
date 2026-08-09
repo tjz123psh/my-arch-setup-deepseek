@@ -40,7 +40,12 @@ services="$root/scripts/08-services.sh"
 # all temp state lives INSIDE the workspace (Codex R3/R4.1: no /tmp)
 mkdir -p "$root/download-mode-lab/fixtures/tmp"
 sandbox="$(mktemp -d "$root/download-mode-lab/fixtures/tmp/session-test.XXXXXX")"
-trap 'rm -rf "$sandbox"' EXIT
+# live fake-backend pids from suite M (comm=dms sh processes); the EXIT trap
+# kills them by EXACT PID only (never by process name, which could hit the
+# real host dms) and waits to reap them, so no /proc comm=dms test process
+# outlives the suite even if a test aborts mid-M.
+live_pids=""
+trap 'for p in $live_pids; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done; for p in $live_pids; do wait "$p" 2>/dev/null || true; done; rm -rf "$sandbox"' EXIT
 
 # real host greeter memory hash captured BEFORE any run; asserted unchanged
 # at the end (R4.3: no failure path may touch /var/cache/dms-greeter)
@@ -1841,6 +1846,675 @@ else
   unavail_note "systemd-analyze or dms.service missing (verify skipped)"
 fi
 
+echo "== M. Hyprland DMS per-WAYLAND_DISPLAY owner (Codex R4.9; weak once-per-first-frame contract) =="
+# R4.9: three-state owner model + ordering + honest weak contract.
+#   - hyprland.start fires ONCE at the first frame; reload does NOT re-trigger
+#     the helper, so "repeated trigger" guarantees are only about overlapping
+#     executions, not arbitrary manual re-calls (Plan 1).
+#   - a dms on ANOTHER display is NOT current-Hyprland readiness; systemctl's
+#     user-global rc=0 is NOT a current-display owner signal.
+#   - the helper (config/home/.local/bin/dms-ensure-display) classifies the
+#     CURRENT display via DMS 1.5.3 runtime markers
+#     ($XDG_RUNTIME_DIR/danklinux-<pid>.session/.pid/.sock):
+#       plausible    = matching .session + owner alive + comm=dms (enough to
+#                      NOT start a second owner; NOT bar/IPC ready)
+#       absent/stale = no matching marker, or owner dead / clearly not dms
+#                      (only this class may enter the direct fallback)
+#       unverifiable = matching marker exists but unreadable / owner state
+#                      unqueryable -> NEVER blindly start a second owner
+#   - ordering: env/runtime check -> per-display flock (overlap guard) ->
+#     PRE-check (plausible owner -> return WITHOUT systemctl) -> import ->
+#     systemctl start -> POST-check -> fallback only when absent/stale.
+autolua="$root/config/home/.config/hypr/conf/autostart.lua"
+keylua="$root/config/home/.config/hypr/conf/keybinds.lua"
+helper="$root/config/home/.local/bin/dms-ensure-display"
+mappings="$root/manifests/config-mappings.tsv"
+FAKE_TAG="dms-fake-r49"
+# pgrep pattern anchored to the fakes' own `sh -c ...` cmdline (with a
+# bracket trick): never matches the invoking shell/wrapper cmdline, which
+# may legally contain the tag text (e.g. in report commands).
+FAKE_PAT='^sh -c .*dms-fake-r4[9]'
+
+# suite-start leak guard: no fake processes from a previous (possibly
+# crashed) run may exist. Precise cmdline tag, never a name-based check.
+if pgrep -f "$FAKE_PAT" >/dev/null 2>&1; then
+  check "M: no leftover $FAKE_TAG processes at suite start" 1 0
+else
+  check "M: no leftover $FAKE_TAG processes at suite start" 0 0
+fi
+
+# --- M0: static structure (helper contract + Niri isolation + rejected forms) ---
+hl_on="$(grep -n 'hl.on("hyprland.start"' "$autolua" | head -1 | cut -d: -f1 || true)"
+hl_end="$(awk 'NR>'"${hl_on:-0}"' && /^end\)/ {print NR; exit}' "$autolua" 2>/dev/null || true)"
+dms_cmd_ln="$(grep -n 'hl.exec_cmd(.*dms-ensure-display' "$autolua" | head -1 || true)"
+dms_ln="${dms_cmd_ln%%:*}"
+if [[ -n "$hl_on" && -n "$hl_end" && -n "$dms_ln" && "$dms_ln" -gt "$hl_on" && "$dms_ln" -lt "$hl_end" ]]; then
+  check "M: helper call lives inside hl.on(hyprland.start) block" 0 0
+else
+  check "M: helper call lives inside hl.on(hyprland.start) block" 1 0
+fi
+n_helper_cmds="$(grep -c 'hl.exec_cmd(.*dms-ensure-display' "$autolua" || true)"
+if [[ "$n_helper_cmds" -eq 1 ]]; then
+  check "M: exactly one exec_cmd calls the dms helper (single sequential chain)" 0 0
+else
+  check "M: exactly one exec_cmd calls the dms helper (single sequential chain)" 1 0
+fi
+# the old inline chain (DMS-specific pgrep guard / systemctl / dms run -d)
+# must be GONE from autostart.lua - all DMS startup logic lives in the
+# helper now (generic pgrep guards for udiskie/fcitx5/etc. remain legal)
+if grep -q 'pgrep -x dms\|dms run -d\|systemctl --user start dms' "$autolua"; then
+  check "M: autostart.lua keeps no inline dms chain (logic in helper)" 1 0
+else
+  check "M: autostart.lua keeps no inline dms chain (logic in helper)" 0 0
+fi
+if [[ -f "$helper" && -x "$helper" ]]; then
+  check "M: dms-ensure-display helper present + executable" 0 0
+else
+  check "M: dms-ensure-display helper present + executable" 1 0
+fi
+if [[ -f "$helper" ]] && [[ "$(head -1 "$helper")" == "#!/bin/sh" ]]; then
+  check "M: helper is POSIX /bin/sh" 0 0
+else
+  check "M: helper is POSIX /bin/sh" 1 0
+fi
+row="$(grep -F "config/home/.local/bin/dms-ensure-display" "$mappings" | head -1 || true)"
+if [[ -n "$row" ]]; then
+  check "M: helper mapped in config-mappings.tsv" 0 0
+  mod="$(printf '%s\n' "$row" | awk -F'\t' '{print $2}')"
+  mode="$(printf '%s\n' "$row" | awk -F'\t' '{print $5}')"
+  tgt="$(printf '%s\n' "$row" | awk -F'\t' '{print $4}')"
+  if [[ "$mod" == "wm-hyprland" && "$mode" == "755" && "$tgt" == ".local/bin/dms-ensure-display" ]]; then
+    check "M: mapping module=wm-hyprland mode=755 target=.local/bin" 0 0
+  else
+    check "M: mapping module=wm-hyprland mode=755 target=.local/bin" 1 0
+  fi
+else
+  check "M: helper mapped in config-mappings.tsv" 1 0
+  check "M: mapping module=wm-hyprland mode=755 target=.local/bin" 1 0
+fi
+for v in WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE; do
+  if [[ -f "$helper" ]] && grep -q "dbus-update-activation-environment" "$helper" && grep -q "$v" "$helper"; then
+    check "M: helper imports env var $v" 0 0
+  else
+    check "M: helper imports env var $v" 1 0
+  fi
+done
+if [[ -f "$helper" ]] && grep -q 'systemctl --user start dms.service' "$helper"; then
+  check "M: helper requests systemd dms.service (primary owner)" 0 0
+else
+  check "M: helper requests systemd dms.service (primary owner)" 1 0
+fi
+n_dmsd="$(grep -c 'dms run -d' "$helper" 2>/dev/null || true)"
+if [[ "$n_dmsd" -eq 1 ]]; then
+  check "M: helper contains exactly one guarded dms run -d fallback" 0 0
+else
+  check "M: helper contains exactly one guarded dms run -d fallback" 1 0
+fi
+if [[ -f "$helper" ]] && ! grep -q 'pgrep' "$helper"; then
+  check "M: helper has no pgrep (global dms check removed)" 0 0
+else
+  check "M: helper has no pgrep (global dms check removed)" 1 0
+fi
+if [[ -f "$helper" ]] && ! grep -q '/environ' "$helper"; then
+  check "M: helper never reads /proc/<pid>/environ (privacy)" 0 0
+else
+  check "M: helper never reads /proc/<pid>/environ (privacy)" 1 0
+fi
+if [[ -f "$helper" ]] && ! grep -qE 'sleep [0-9]+|while true|HYPR_WATCH_TIMEOUT|43200' "$helper"; then
+  check "M: no polling/sleep/watcher in helper" 0 0
+else
+  check "M: no polling/sleep/watcher in helper" 1 0
+fi
+if [[ -f "$helper" ]] && sh -n "$helper" 2>/dev/null; then
+  check "M: helper passes sh -n syntax check" 0 0
+else
+  check "M: helper passes sh -n syntax check" 1 0
+fi
+# R4.9: three-state model present in the helper source
+if [[ -f "$helper" ]] && grep -q 'plausible' "$helper" && grep -q 'absent' "$helper" && grep -q 'unverifiable' "$helper"; then
+  check "M: helper implements plausible/absent/unverifiable three states" 0 0
+else
+  check "M: helper implements plausible/absent/unverifiable three states" 1 0
+fi
+# R4.9: the helper must not CLAIM bar/IPC readiness ("healthy" removed)
+if [[ -f "$helper" ]] && ! grep -q 'healthy' "$helper"; then
+  check "M: helper never claims healthy/ready (plausible owner only)" 0 0
+else
+  check "M: helper never claims healthy/ready (plausible owner only)" 1 0
+fi
+# R4.9 ordering: PRE-check (plausible owner -> systemd not requested) must
+# come BEFORE the dbus import in the helper source
+pre_ln="$(grep -n 'systemd not requested' "$helper" | head -1 | cut -d: -f1 || true)"
+dbus_ln_h="$(grep -n 'dbus-update-activation-environment' "$helper" | head -1 | cut -d: -f1 || true)"
+if [[ -n "$pre_ln" && -n "$dbus_ln_h" && "$pre_ln" -lt "$dbus_ln_h" ]]; then
+  check "M: helper pre-check precedes dbus import (no systemctl when owner present)" 0 0
+else
+  check "M: helper pre-check precedes dbus import (no systemctl when owner present)" 1 0
+fi
+# R4.10: the PRE=unverifiable short-circuit (rc=4, no systemd) must also
+# precede the dbus import, and must be distinguishable from post-systemd.
+preu_ln="$(grep -n 'at PRE-check' "$helper" | head -1 | cut -d: -f1 || true)"
+postu_ln="$(grep -n 'after systemd request' "$helper" | head -1 | cut -d: -f1 || true)"
+if [[ -n "$preu_ln" && -n "$dbus_ln_h" && "$preu_ln" -lt "$dbus_ln_h" ]]; then
+  check "M: helper PRE-unverifiable short-circuit precedes dbus import" 0 0
+else
+  check "M: helper PRE-unverifiable short-circuit precedes dbus import" 1 0
+fi
+if [[ -n "$preu_ln" && -n "$postu_ln" && "$preu_ln" -lt "$postu_ln" ]]; then
+  check "M: PRE-unverifiable distinct from post-systemd unverifiable" 0 0
+else
+  check "M: PRE-unverifiable distinct from post-systemd unverifiable" 1 0
+fi
+if grep -q 'dms run -d\|systemctl --user start dms' "$root/config/home/.config/niri/config.kdl" "$root/config/home/.config/niri/dms/"*.kdl 2>/dev/null; then
+  check "M: no dms daemon/direct start in Niri config" 1 0
+else
+  check "M: no dms daemon/direct start in Niri config" 0 0
+fi
+n_all_dmsd="$(grep -rc 'dms run -d' "$root/config/home" 2>/dev/null | awk -F: '{s+=$2} END{print s+0}' || true)"
+if [[ "$n_all_dmsd" -eq 1 ]]; then
+  check "M: dms run -d appears exactly once in config/home" 0 0
+else
+  check "M: dms run -d appears exactly once in config/home" 1 0
+fi
+
+# --- M1: per-display state machine with fake systemctl/dbus/dms ---
+# All fakes, runtime markers, logs and PID files live inside the workspace
+# sandbox; tests run the PRODUCTION helper with a fake PATH + a fake
+# XDG_RUNTIME_DIR, so the real host DMS is never touched. Fake contracts:
+#   dbus-update-activation-environment: rc from FAKE_DBUS_RC (default 0)
+#   systemctl: rc from FAKE_SYSTEMCTL_RC; on rc=0 with FAKE_SYSTEMCTL_LIVE_PID
+#              set, writes a current-display marker set (emulating systemd
+#              having started dms for this display)
+#   dms:       rc from FAKE_DMS_RC; `run -d` writes a current-display marker
+#              set synchronously (FAKE_DMS_LIVE_PID) UNLESS FAKE_DMS_NO_MARKER
+#              is set (emulating a daemon child whose markers are not yet
+#              visible -> the documented weak-contract window)
+mbin="$sandbox/mbin-dms"
+mkdir -p "$mbin"
+cat > "$mbin/dbus-update-activation-environment" <<'EOF'
+#!/bin/sh
+echo "dbus-update-activation-environment $*" >> "${DMS_LOG:?}"
+exit "${FAKE_DBUS_RC:-0}"
+EOF
+cat > "$mbin/systemctl" <<'EOF'
+#!/bin/sh
+if [ -n "${FAKE_SYSTEMCTL_RC:-}" ] && [ "${FAKE_SYSTEMCTL_RC:-0}" != "0" ]; then
+  echo "systemctl $* rc=FAIL($FAKE_SYSTEMCTL_RC)" >> "${DMS_LOG:?}"
+  exit "$FAKE_SYSTEMCTL_RC"
+fi
+echo "systemctl $* rc=OK" >> "${DMS_LOG:?}"
+if [ -n "${FAKE_SYSTEMCTL_LIVE_PID:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+  printf '%s' "$WAYLAND_DISPLAY" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_SYSTEMCTL_LIVE_PID.session"
+  printf '%s' "$FAKE_SYSTEMCTL_LIVE_PID" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_SYSTEMCTL_LIVE_PID.pid"
+  : > "$XDG_RUNTIME_DIR/danklinux-$FAKE_SYSTEMCTL_LIVE_PID.sock"
+fi
+exit 0
+EOF
+cat > "$mbin/dms" <<'EOF'
+#!/bin/sh
+echo "dms $*" >> "${DMS_LOG:?}"
+if [ -n "${FAKE_DMS_RC:-}" ] && [ "$FAKE_DMS_RC" != "0" ]; then
+  exit "$FAKE_DMS_RC"
+fi
+case " $* " in
+  *" run -d "*)
+    if [ -z "${FAKE_DMS_NO_MARKER:-}" ] && [ -n "${FAKE_DMS_LIVE_PID:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+      printf '%s' "$WAYLAND_DISPLAY" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_DMS_LIVE_PID.session"
+      printf '%s' "$FAKE_DMS_LIVE_PID" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_DMS_LIVE_PID.pid"
+      : > "$XDG_RUNTIME_DIR/danklinux-$FAKE_DMS_LIVE_PID.sock"
+    fi
+    ;;
+esac
+exit 0
+EOF
+# fake cat: passes through to the real cat EXCEPT for the single path named
+# by FAKE_CAT_FAIL (simulates a transient /proc/<owner>/comm read failure).
+cat > "$mbin/cat" <<'EOF'
+#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = "${FAKE_CAT_FAIL:-/nonexistent-fake-cat}" ]; then
+    echo "cat: fake failure on $a" >&2
+    exit 1
+  fi
+done
+exec /usr/bin/cat "$@"
+EOF
+# fake sed: passes through to the real sed EXCEPT for the single path named
+# by FAKE_SED_FAIL (simulates a transient /proc/<owner>/stat read failure).
+cat > "$mbin/sed" <<'EOF'
+#!/bin/sh
+for a in "$@"; do
+  if [ "$a" = "${FAKE_SED_FAIL:-/nonexistent-fake-sed}" ]; then
+    echo "sed: fake failure on $a" >&2
+    exit 1
+  fi
+done
+exec /usr/bin/sed "$@"
+EOF
+chmod +x "$mbin"/*
+rt="$sandbox/rt-dms"
+rm -rf "$rt"; mkdir -p "$rt"
+# live* variables are explicitly initialized (and later assigned in the
+# PARENT scope by start_live_dms via printf -v) so shellcheck sees them as
+# assigned - no file-level SC2154 suppression needed.
+liveC1a="" liveC1b="" liveC2="" liveC3="" liveC4=""
+liveD1="" liveD2="" liveB1="" liveB2="" liveE3="" liveE4=""
+# start_live_dms <varname> - starts a live process whose comm is exactly
+# "dms" (no newline) and sets <varname> in the PARENT scope (no command
+# substitution: live_pids must be registered in the parent so the EXIT trap
+# and cleanup see it). Bounded comm init; FAIL/abort if the contract cannot
+# be met - never return a pid that does not satisfy it.
+start_live_dms() {
+  local varname="$1" pid i=0
+  sh -c 'printf "dms" >/proc/self/comm; sleep 300; :' "$FAKE_TAG" >/dev/null 2>&1 &
+  pid=$!
+  live_pids="$live_pids $pid"
+  while [ $i -lt 100 ]; do
+    [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = "dms" ] && break
+    i=$((i + 1))
+    sleep 0.01
+  done
+  if [ "$(cat "/proc/$pid/comm" 2>/dev/null)" != "dms" ]; then
+    echo "FATAL: start_live_dms could not initialize comm=dms for pid $pid" >&2
+    exit 1
+  fi
+  printf -v "$varname" '%s' "$pid"
+}
+mkmarker() { # mkmarker <owner> <display> [pid-content]
+  local x="$1" d="$2" pc="${3:-}"
+  printf '%s' "$d" > "$rt/danklinux-$x.session"
+  if [ -n "$pc" ]; then printf '%s' "$pc" > "$rt/danklinux-$x.pid"; fi
+  : > "$rt/danklinux-$x.sock"
+}
+count_display_markers() { # count_display_markers <display> ; echo count
+  grep -l "^$1" "$rt"/danklinux-*.session 2>/dev/null | wc -l
+}
+count_marker_files() { # count_marker_files ; echo count of danklinux-*.session files
+  ls "$rt"/danklinux-*.session 2>/dev/null | wc -l
+}
+run_chain() { # run_chain <logfile> <errfile> [env overrides...]
+  local log="$1" errf="$2"; shift 2
+  : > "$log"; : > "$errf"
+  local rc=0
+  # WAYLAND_DISPLAY is FORCED to wayland-new (never inherited): the host shell
+  # may carry a real WAYLAND_DISPLAY which must not leak into the fake chain.
+  env PATH="$mbin:$PATH" DMS_LOG="$log" WAYLAND_DISPLAY="wayland-new" \
+    XDG_RUNTIME_DIR="$rt" "$@" "$helper" >>"$errf" 2>&1 || rc=$?
+  printf '%s' "$rc" > "$log.rc"
+}
+cleanup_fakes() { # kill + wait every registered fake pid (exact PID list only)
+  local p
+  for p in $live_pids; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
+  for p in $live_pids; do wait "$p" 2>/dev/null || true; done
+}
+
+# --- C1: existing direct owner on the CURRENT display -> systemctl NOT
+# called (fake systemctl would create a SECOND current-display marker set).
+start_live_dms liveC1a
+start_live_dms liveC1b
+rm -rf "${rt:?}"/*
+mkmarker "$liveC1a" wayland-new "$liveC1a"
+run_chain "$sandbox/c1.log" "$sandbox/c1.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveC1b" FAKE_DMS_LIVE_PID="$liveC1b"
+rc="$(cat "$sandbox/c1.log.rc")"
+check "M-C1: existing owner -> rc 0" "$rc" 0
+if grep -q 'systemctl' "$sandbox/c1.log"; then
+  check "M-C1: systemctl NOT called when a current-display owner exists" 1 0
+else
+  check "M-C1: systemctl NOT called when a current-display owner exists" 0 0
+fi
+if grep -q 'dms run -d' "$sandbox/c1.log"; then
+  check "M-C1: no fallback when a current-display owner exists" 1 0
+else
+  check "M-C1: no fallback when a current-display owner exists" 0 0
+fi
+if [[ "$(count_display_markers wayland-new)" -eq 1 ]]; then
+  check "M-C1: exactly one current-display marker set (no second owner)" 0 0
+else
+  check "M-C1: exactly one current-display marker set (no second owner)" 1 0
+fi
+
+# --- C2: only ANOTHER display has a healthy owner + systemctl fails ->
+# current display still gets its fallback, exactly once.
+start_live_dms liveC2
+rm -rf "${rt:?}"/*
+mkmarker "$liveC2" wayland-old "$liveC2"
+run_chain "$sandbox/c2.log" "$sandbox/c2.err" FAKE_SYSTEMCTL_RC=1
+assert_grep "M-C2: systemctl failure recorded" 'systemctl --user start dms.service rc=FAIL' "$sandbox/c2.log"
+n="$(grep -c 'dms run -d' "$sandbox/c2.log" || true)"
+if [[ "$n" -eq 1 ]]; then
+  check "M-C2: other-display owner does NOT suppress current-display fallback" 0 0
+else
+  check "M-C2: other-display owner does NOT suppress current-display fallback" 1 0
+fi
+
+# --- C3: systemctl rc=0 but serves ONLY another display -> current display
+# still gets its own fallback request (user-global success is not readiness).
+start_live_dms liveC3
+rm -rf "${rt:?}"/*
+mkmarker "$liveC3" wayland-old "$liveC3"
+run_chain "$sandbox/c3.log" "$sandbox/c3.err" FAKE_SYSTEMCTL_RC=0
+assert_grep "M-C3: systemctl user-global success recorded" 'systemctl --user start dms.service rc=OK' "$sandbox/c3.log"
+n="$(grep -c 'dms run -d' "$sandbox/c3.log" || true)"
+if [[ "$n" -eq 1 ]]; then
+  check "M-C3: current display still gets its own owner despite systemctl rc=0" 0 0
+else
+  check "M-C3: current display still gets its own owner despite systemctl rc=0" 1 0
+fi
+
+# --- C4: systemctl rc=0 AND systemd actually provides the current-display
+# owner (fake writes the marker) -> no direct fallback.
+start_live_dms liveC4
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/c4.log" "$sandbox/c4.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveC4"
+assert_grep "M-C4: systemctl start invoked (primary owner)" 'systemctl --user start dms.service rc=OK' "$sandbox/c4.log"
+if grep -q 'dms run -d' "$sandbox/c4.log"; then
+  check "M-C4: no fallback when systemd provided the current-display owner" 1 0
+else
+  check "M-C4: no fallback when systemd provided the current-display owner" 0 0
+fi
+
+# --- D1: plausible owner with PARTIAL companion state (.pid missing) is
+# still plausible - never misjudged as absent -> no fallback, no systemctl.
+start_live_dms liveD1
+rm -rf "${rt:?}"/*
+mkmarker "$liveD1" wayland-new            # .session + .sock only, no .pid
+run_chain "$sandbox/d1.log" "$sandbox/d1.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveD1"
+if grep -q 'dms run -d' "$sandbox/d1.log"; then
+  check "M-D1: live owner with partial state is NOT treated as absent" 1 0
+else
+  check "M-D1: live owner with partial state is NOT treated as absent" 0 0
+fi
+if grep -q 'systemctl' "$sandbox/d1.log"; then
+  check "M-D1: partial-state live owner -> systemctl not requested" 1 0
+else
+  check "M-D1: partial-state live owner -> systemctl not requested" 0 0
+fi
+
+# --- D2: STALE markers (dead owner / pid reuse with comm != dms) ARE absent
+# -> fallback allowed.
+rm -rf "${rt:?}"/*
+mkmarker 4444 wayland-new 999999          # owner pid dead (stale marker)
+sleep 300 & liveD2=$!
+live_pids="$live_pids $liveD2"
+mkmarker "$liveD2" wayland-new "$liveD2"  # owner alive but comm="sleep" (pid reuse)
+run_chain "$sandbox/d2.log" "$sandbox/d2.err" FAKE_SYSTEMCTL_RC=1
+n="$(grep -c 'dms run -d' "$sandbox/d2.log" || true)"
+if [[ "$n" -eq 1 ]]; then
+  check "M-D2: stale/dead/pid-reuse markers are absent (fallback ran)" 0 0
+else
+  check "M-D2: stale/dead/pid-reuse markers are absent (fallback ran)" 1 0
+fi
+
+# --- D3: UNVERIFIABLE state at PRE-check -> rc=4, NO dbus/systemctl/dms
+# calls, marker count unchanged. The fake systemctl WOULD create a second
+# current-display marker if called, so any wrongful call is caught (not
+# masked by FAKE_SYSTEMCTL_RC).
+# (a) unreadable matching marker file.
+rm -rf "${rt:?}"/*
+printf '%s' "wayland-new" > "$rt/danklinux-999998.session"
+chmod 000 "$rt/danklinux-999998.session"
+n_before="$(count_marker_files)"
+run_chain "$sandbox/d3a.log" "$sandbox/d3a.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/d3a.log.rc")"
+check "M-D3a: unreadable marker -> rc=4 (unverifiable)" "$rc" 4
+if grep -q 'dbus-update-activation-environment' "$sandbox/d3a.log"; then
+  check "M-D3a: unverifiable -> dbus NOT called" 1 0
+else
+  check "M-D3a: unverifiable -> dbus NOT called" 0 0
+fi
+if grep -q 'systemctl' "$sandbox/d3a.log"; then
+  check "M-D3a: unverifiable -> systemctl NOT called" 1 0
+else
+  check "M-D3a: unverifiable -> systemctl NOT called" 0 0
+fi
+if grep -q 'dms run -d' "$sandbox/d3a.log"; then
+  check "M-D3a: unverifiable state -> no blind fallback" 1 0
+else
+  check "M-D3a: unverifiable state -> no blind fallback" 0 0
+fi
+n_after="$(count_marker_files)"
+check "M-D3a: unverifiable -> no second marker created" "$n_after" "$n_before"
+# (b) non-numeric matching owner pid.
+rm -rf "${rt:?}"/*
+printf '%s' "wayland-new" > "$rt/danklinux-abc.session"
+n_before="$(count_marker_files)"
+run_chain "$sandbox/d3b.log" "$sandbox/d3b.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/d3b.log.rc")"
+check "M-D3b: non-numeric owner -> rc=4 (unverifiable)" "$rc" 4
+if grep -q 'dbus-update-activation-environment\|systemctl\|dms run -d' "$sandbox/d3b.log"; then
+  check "M-D3b: unqueryable owner -> no dbus/systemctl/dms calls" 1 0
+else
+  check "M-D3b: unqueryable owner -> no dbus/systemctl/dms calls" 0 0
+fi
+n_after="$(count_marker_files)"
+check "M-D3b: unverifiable -> no second marker created" "$n_after" "$n_before"
+
+# --- E1: PRE=unverifiable must short-circuit BEFORE dbus/systemctl. An
+# unreadable matching current-display marker + a fake systemctl that would
+# create a second owner: the helper must exit rc=4 with ZERO calls and keep
+# exactly one marker. The log must say PRE-check unverifiable, not post-systemd.
+rm -rf "${rt:?}"/*
+printf '%s' "wayland-new" > "$rt/danklinux-999997.session"
+chmod 000 "$rt/danklinux-999997.session"
+n_before="$(count_marker_files)"
+run_chain "$sandbox/e1.log" "$sandbox/e1.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/e1.log.rc")"
+check "M-E1: PRE-unverifiable -> rc=4" "$rc" 4
+if grep -q 'dbus-update-activation-environment\|systemctl\|dms run -d' "$sandbox/e1.log"; then
+  check "M-E1: PRE-unverifiable -> no dbus/systemctl/dms calls" 1 0
+else
+  check "M-E1: PRE-unverifiable -> no dbus/systemctl/dms calls" 0 0
+fi
+n_after="$(count_marker_files)"
+check "M-E1: PRE-unverifiable -> marker count unchanged" "$n_after" "$n_before"
+if grep -q 'PRE-check' "$sandbox/e1.err" && ! grep -q 'post systemd' "$sandbox/e1.err"; then
+  check "M-E1: log names PRE-check (not post-systemd)" 0 0
+else
+  check "M-E1: log names PRE-check (not post-systemd)" 1 0
+fi
+
+# --- E2: non-numeric matching owner is PRE=unverifiable too.
+rm -rf "${rt:?}"/*
+printf '%s' "wayland-new" > "$rt/danklinux-abc2.session"
+n_before="$(count_marker_files)"
+run_chain "$sandbox/e2.log" "$sandbox/e2.err" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/e2.log.rc")"
+check "M-E2: non-numeric owner -> PRE rc=4" "$rc" 4
+if grep -q 'dbus-update-activation-environment\|systemctl\|dms run -d' "$sandbox/e2.log"; then
+  check "M-E2: non-numeric owner -> no dbus/systemctl/dms calls" 1 0
+else
+  check "M-E2: non-numeric owner -> no dbus/systemctl/dms calls" 0 0
+fi
+n_after="$(count_marker_files)"
+check "M-E2: non-numeric owner -> marker count unchanged" "$n_after" "$n_before"
+
+# --- E3: /proc/<owner>/comm query FAILURE (fake cat fails only on that
+# path) -> PRE=unverifiable, rc=4, no calls, no second marker.
+start_live_dms liveE3
+rm -rf "${rt:?}"/*
+mkmarker "$liveE3" wayland-new "$liveE3"
+n_before="$(count_marker_files)"
+run_chain "$sandbox/e3.log" "$sandbox/e3.err" FAKE_CAT_FAIL="/proc/$liveE3/comm" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/e3.log.rc")"
+check "M-E3: comm query failure -> rc=4" "$rc" 4
+if grep -q 'dbus-update-activation-environment\|systemctl\|dms run -d' "$sandbox/e3.log"; then
+  check "M-E3: comm query failure -> no dbus/systemctl/dms calls" 1 0
+else
+  check "M-E3: comm query failure -> no dbus/systemctl/dms calls" 0 0
+fi
+n_after="$(count_marker_files)"
+check "M-E3: comm query failure -> no second marker" "$n_after" "$n_before"
+
+# --- E4: /proc/<owner>/stat query FAILURE (fake sed fails only on that
+# path) -> PRE=unverifiable, rc=4, no calls.
+start_live_dms liveE4
+rm -rf "${rt:?}"/*
+mkmarker "$liveE4" wayland-new "$liveE4"
+run_chain "$sandbox/e4.log" "$sandbox/e4.err" FAKE_SED_FAIL="/proc/$liveE4/stat" FAKE_SYSTEMCTL_RC=0 FAKE_SYSTEMCTL_LIVE_PID="$liveD1" FAKE_DMS_LIVE_PID="$liveD1"
+rc="$(cat "$sandbox/e4.log.rc")"
+check "M-E4: stat query failure -> rc=4" "$rc" 4
+if grep -q 'dbus-update-activation-environment\|systemctl\|dms run -d' "$sandbox/e4.log"; then
+  check "M-E4: stat query failure -> no dbus/systemctl/dms calls" 1 0
+else
+  check "M-E4: stat query failure -> no dbus/systemctl/dms calls" 0 0
+fi
+
+# --- A1: runtime dir unset + systemctl fails -> explicit nonzero (rc=2),
+# never a rc=0 + no-owner + no-fallback false success.
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/a1.log" "$sandbox/a1.err" XDG_RUNTIME_DIR="" FAKE_SYSTEMCTL_RC=1
+rc="$(cat "$sandbox/a1.log.rc")"
+check "M-A1: runtime unset + systemctl fail -> rc=2" "$rc" 2
+if grep -q 'dms run -d' "$sandbox/a1.log"; then
+  check "M-A1: no fallback when runtime unverifiable + systemd failed" 1 0
+else
+  check "M-A1: no fallback when runtime unverifiable + systemd failed" 0 0
+fi
+
+# --- A2: runtime dir is a regular FILE (not a dir) + systemctl fails.
+printf 'not a dir' > "$sandbox/rtfile"
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/a2.log" "$sandbox/a2.err" XDG_RUNTIME_DIR="$sandbox/rtfile" FAKE_SYSTEMCTL_RC=1
+rc="$(cat "$sandbox/a2.log.rc")"
+check "M-A2: runtime not-a-dir + systemctl fail -> rc=2" "$rc" 2
+
+# --- A3: runtime unset but systemctl rc=0 -> rc=3, "requested but
+# UNVERIFIED", no healthy/owner claim.
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/a3.log" "$sandbox/a3.err" XDG_RUNTIME_DIR="" FAKE_SYSTEMCTL_RC=0
+rc="$(cat "$sandbox/a3.log.rc")"
+check "M-A3: runtime unset + systemctl rc=0 -> rc=3 (UNVERIFIED)" "$rc" 3
+if grep -q 'UNVERIFIED' "$sandbox/a3.err"; then
+  check "M-A3: UNVERIFIED state reported (no healthy claim)" 0 0
+else
+  check "M-A3: UNVERIFIED state reported (no healthy claim)" 1 0
+fi
+
+# --- B1: direct fallback returns BEFORE its marker is visible (delayed
+# marker window) -> a second immediate call falls back again. This is the
+# DOCUMENTED weak contract (Plan 1): the flock only guards OVERLAPPING
+# executions; hyprland.start fires once at the first frame, so two immediate
+# manual calls are outside the guarantee. The boundary is proven, not faked.
+start_live_dms liveB1
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/b1-1.log" "$sandbox/b1-1.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB1" FAKE_DMS_NO_MARKER=1
+run_chain "$sandbox/b1-2.log" "$sandbox/b1-2.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB1" FAKE_DMS_NO_MARKER=1
+d_total="$(cat "$sandbox/b1-1.log" "$sandbox/b1-2.log" | grep -c 'dms run -d' || true)"
+if [[ "$d_total" -eq 2 ]]; then
+  check "M-B1: delayed-marker window -> second call falls back (weak contract, documented)" 0 0
+else
+  check "M-B1: delayed-marker window -> second call falls back (weak contract, documented)" 1 0
+fi
+
+# --- B2: the first fallback's marker IS already visible when the second call
+# runs -> the second call's PRE-check sees the owner -> no second fallback.
+start_live_dms liveB2
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/b2-1.log" "$sandbox/b2-1.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB2"
+run_chain "$sandbox/b2-2.log" "$sandbox/b2-2.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB2"
+d_total="$(cat "$sandbox/b2-1.log" "$sandbox/b2-2.log" | grep -c 'dms run -d' || true)"
+if [[ "$d_total" -eq 1 ]]; then
+  check "M-B2: visible marker -> second call does not re-start (pre-check)" 0 0
+else
+  check "M-B2: visible marker -> second call does not re-start (pre-check)" 1 0
+fi
+if grep -q 'systemctl' "$sandbox/b2-2.log"; then
+  check "M-B2: second call short-circuits before systemctl (owner present)" 1 0
+else
+  check "M-B2: second call short-circuits before systemctl (owner present)" 0 0
+fi
+
+# --- B3: per-display flock OVERLAP guard - a concurrent invocation holding
+# the lock means no systemctl call and no fallback (that invocation is the
+# start request - not a false success).
+rm -rf "${rt:?}"/*
+lockfile="$rt/dms-ensure-wayland-new.lock"
+( exec 9>"$lockfile"; flock -n 9 || exit 9
+  run_chain "$sandbox/b3.log" "$sandbox/b3.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB2" )
+n="$(grep -c 'dms run -d' "$sandbox/b3.log" || true)"
+if [[ "$n" -eq 0 ]]; then
+  check "M-B3: lock busy (overlap) -> no duplicate fallback" 0 0
+else
+  check "M-B3: lock busy (overlap) -> no duplicate fallback" 1 0
+fi
+if grep -q 'systemctl' "$sandbox/b3.log"; then
+  check "M-B3: lock busy -> systemctl not requested (lock precedes import)" 1 0
+else
+  check "M-B3: lock busy -> systemctl not requested (lock precedes import)" 0 0
+fi
+if grep -q 'another invocation' "$sandbox/b3.err"; then
+  check "M-B3: lock busy reported" 0 0
+else
+  check "M-B3: lock busy reported" 1 0
+fi
+
+# --- B4: order dbus-import < systemctl < dms run -d (from the C3 log)
+dbus_ln="$(lineno 'dbus-update-activation-environment' "$sandbox/c3.log")"
+sysctl_ln="$(lineno 'systemctl --user start dms.service' "$sandbox/c3.log")"
+dmsd_ln="$(lineno 'dms run -d' "$sandbox/c3.log")"
+if [[ -n "$dbus_ln" && -n "$sysctl_ln" && -n "$dmsd_ln" && "$dbus_ln" -lt "$sysctl_ln" && "$sysctl_ln" -lt "$dmsd_ln" ]]; then
+  check "M-B4: order dbus-import < systemctl < dms run -d" 0 0
+else
+  check "M-B4: order dbus-import < systemctl < dms run -d" 1 0
+fi
+
+# --- B5: the direct fallback command itself fails -> explicit rc=5.
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/b5.log" "$sandbox/b5.err" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_RC=127
+rc="$(cat "$sandbox/b5.log.rc")"
+check "M-B5: fallback failure returns rc=5" "$rc" 5
+if grep -q 'fallback failed' "$sandbox/b5.err"; then
+  check "M-B5: fallback failure reported" 0 0
+else
+  check "M-B5: fallback failure reported" 1 0
+fi
+
+# --- B6: no WAYLAND_DISPLAY -> unusable env, explicit rc=1.
+rm -rf "${rt:?}"/*
+run_chain "$sandbox/b6.log" "$sandbox/b6.err" WAYLAND_DISPLAY="" FAKE_SYSTEMCTL_RC=0
+rc="$(cat "$sandbox/b6.log.rc")"
+check "M-B6: missing WAYLAND_DISPLAY returns rc=1" "$rc" 1
+if grep -q 'WAYLAND_DISPLAY not set' "$sandbox/b6.err"; then
+  check "M-B6: missing WAYLAND_DISPLAY reported" 0 0
+else
+  check "M-B6: missing WAYLAND_DISPLAY reported" 1 0
+fi
+
+# --- cleanup + residue assertions: every fake pid from this run must be
+# gone (kill -0 fails) and the precise fake cmdline must not exist.
+cleanup_fakes
+res=0
+for p in $live_pids; do
+  if kill -0 "$p" 2>/dev/null; then res=1; fi
+done
+check "M: all fake pids reaped (kill -0 fails)" "$res" 0
+if pgrep -f "$FAKE_PAT" >/dev/null 2>&1; then
+  check "M: no $FAKE_TAG cmdline residue after cleanup" 1 0
+else
+  check "M: no $FAKE_TAG cmdline residue after cleanup" 0 0
+fi
+echo "== M2. keybind regression assertions (R4.7, no rewrite) =="
+assert_grep "keybind: Alt+Return present" 'hl.bind("ALT + Return"' "$keylua"
+assert_grep "keybind: Super+Return present" 'hl.bind(mainMod .. " + Return"' "$keylua"
+assert_grep "keybind: file manager (nemo) present" 'fileManager = "nemo"' "$keylua"
+assert_grep "keybind: file manager bind present" 'hl.bind(mainMod .. " + E"' "$keylua"
+assert_grep "keybind: DMS IPC bind present (settings focusOrToggle)" 'dms ipc call settings focusOrToggle' "$keylua"
+n_ipc="$(grep -c 'dms ipc call' "$keylua" || true)"
+if [[ "$n_ipc" -ge 10 ]]; then
+  check "keybind: DMS IPC binds count >= 10" 0 0
+else
+  check "keybind: DMS IPC binds count >= 10" 1 0
+fi
+if command -v luac >/dev/null 2>&1; then
+  syn_bad=0
+  while IFS= read -r -d '' lf; do
+    luac -p "$lf" >/dev/null 2>&1 || syn_bad=1
+  done < <(find "$root/config/home/.config/hypr" -name '*.lua' -print0)
+  check "keybind: all hypr lua files pass luac -p" "$syn_bad" 0
+else
+  unavail_note "luac missing (hypr lua syntax check skipped)"
+fi
+
 echo "== L. sandbox inside workspace + real greeter memory untouched =="
 case "$sandbox" in
   "$root/download-mode-lab/fixtures/tmp/"*) check "all temp state inside workspace" 0 0 ;;
@@ -1855,6 +2529,18 @@ else
   else
     check "real greeter memory absent (nothing to touch)" 1 0
   fi
+fi
+
+echo "== M-end. fake process residue (exact PID + precise cmdline) =="
+res=0
+for p in $live_pids; do
+  if kill -0 "$p" 2>/dev/null; then res=1; fi
+done
+check "M-end: all fake pids gone (kill -0 fails)" "$res" 0
+if pgrep -f "dms-fake-r4[9]" >/dev/null 2>&1; then
+  check "M-end: no dms-fake-r49 cmdline residue" 1 0
+else
+  check "M-end: no dms-fake-r49 cmdline residue" 0 0
 fi
 
 echo

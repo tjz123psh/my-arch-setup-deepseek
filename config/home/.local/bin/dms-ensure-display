@@ -1,0 +1,216 @@
+#!/bin/sh
+# dms-ensure-display - best-effort single-owner DMS selection on the CURRENT
+# wayland display (Codex R4.10; weak once-per-first-frame contract).
+# Invoked from Hyprland's hyprland.start hook via
+# `hl.exec_cmd("$HOME/.local/bin/dms-ensure-display")`; runs in the session
+# environment (WAYLAND_DISPLAY / XDG_RUNTIME_DIR set by the compositor).
+#
+# Per-display owner selection under a one-shot first-frame invocation:
+#   - hyprland.start fires ONCE at the first frame; reloading the config does
+#     NOT re-trigger it, so this helper is normally called once per Hyprland
+#     session.
+#   - when a plausible owner is already present on the current display, no
+#     second owner is started (systemd is not even requested);
+#   - the per-display flock only guards OVERLAPPING executions; sequential
+#     manual calls are NOT strongly guaranteed inside the marker-delay window
+#     (the direct daemon's return and its marker publication are separate
+#     moments).
+#   - bar/IPC readiness is NOT claimed here - that stays VMware-accepted.
+#
+# Why per-WAYLAND_DISPLAY:
+#   - DMS 1.5.3 does not guarantee a single global instance (host evidence: a
+#     systemd dms.service backend plus an extra direct daemon on the same
+#     display produced two identical bars).
+#   - `systemctl --user start dms.service` is user-global: rc=0 only means
+#     SOME instance is active/started - never that the CURRENT display has a
+#     usable backend (a dms on another display session is NOT current-Hyprland
+#     readiness).
+# So the owner decision is per WAYLAND_DISPLAY via DMS 1.5.3's runtime markers:
+#   $XDG_RUNTIME_DIR/danklinux-<backend-pid>.session  (content: WAYLAND_DISPLAY)
+#   $XDG_RUNTIME_DIR/danklinux-<backend-pid>.pid      (content: UI process pid)
+#   $XDG_RUNTIME_DIR/danklinux-<backend-pid>.sock     (IPC socket)
+#
+# Owner classification of the CURRENT display (three states):
+#   plausible    = a matching .session whose owner pid is alive and named dms.
+#                  ENOUGH to not start a second owner; it is NOT a claim that
+#                  the bar/IPC is ready (that stays VMware-accepted).
+#   absent/stale = no matching marker, or the matching marker's owner is dead
+#                  or clearly not dms (pid reuse). ONLY this class may enter
+#                  the direct fallback.
+#   unverifiable = a matching marker exists but cannot be read, or the owner's
+#                  state cannot be queried (query failed or unparseable).
+#                  Must NOT be treated as absent and blindly start a second
+#                  owner; returns a distinct result.
+# .pid/.sock are DIAGNOSTIC only: a live dms owner is plausible even while its
+# companion state is partially written (a partial write must never turn a live
+# current owner into "absent" and start a second one).
+#
+# Sequence (single sequential chain, no polling/sleep/watcher):
+#   1. validate env + runtime;
+#   2. per-display non-blocking flock (OVERLAP guard only);
+#   3. current-display PRE-check:
+#        plausible    -> return 0 WITHOUT touching dbus/systemctl;
+#        unverifiable -> return 4 WITHOUT touching dbus/systemctl/dms
+#                        (runtime unusable is handled AFTER systemd instead,
+#                        keeping the rc 2/3 matrix below);
+#        absent/stale -> continue;
+#   4. import the session env into the systemd/D-Bus activation env
+#      (dms.service is Type=dbus; an import failure is logged and tolerated -
+#      UWSM's own import job may still provide the env);
+#   5. request `systemctl --user start dms.service` (idempotent; rc recorded
+#      but NOT decisive - user-global success != current-display owner);
+#   6. current-display POST-check; only a confirmed absent/stale display may
+#      run the direct fallback.
+#
+# Exit codes:
+#   0 = plausible owner verified, direct fallback started, or an overlapping
+#       invocation already covers the display (flock busy);
+#   1 = unusable environment (no WAYLAND_DISPLAY);
+#   2 = runtime dir unusable AND systemd start failed - no owner verified, no
+#       fallback started (explicit failure, never a silent false success);
+#   3 = runtime dir unusable but systemd start returned 0 - "systemd
+#       requested, current-display state UNVERIFIED" (no ready/owner claim);
+#   4 = current-display owner state UNVERIFIABLE (pre or post systemd) - NOT
+#       starting a second owner (readiness unverified);
+#   5 = the direct fallback command failed.
+#
+# Privacy: only display IDs, PIDs, process names (/proc/<pid>/comm) and the
+# minimal liveness byte of /proc/<pid>/stat are read. Process environments
+# (which may contain tokens/cookies) are never read. The /proc queries keep
+# their real exit status: a failed read is UNVERIFIABLE, never folded into
+# plausible or absent.
+#
+# Diagnostics: this script writes status lines to stderr. Under the Hyprland
+# autostart exec path stdout/stderr are redirected to /dev/null, so these are
+# NOT a persistent log - they are visible when the helper is run manually or
+# from the test suite. VM diagnostics rely on systemctl/journal and manual
+# helper runs.
+set -u
+
+WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}"
+if [ -z "$WAYLAND_DISPLAY" ]; then
+  echo "dms-ensure-display: WAYLAND_DISPLAY not set; nothing to ensure" >&2
+  exit 1
+fi
+XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-}"
+
+# 1) runtime usable?
+runtime_usable=no
+if [ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ]; then
+  runtime_usable=yes
+fi
+
+# 2) per-display overlap lock (non-blocking; BEFORE any owner check or start
+#    request: a busy lock means another invocation is handling this display,
+#    so we must not touch systemd or the fallback).
+if [ "$runtime_usable" = "yes" ]; then
+  lockfile="$XDG_RUNTIME_DIR/dms-ensure-${WAYLAND_DISPLAY##*/}.lock"
+  if command -v flock >/dev/null 2>&1; then
+    # no `2>/dev/null` on the exec - exec redirects are PERMANENT for this
+    # shell and would silence all later messages
+    exec 9>"$lockfile"
+    if ! flock -n 9 2>/dev/null; then
+      echo "dms-ensure-display: another invocation is handling $WAYLAND_DISPLAY; skipping (overlap covered)" >&2
+      exit 0
+    fi
+  fi
+fi
+
+# classify the CURRENT display; echoes plausible|absent|unverifiable
+# /proc query failures are kept real: a failed/unparseable read is
+# UNVERIFIABLE, never folded into plausible or absent.
+classify_display() {
+  if [ "$runtime_usable" != "yes" ]; then
+    echo "unverifiable"
+    return 0
+  fi
+  for s in "$XDG_RUNTIME_DIR"/danklinux-*.session; do
+    [ -f "$s" ] || continue
+    # an unreadable marker cannot be ruled out for this display
+    display="$(cat "$s" 2>/dev/null)" || { echo "unverifiable"; return 0; }
+    [ "$display" = "$WAYLAND_DISPLAY" ] || continue
+    x="${s##*/danklinux-}"
+    x="${x%.session}"
+    case "$x" in
+      ''|*[!0-9]*) echo "unverifiable"; return 0 ;;   # owner not queryable
+    esac
+    if [ -e "/proc/$x" ]; then
+      # comm read: failure (process vanished mid-read, EACCES, ...) is
+      # UNVERIFIABLE - only a successful read may classify
+      comm="$(cat "/proc/$x/comm" 2>/dev/null)" || { echo "unverifiable"; return 0; }
+      if [ "$comm" != "dms" ]; then
+        continue   # alive but clearly not dms -> pid reuse -> stale, keep scanning
+      fi
+      # stat read: nonzero rc, empty or unparseable output is UNVERIFIABLE;
+      # only a parsed single valid state char may confirm liveness
+      st="$(sed -n 's/^[^ ]* ([^)]*) \([^ ]*\).*/\1/p' "/proc/$x/stat" 2>/dev/null)" || { echo "unverifiable"; return 0; }
+      case "$st" in
+        Z|X|x) continue ;;                      # dead states -> stale, keep scanning
+        [A-Za-z]) echo "plausible"; return 0 ;; # single valid live state char
+        *) echo "unverifiable"; return 0 ;;     # empty/multi-char/unparseable
+      esac
+    fi
+    # /proc/$x missing -> dead owner -> stale; keep scanning
+  done
+  echo "absent"
+  return 0
+}
+
+# 3) PRE-check: plausible -> no systemd; unverifiable (runtime usable) -> no
+#    systemd and NO fallback. Runtime-unusable keeps the rc 2/3 flow after
+#    the systemd request (it may still be the provider).
+pre="$(classify_display)"
+case "$pre" in
+  plausible)
+    echo "dms-ensure-display: plausible dms owner already present on $WAYLAND_DISPLAY; systemd not requested" >&2
+    exit 0
+    ;;
+  unverifiable)
+    if [ "$runtime_usable" = "yes" ]; then
+      echo "dms-ensure-display: current-display owner state unverifiable at PRE-check on $WAYLAND_DISPLAY; systemd NOT requested; NOT starting a second owner (readiness unverified)" >&2
+      exit 4
+    fi
+    # runtime unusable: fall through - systemd may still provide the owner;
+    # the post-check classifies with rc 2/3 below
+    ;;
+esac
+
+# 4) import session env into systemd/D-Bus activation env
+dbus-update-activation-environment --systemd \
+  WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+  >/dev/null 2>&1 \
+  || echo "dms-ensure-display: dbus env import failed (continuing)" >&2
+
+# 5) request the systemd owner (user-global; rc recorded, not decisive)
+systemctl --user start dms.service >/dev/null 2>&1
+sysctl_rc=$?
+echo "dms-ensure-display: systemctl --user start dms.service rc=$sysctl_rc" >&2
+
+# 6) POST-check after the systemd request
+post="$(classify_display)"
+case "$post" in
+  plausible)
+    echo "dms-ensure-display: plausible dms owner on $WAYLAND_DISPLAY (post systemd)" >&2
+    exit 0
+    ;;
+  unverifiable)
+    if [ "$runtime_usable" != "yes" ]; then
+      if [ "$sysctl_rc" -ne 0 ]; then
+        echo "dms-ensure-display: cannot verify dms on $WAYLAND_DISPLAY ($XDG_RUNTIME_DIR unusable) AND systemd start failed; no owner, no fallback" >&2
+        exit 2
+      fi
+      echo "dms-ensure-display: systemd requested (rc=0) but current display state UNVERIFIED on $WAYLAND_DISPLAY (runtime dir unusable); no ready/owner claim" >&2
+      exit 3
+    fi
+    echo "dms-ensure-display: current-display owner state unverifiable after systemd request on $WAYLAND_DISPLAY; NOT starting a second owner (readiness unverified)" >&2
+    exit 4
+    ;;
+esac
+
+# absent/stale -> per-display direct fallback
+echo "dms-ensure-display: no plausible dms owner on $WAYLAND_DISPLAY; starting direct fallback" >&2
+if dms run -d >/dev/null 2>&1; then
+  exit 0
+fi
+echo "dms-ensure-display: direct fallback failed on $WAYLAND_DISPLAY (dms daemon)" >&2
+exit 5
