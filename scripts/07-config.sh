@@ -64,9 +64,19 @@ deploy_one() {
   mkdir -p "$(dirname "${target}")"
   cp -a "${local_src}" "${target}"
   chmod "${mode}" "${target}" 2>/dev/null || true
-  # when running as root, keep files owned by the target user
+  # when running as root, keep the file AND the path to it owned by the
+  # target user. Chowning only the file leaves the intermediate dirs
+  # root-owned, so later user-run steps cannot write: niri-vmtest-gen's
+  # config.kdl.vmtest and `systemctl --user enable` (creating the .wants
+  # dirs) both failed on a fresh VM install 2026-08-10 (dms.service is a
+  # required user unit, so 08-services aborted).
   if [[ "$(id -u)" -eq 0 ]]; then
     chown "${TARGET_USER}:${TARGET_USER}" "${target}" 2>/dev/null || true
+    local d="${target}"
+    while [[ "${d}" != "${TARGET_HOME}" && "${d}" != "/" ]]; do
+      d="$(dirname "${d}")"
+      chown "${TARGET_USER}:${TARGET_USER}" "${d}" 2>/dev/null || true
+    done
   fi
   deployed=$((deployed + 1))
 }

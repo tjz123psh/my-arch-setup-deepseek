@@ -196,6 +196,17 @@ if grep -q 'refusing to deploy' "$root/scripts/07-config.sh"; then
 else
   fail=$((fail + 1)); echo "  FAIL symlink refusal missing"
 fi
+# 07-config: on the root/strap path the deploy must chown the intermediate
+# DIRECTORIES, not just the files. Only chowning files left ~/.config/niri
+# and ~/.config/systemd/user root-owned, so niri-vmtest-gen (config.kdl.vmtest)
+# and `systemctl --user enable dms.service` (creating .wants dirs) failed on
+# a fresh VM install 2026-08-10 and 08-services aborted.
+if grep -q 'd="$(dirname "${d}")"' "$root/scripts/07-config.sh" \
+   && grep -q 'chown "${TARGET_USER}:${TARGET_USER}" "${d}"' "$root/scripts/07-config.sh"; then
+  pass=$((pass + 1)); echo "  ok   07-config chowns deployed directory path"
+else
+  fail=$((fail + 1)); echo "  FAIL 07-config does not chown deployed directory path"
+fi
 # 06-aur: the strap.sh (root) path must chown the makepkg build dir AFTER
 # copying the recipe. GNU `cp -a source/. dest` applies the SOURCE dir's
 # ownership/mode to DEST, so a pre-copy chown is overwritten and makepkg dies
