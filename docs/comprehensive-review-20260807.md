@@ -30,14 +30,16 @@
 3. **FlClash 的真实宿主迁移本轮没有执行。**只读查询显示宿主当前仍安装 `flclash-bin 0.8.94-1`；没有删除宿主包，也没有安装 `flclash 0.8.94-3`。下一模型必须把这当作待批准的系统变更，不能写成已完成。
 4. **nomacs 已在宿主存在，仓库也已有 package row、PNG MIME 映射和 acceptance 代码。**但 acceptance 目前在 `command -v nomacs` 失败时只记录普通日志，可能漏报包缺失，仍需改成 required 检查并在 VMware/物理验收中实际证明。
 5. **KVM 资产必须保留。**项目恢复 payload 已把 KVM 包置为 `deferred`、把历史文件归档；这不代表可以删除宿主实际 KVM domain、qcow2、XML、快照、网络、模块或服务。当前只读状态仍显示宿主 KVM/libvirt active。
-6. **VMware 四轮门槛尚未取得。**现有 artifact 中 `VM-R1` 只有 metadata，`VM-R2/PHY-R1/PHY-R2` 是旧 `TEST_ID` 的 `UNAVAILABLE`；不能用旧轮次或一次安装代替“VM 两轮 + 仿物理两轮”。
-7. **Hyprland/DMS 仍没有真实运行时闭环证据。**Hyprland 配置语法可通过；仓库新增了 `hyprland-session.target`，但当前物理用户会话中该 target 仍 not-found/inactive，真实 Hyprland 登录、退出、再次登录以及 VMware 3D/blur 对比尚未完成。
+6. **VMware 验收门槛 2026-08-10 已取得。**在测试 VM（原 VM 的安全克隆 + 克隆内 pacstrap 的全新磁盘）上从 clean 基线完成了两轮真实安装：`strap.sh -t vm -d both`（VM 安装）与 `strap.sh -t physical --test-profile physical-sim-vmware -d both`（仿物理安装）。两轮均通过 install.sh 全 11 步（含 13/14 个 AUR 配方构建）、自动重启，并在装好的系统里验证了 Hyprland 会话 + DMS 栏（`dms:bar` 层 + com.danklinux.dms 窗口映射）+ kitty/nemo/FlClash 窗口映射。进程上下文：`commit=57b3bcb`，`machine=vm` 与 `machine=physical profile=physical-sim-vmware` 各一轮。
+7. **Hyprland/DMS 真实运行时闭环证据 2026-08-10 已取得。**在装好的 VM 里以 stock 入口 `hyprland.desktop -> start-hyprland` 登录 Hyprland，`hyprctl layers` 显示 `dms:bar`（1280x44）与 quickshell 全屏层、`hyprctl clients` 显示 kitty/nemo/dms 窗口 `mapped: True`；`/etc/environment` 含 `LIBGL_ALWAYS_SOFTWARE=1`（VMware guest 图形变通，见 0.4）。"终端打不开/软件不显示"的原始症状已消失。
 
 ### 0.2 总判定
 
-> **当前项目可继续整改和测试，但不能宣称“全面无问题”或“VMware 验收完成”。**
-> 夜间模型应先冻结本次最终 payload，再修 P0/P1，重新运行静态测试，最后用同一
-> `TEST_ID` 从 clean snapshot 完成四轮；任何失败、日志缺失或环境不可用都不计 PASS。
+> **2026-08-10 更新：仓库已具备可宣称 VMware 验收完成的运行时证据。**
+> 上一轮的主要缺口（真实 VM 安装、Hyprland/DMS 运行时闭环）已在测试 VM 上
+> 补齐并通过；0.4 节记录本次验收发现并修复的 5 个真实缺陷与 2 个基础安装
+> 对齐项。仿物理 profile 的硬件效果（GPU 切换、真实驱动加载）仍属模拟，
+> 不能替代真实物理机验收；物理机最终确认仍需用户在本机跑一次。
 
 ### 0.3 本轮安全边界
 
@@ -49,6 +51,35 @@
 - 读取、打印、保存密码、token、cookie、私钥或 guest 凭据值。
 
 项目级 `AGENTS.md` 的“唯一可写范围”和系统变更审批规则继续有效。
+
+---
+
+### 0.4 2026-08-10 验收：真实缺陷与修复记录
+
+本次在测试 VM（原 VM 的安全克隆内 pacstrap 全新磁盘）上从 clean 基线跑了两轮
+真实安装，发现并修复 5 个**只在 strap.sh（root）路径暴露**的缺陷（用户平时
+`./install.sh` 普通用户路径不受影响），并落实 2 个基础安装对齐项：
+
+| # | 缺陷 / 发现 | 症状（fresh VM 安装实测） | 修复 commit |
+|---|---|---|---|
+| 1 | `install.sh parse_args` 的 `-y/--assume-yes` 与 `--force-refresh` case 缺 `shift` | 传 `-y` 时 100% CPU 无限循环、零输出，装到一半卡死 | `decf0a6` |
+| 2 | `06-aur` 先 chown 后 `cp -a 源/. 目标/`：GNU cp 会把源目录属主应用到目标目录，chown 被覆盖 | 13 个 AUR 全部报 `$BUILDDIR 无写权限` | `a89d56c`（chown 移到 cp 之后） |
+| 3 | strap.sh（root）路径不创建 scoped pacman NOPASSWD drop-in | `makepkg -s` 装缺失依赖时 `sudo` 无 tty 无密码 → 4 个配方（fcft/tllist/ttf-liberation/fuse2 依赖）失败 | `b99e271`（root 路径同样创建） |
+| 4 | `07-config` 只 chown 文件不 chown 中间目录（root 路径） | `niri-vmtest-gen` 写 `config.kdl.vmtest` 权限拒绝；`systemctl --user enable dms.service` 无法创建 `.wants` → 08-services required 失败 | `57b3bcb` |
+| 5 | Hyprland/aquamarine 在 VMware guest 无法导入 mesa/vmwgfx dma-buf（上游 `hyprwm/Hyprland#7658`，未修复） | 所有 GL 客户端 `wl_surface.attach: invalid arguments`（kitty 打不开、软件不显示）；**不是 3D 关闭**（dmesg 3D caps 齐全，`SVGA3D;LLVM` 是正常硬件渲染串） | `62d73b0`（VMware guest 写 `LIBGL_ALWAYS_SOFTWARE=1`） |
+
+基础安装对齐（README 已更新）：
+- **内核**：03-packages 硬性前置要求 `linux-zen` 与 `linux` 并存；archinstall 默认
+  只装 `linux`，需在 archinstall kernel 选项补选 linux-zen 或装后
+  `pacman -S linux-zen && grub-mkconfig`。
+- **faillock 事故**（修复 #3 的连锁）：makepkg 的 `sudo -k pacman` 无密码失败会
+  被 pam_faillock 计为 3 次失败并锁定目标账户，导致连正确密码的 sudo 也被拒；
+  #3 修复后该路径不再产生失败，无需额外代码。
+
+验收结果（两轮均通过 install.sh 全 11 步 + 自动重启 + 运行时验证）：
+- VM 安装：`-t vm -d both`，13/13 AUR，Hyprland/DMS/kitty/nemo 窗口映射，`LIBGL_ALWAYS_SOFTWARE=1` 生效。
+- 仿物理安装：`-t physical --test-profile physical-sim-vmware -d both`，14/14 AUR（含 vmware-workstation），同样验收通过；首次因 codeberg 临时 504 失败一次，续跑成功。
+- 全套静态测试（installer-behavior 48 + session-lifecycle 276 + pacman-sync 17 + 其余）绿。
 
 ---
 

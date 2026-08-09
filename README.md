@@ -88,6 +88,7 @@ sudo bash strap.sh
 | 7 | VMware host 服务（vmware-networks / vmware-usbarbitrator）+ DKMS vmmon 检查 | ✅ 启用，DKMS 缺失 required 失败 | ❌ 不启用 | 08-services.sh |
 | 8 | VMware guest 服务（vmtoolsd） | ❌ 不启用 | ✅ 启用（required） | 08-services.sh |
 | 9 | ~~录屏引擎预设~~（已无差异：2026-08-09 两机型统一 `wf-recorder`；`wl-screenrec-git` 自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容） | `wf-recorder`（CPU） | `wf-recorder`（CPU） | 09-settings.sh |
+| 10 | VMware guest 图形变通（上游 Hyprland#7658：aquamarine 无法导入 mesa/vmwgfx dma-buf，GL 客户端 `wl_surface.attach: invalid arguments` 崩溃；`LIBGL_ALWAYS_SOFTWARE=1` 使客户端走 llvmpipe/wl_shm 可导入） | ❌ 不写入（保留硬件 GL） | ✅ 仅 VMware guest 写入 `/etc/environment`（`systemd-detect-virt == vmware` 时，物理机/其他虚拟化不写） | 09-settings.sh + 00-utils（is_vmware_guest / apply_vmware_graphics_workaround） |
 
 **完全一致的部分**（不做任何区分）：
 
@@ -124,6 +125,10 @@ sudo bash strap.sh
 重装 Arch（archinstall）并完成手工交接点（分区/GRUB/首次启动/联网）后：
 
 1. 用 archinstall 创建普通用户并启用 NetworkManager、连上 Wi-Fi
+   **（内核：03-packages 硬性前置要求 `linux-zen` 与 `linux` 并存——archinstall
+   默认只装 `linux`，需在 archinstall 的 kernel 选项里同时选 linux-zen，或装完补
+   `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`；12 项前置清单见
+   `manifests/workstation-packages.tsv` 的 `verify` 行，2026-08-10 全新 VM 安装实测）**
 2. `git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
    （无海外网络 clone 不通时，用 U 盘拷贝 `my-arch-setup.tar`，见
    [`docs/physical-offline-install.md`](docs/physical-offline-install.md)）
@@ -142,9 +147,14 @@ DKMS 的 vmmon/vmnet）。clash-verge 只安装不启服务（配置私有，手
 映射、Niri 语法和 Hyprland fragments 已复核，目标行为测试也已运行。仓库的
 `hyprland.lua`（含 `conf/` 分片）已在本机真实宿主上通过 `Hyprland --verify-config`
 （显式 `-c` 与默认发现均 rc=0，见 `tests/session-lifecycle-test.sh` I 区）。这只
-证明配置可被 Hyprland 解析——真实 GPU 合成、greeter 会话菜单与会话
-生命周期仍需 VM 验收，不得把 verify-config PASS 扩大为仓库级 Hyprland runtime
-证明。旧 KVM 批次记录
+证明配置可被 Hyprland 解析。**2026-08-10 已在测试 VM 上补齐真实运行时验收**
+（见 `docs/comprehensive-review-20260807.md` 0.4 节）：从 clean 基线完成
+`-t vm` 与 `-t physical --test-profile physical-sim-vmware` 两轮真实安装并自动
+重启，装好的系统里以 stock 入口登录 Hyprland 验证了 DMS 栏
+（`hyprctl layers` 的 `dms:bar` 层）、kitty/nemo 窗口映射，以及 VMware guest
+图形变通（`LIBGL_ALWAYS_SOFTWARE=1`）生效；期间发现并修复 5 个 strap.sh
+（root）路径缺陷（parse_args `-y` 死循环 / AUR chown 顺序 / sudoers drop-in /
+config 目录属主 / VMware dma-buf 变通）。旧 KVM 批次记录
 属于历史证据，不替代当前 VMware 验收。
 
 **Hyprland 会话内 DMS 启动：与物理机已验证方式一致（2026-08-09，Codex R4.12）。**

@@ -91,10 +91,37 @@ R4.12 起 dms-ensure.log 记录的是 autostart DMS 启动命令（qs 守卫 + d
    configerrors` 与 windowrules 复核）。
 3. `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` 为空 → spawn 环境问题（物理机 stock 入口
    无此问题；VM 若仍失败，重点查会话 spawn env 导入与 VMware GPU/GL）。
-4. 若为 VM（VMware SVGA 3D）→ 按 comprehensive-review 的分层变量法（3D on/off、
-   blur on/off）隔离。
+4. 若为 VM（VMware SVGA 3D）→ 先确认 /etc/environment 已含
+   `LIBGL_ALWAYS_SOFTWARE=1`（09-settings 在 VMware guest 自动写入）；仍失败再按
+   comprehensive-review 的分层变量法（blur on/off、backend 切换）隔离。
 
-## 六、验证完成标准（对应 R4.10 handoff 契约）
+## 六、VMware guest 根因定论（2026-08-10，终端/DMS/应用全灭的最终结论）
+
+排查结论：**不是 3D 加速关闭，也不是渲染器软件化**——是 Hyprland（aquamarine）
+在 VMware guest 上无法导入 mesa/vmwgfx 产出的客户端 dma-buf。
+
+- 证据链：VMX `mks.enable3d=TRUE` 时宿主机 mksSandbox.log 显示
+  `SVGA3dDevCaps / cap[0]: 3D / Vulkan presentation`（3D 已生效）；guest
+  `dmesg` 显示 vmwgfx `Capabilities: ... 3D ... dx ...`、`Shader model: SM_5_1X`
+  （guest 3D 能力齐全）；Hyprland 日志 `Renderer: SVGA3D; LLVM` 是 VMware 硬件
+  驱动的**正常**渲染器串（LLVM 是着色器编译器，软渲染才会显示 `llvmpipe`）。
+- 崩溃点：客户端（kitty/quickshell/GTK）经 mesa EGL 走
+  `zwp_linux_dmabuf_v1 create_immed` 创建 buffer 后 attach，Hyprland 回
+  `wl_display error 1 "invalid arguments for wl_surface#N.attach"`（error 1 =
+  无效对象，compositor 导入失败后销毁了 buffer）。上游
+  [hyprwm/Hyprland#7658](https://github.com/hyprwm/Hyprland/issues/7658)
+  （2024-09，未修复，作者归因 mesa）；weston/gnome 可导入，Hyprland/sway 不能。
+- 为什么 wl_shm 正常：`LIBGL_ALWAYS_SOFTWARE=1` 使客户端走 llvmpipe 并交付
+  wl_shm buffer，导入路径不同、可正常 attach（kitty mapped、quickshell 存活、
+  `dms:bar` 层出现，均已实测）。
+- 与"以前能渲染"的关系：能渲染的基线是 KVM（virtio-gpu）时代；KVM→VMware
+  迁移后该上游缺陷暴露。物理机（AMD radeonsi）不受影响。
+- 处置：09-settings.sh 在 `systemd-detect-virt == vmware` 时写
+  `LIBGL_ALWAYS_SOFTWARE=1` 到 /etc/environment（见 README 颗粒度表第 10 行）；
+  物理机不写入，保留硬件 GL。此变通仅影响 VMware guest 渲染质量（CPU 渲染），
+  功能（终端/应用/DMS 栏）完整。
+
+## 七、验证完成标准（对应 R4.10 handoff 契约）
 
 - dms.service active（Niri 会话）；Hyprland 会话里 `qs -p /usr/share/quickshell/dms`
   恰好一个、bar 可见；
