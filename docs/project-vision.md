@@ -75,66 +75,35 @@ and it is not an audited/reproducible engineering system.
    hash/marker-protected migration cleanup (backup first, only
    project-deployed content removed, daemon-reload + confirm) for Round-2/3
    leftovers in an existing target HOME.
-   **Hyprland DMS best-effort single-owner selection per WAYLAND_DISPLAY
-   (2026-08-09, Codex R4.10; weak once-per-first-frame contract).** DMS does not guarantee a single
-   global instance (host evidence: a systemd dms.service backend plus one
-   extra direct daemon on the same display produced two identical bars), and
-   both "blind" checks misjudge: a display-blind process-name lookup would be
-   fooled by a backend on ANOTHER display and suppress the current display's
-   start; `systemctl --user start dms.service` is user-global - rc=0 only
-   means SOME instance is active/started, never that the CURRENT display has
-   a usable backend (a dms on another display session is NOT current-Hyprland
-   readiness). So the Hyprland start hook calls one sequential POSIX-sh
-   helper `~/.local/bin/dms-ensure-display` whose order is: per-display
-   non-blocking flock (OVERLAP guard only - it guarantees at most one
-   fallback during overlapping executions, NOT that arbitrary repeated manual
-   calls never re-request; the direct daemon's return and its marker
-   publication are separate moments) -> current-display PRE-check (a
-   plausible owner already present -> return WITHOUT calling systemctl, so
-   systemd cannot create a second owner) -> import the session env into the
-   systemd/D-Bus activation env (`dbus-update-activation-environment --systemd
-   WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_CURRENT_DESKTOP
-   XDG_SESSION_TYPE`; an import failure is logged and tolerated - UWSM's own
-   import job may still provide the env) -> request `systemctl --user start
-   dms.service` (idempotent; rc recorded but NOT decisive) -> current-display
-   POST-check -> direct fallback (`dms run -d`) only when the display is
-   confirmed absent/stale. Owner classification (three states):
-   plausible = matching `danklinux-<pid>.session` + owner alive + comm=dms
-   (enough to not start a second owner; NOT a bar/IPC-ready claim);
-   absent/stale = no matching marker or the owner is dead / clearly not dms
-   (pid reuse) - the ONLY class allowed to fall back; unverifiable = a
-   matching marker exists but cannot be read or the owner state cannot be
-   queried (a failed /proc read stays a failed query - never folded into
-   plausible or absent) - NEVER blindly start a second owner, return a
-   distinct nonzero. `.pid`/`.sock` are diagnostic only: a live dms owner is
-   plausible even while its companion state is partially written. At the
-   PRE-check stage a plausible owner OR an unverifiable state returns
-   immediately - dbus/systemctl/dms are NOT called at all. Runtime dir
-   unusable exit codes: systemctl failed -> 2 (no owner, no fallback - never
-   a silent false success); systemctl rc=0 -> 3 ("systemd requested,
-   current-display state UNVERIFIED" - no ready claim). At first frame
-   graphical-session.target may be active OR still queued/activating
-   (wayland-session-waitenv waits for WAYLAND_DISPLAY and
-   HYPRLAND_INSTANCE_SIGNATURE before it; the doc never claims it is already
-   active). hyprland.start fires ONCE at the first frame; reload does NOT
-   re-trigger the helper (VM reload only verifies reload does not produce a
-   second bar). DMS 1.5.3 writes .session/.pid before QS acquires
-   org.freedesktop.Notifications, so an ordinary systemctl success is
-   normally AFTER the markers (no "Type=dbus active before marker" claim).
-   The helper's diagnostics go to stderr; under the Hyprland autostart exec
-   path stdout/stderr are redirected to /dev/null, so they are not a
-   persistent log - VM diagnostics rely on systemctl/journal and manual
-   helper runs. R4.11 (2026-08-09): the helper's stderr is also persisted to
+   **Hyprland DMS startup aligned with the physical machine (2026-08-09,
+   Codex R4.12).** The Hyprland session uses the system stock entry
+   `/usr/share/wayland-sessions/hyprland.desktop` (`Exec=/usr/bin/
+   start-hyprland`). `start-hyprland` does not touch `graphical-session.target`,
+   so the Hyprland session has NO systemd dms.service - DMS is started
+   directly by the `hyprland.start` first-frame hook with a qs-process guard
+   for idempotency:
+   `pgrep -f '[q]s -p /usr/share/quickshell/dms' >/dev/null || dms run -d`.
+   The guard matches qs (the quickshell UI) rather than a display-blind dms
+   process lookup, and uses the `[q]s` character class so the guard's own sh
+   command line never self-matches (proven on the physical machine). No
+   double bar: the stock session has dms.service inactive (no
+   graphical-session.target), so the daemon start is the only backend; even
+   under an uwsm-managed entry (systemd dms via the target), the guard sees qs
+   already running and skips the daemon - the two paths do not interfere.
+   Niri is unchanged: systemd dms.service via `graphical-session.target`.
+   Diagnostics: the DMS start's stderr is appended to
    `$XDG_RUNTIME_DIR/dms-ensure.log` (the autostart exec path redirects
-   stdout/stderr to /dev/null, so an explicit `2>>` append keeps first-session
-   DMS failures visible; exit-status semantics are unchanged - no pipe). Host
-   remediation and in-session diagnostic steps live in
-   `docs/hyprland-dms-host-remediation.md`. The fallback never runs under
-   Niri. The state machine is
-   covered by synthetic runtime-marker/fake-PATH tests only - that is NOT
-   proof of a real DMS bar/IPC run; real VMware must still verify
-   same-display single instance, cross Niri->Hyprland logout/login, reload
-   and exit cleanup (see the R4.10 handoff).
+   stdout/stderr to /dev/null, so the explicit `2>>` keeps first-session DMS
+   failures visible; exit-status semantics unchanged - no pipe).
+   `~/.local/bin/dms-ensure-display` remains as an optional diagnostic tool
+   (manual runs show its three-state classification and exit codes) but is no
+   longer called by the autostart. `hyprland.start` fires ONCE at the first
+   frame; reload does NOT re-trigger it (VM reload only verifies reload does
+   not produce a second bar). Real bar/IPC readiness is still VMware-
+   accepted; same-display single instance, cross Niri->Hyprland logout/login,
+   reload and exit cleanup remain unverified in a real session (see the R4.12
+   handoff). Host remediation and in-session diagnostic steps live in
+   `docs/hyprland-dms-host-remediation.md`.
    **Cleanup hardening (2026-08-09, Codex R4.1/R4.3).** The migration
    cleanup lstat-checks every path component from TARGET_HOME down (a
    symlinked `~/.config`/`~/.local` is never read/backed up/deleted),

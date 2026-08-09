@@ -1886,40 +1886,50 @@ fi
 # --- M0: static structure (helper contract + Niri isolation + rejected forms) ---
 hl_on="$(grep -n 'hl.on("hyprland.start"' "$autolua" | head -1 | cut -d: -f1 || true)"
 hl_end="$(awk 'NR>'"${hl_on:-0}"' && /^end\)/ {print NR; exit}' "$autolua" 2>/dev/null || true)"
-dms_cmd_ln="$(grep -n 'hl.exec_cmd(.*dms-ensure-display' "$autolua" | head -1 || true)"
+dms_cmd_ln="$(grep -n 'hl.exec_cmd(.*dms run -d' "$autolua" | head -1 || true)"
 dms_ln="${dms_cmd_ln%%:*}"
 if [[ -n "$hl_on" && -n "$hl_end" && -n "$dms_ln" && "$dms_ln" -gt "$hl_on" && "$dms_ln" -lt "$hl_end" ]]; then
-  check "M: helper call lives inside hl.on(hyprland.start) block" 0 0
+  check "M: DMS start lives inside hl.on(hyprland.start) block" 0 0
 else
-  check "M: helper call lives inside hl.on(hyprland.start) block" 1 0
+  check "M: DMS start lives inside hl.on(hyprland.start) block" 1 0
 fi
-n_helper_cmds="$(grep -c 'hl.exec_cmd(.*dms-ensure-display' "$autolua" || true)"
-if [[ "$n_helper_cmds" -eq 1 ]]; then
-  check "M: exactly one exec_cmd calls the dms helper (single sequential chain)" 0 0
+n_dms_cmds="$(grep -c 'hl.exec_cmd(.*dms run -d' "$autolua" || true)"
+if [[ "$n_dms_cmds" -eq 1 ]]; then
+  check "M: exactly one DMS-start exec_cmd (single sequential line)" 0 0
 else
-  check "M: exactly one exec_cmd calls the dms helper (single sequential chain)" 1 0
+  check "M: exactly one DMS-start exec_cmd (single sequential line)" 1 0
 fi
-# R4.11: the helper's stderr must be persisted to a log under the runtime dir
-# (autostart exec redirects stdout/stderr to /dev/null, so without this the
-# first real Hyprland session's DMS failures are invisible). The redirect
-# must NOT wrap the helper in a pipe (which would change the exit status).
-if grep -q 'dms-ensure-display 2>>' "$autolua" && grep -q 'dms-ensure.log' "$autolua"; then
-  check "M: helper stderr persisted to dms-ensure.log (diagnostics visible)" 0 0
+# R4.12: the DMS start is the physical-machine-proven form - a qs-based guard
+# (bracket trick [q]s to avoid self-match) followed by `dms run -d`, on the
+# same exec_cmd line. A display-blind global `pgrep -x dms` guard is rejected
+# (it would suppress the current session when ANY dms exists elsewhere).
+if [[ "$dms_cmd_ln" == *"[q]s"* && "$dms_cmd_ln" == *"dms run -d"* && "$dms_cmd_ln" != *"pgrep -x dms"* ]]; then
+  check "M: qs-guarded dms run -d (physical-machine-aligned, no display-blind pgrep)" 0 0
 else
-  check "M: helper stderr persisted to dms-ensure.log (diagnostics visible)" 1 0
+  check "M: qs-guarded dms run -d (physical-machine-aligned, no display-blind pgrep)" 1 0
 fi
-# the old inline chain (DMS-specific pgrep guard / systemctl / dms run -d)
-# must be GONE from autostart.lua - all DMS startup logic lives in the
-# helper now (generic pgrep guards for udiskie/fcitx5/etc. remain legal)
-if grep -q 'pgrep -x dms\|dms run -d\|systemctl --user start dms' "$autolua"; then
-  check "M: autostart.lua keeps no inline dms chain (logic in helper)" 1 0
+# R4.11: the DMS start's stderr must be persisted to dms-ensure.log under the
+# runtime dir (autostart exec redirects stdout/stderr to /dev/null, so without
+# this the first real Hyprland session's DMS failures are invisible). The
+# redirect must NOT wrap the command in a pipe (which would change the status).
+if grep -q 'dms run -d 2>>' "$autolua" && grep -q 'dms-ensure.log' "$autolua"; then
+  check "M: DMS stderr persisted to dms-ensure.log (diagnostics visible)" 0 0
 else
-  check "M: autostart.lua keeps no inline dms chain (logic in helper)" 0 0
+  check "M: DMS stderr persisted to dms-ensure.log (diagnostics visible)" 1 0
+fi
+# the autostart must NOT depend on the helper / systemctl / dbus import - the
+# proven direct-start path is self-contained (the helper stays as an optional
+# diagnostic tool, called manually only). Scoped to exec_cmd lines so the
+# prose comments (which may mention the tool) are not counted as commands.
+if grep -q 'hl.exec_cmd(.*dms-ensure-display\|hl.exec_cmd(.*systemctl\|hl.exec_cmd(.*dbus-update' "$autolua"; then
+  check "M: autostart has no helper/systemctl/dbus dependency (direct start)" 1 0
+else
+  check "M: autostart has no helper/systemctl/dbus dependency (direct start)" 0 0
 fi
 if [[ -f "$helper" && -x "$helper" ]]; then
-  check "M: dms-ensure-display helper present + executable" 0 0
+  check "M: dms-ensure-display helper present + executable (diagnostic tool)" 0 0
 else
-  check "M: dms-ensure-display helper present + executable" 1 0
+  check "M: dms-ensure-display helper present + executable (diagnostic tool)" 1 0
 fi
 if [[ -f "$helper" ]] && [[ "$(head -1 "$helper")" == "#!/bin/sh" ]]; then
   check "M: helper is POSIX /bin/sh" 0 0
@@ -2020,10 +2030,12 @@ else
   check "M: no dms daemon/direct start in Niri config" 0 0
 fi
 n_all_dmsd="$(grep -rc 'dms run -d' "$root/config/home" 2>/dev/null | awk -F: '{s+=$2} END{print s+0}' || true)"
-if [[ "$n_all_dmsd" -eq 1 ]]; then
-  check "M: dms run -d appears exactly once in config/home" 0 0
+# R4.12: exactly two guarded occurrences - the autostart qs-guarded line and
+# the helper's three-state fallback line (both guarded, never unconditional)
+if [[ "$n_all_dmsd" -eq 2 ]]; then
+  check "M: dms run -d appears exactly twice in config/home (autostart guard + helper fallback)" 0 0
 else
-  check "M: dms run -d appears exactly once in config/home" 1 0
+  check "M: dms run -d appears exactly twice in config/home (autostart guard + helper fallback)" 1 0
 fi
 
 # --- M1: per-display state machine with fake systemctl/dbus/dms ---
@@ -2059,6 +2071,18 @@ if [ -n "${FAKE_SYSTEMCTL_LIVE_PID:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -
 fi
 exit 0
 EOF
+# fake pgrep (R4.12: the aligned autostart uses a qs guard; without a fake the
+# real host pgrep would find the REAL qs and the M-R4.11 test could never
+# exercise the dms run -d branch)
+cat > "$mbin/pgrep" <<'EOF'
+#!/bin/sh
+echo "pgrep $*" >> "${DMS_LOG:?}"
+if [ -f "${FAKE_PGREP_STATE:-/nonexistent-pgrep-state}" ]; then
+  echo "pgrep $* rc=OK(found)" >> "${DMS_LOG:?}"
+  exit 0
+fi
+exit "${FAKE_PGREP_RC:-1}"
+EOF
 cat > "$mbin/dms" <<'EOF'
 #!/bin/sh
 echo "dms $*" >> "${DMS_LOG:?}"
@@ -2067,6 +2091,8 @@ if [ -n "${FAKE_DMS_RC:-}" ] && [ "$FAKE_DMS_RC" != "0" ]; then
 fi
 case " $* " in
   *" run -d "*)
+    # stderr line so the autostart's `2>>dms-ensure.log` redirect is provable
+    echo "dms run -d executed (fake)" >&2
     if [ -z "${FAKE_DMS_NO_MARKER:-}" ] && [ -n "${FAKE_DMS_LIVE_PID:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && [ -n "${XDG_RUNTIME_DIR:-}" ]; then
       printf '%s' "$WAYLAND_DISPLAY" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_DMS_LIVE_PID.session"
       printf '%s' "$FAKE_DMS_LIVE_PID" > "$XDG_RUNTIME_DIR/danklinux-$FAKE_DMS_LIVE_PID.pid"
@@ -2489,25 +2515,21 @@ else
   check "M-B6: missing WAYLAND_DISPLAY reported" 1 0
 fi
 
-# --- R4.11: run the autostart exec_cmd end-to-end (as Hyprland would via
-# /bin/sh -c, $HOME -> repo root so the helper resolves) and assert the
-# helper's stderr is PERSISTED to $XDG_RUNTIME_DIR/dms-ensure.log while the
-# behavior (fallback on absent + systemctl failure) is unchanged. Without
-# the redirect the log file never appears and the first real Hyprland
-# session's DMS failure stays invisible.
+# --- R4.11/R4.12: run the autostart DMS exec_cmd end-to-end (as Hyprland
+# would via /bin/sh -c) and assert the DMS start's stderr is PERSISTED to
+# $XDG_RUNTIME_DIR/dms-ensure.log while the behavior (qs absent -> dms run -d)
+# is unchanged. Without the redirect the log file never appears and the first
+# real Hyprland session's DMS failure stays invisible.
 rm -rf "${rt:?}"/*
-autostart_cmd="$(grep -n 'hl.exec_cmd(.*dms-ensure-display' "$autolua" | head -1 | sed -n 's/^[0-9]*:.*hl\.exec_cmd("\([^"]*\)").*/\1/p' || true)"
-# $HOME in the deployed config resolves to the user HOME; in the test the
-# helper lives at $root/config/home/.local/bin/dms-ensure-display
-autostart_cmd="${autostart_cmd//\$HOME/$root/config/home}"
+autostart_cmd="$(grep -n 'hl.exec_cmd(.*dms run -d' "$autolua" | head -1 | sed -n 's/^[0-9]*:.*hl\.exec_cmd("\([^"]*\)").*/\1/p' || true)"
 : > "$sandbox/r411-cmd.log"
 env PATH="$mbin:$PATH" DMS_LOG="$sandbox/r411-cmd.log" WAYLAND_DISPLAY="wayland-new" \
-  XDG_RUNTIME_DIR="$rt" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB2" \
+  XDG_RUNTIME_DIR="$rt" FAKE_PGREP_RC=1 \
   bash -c "$autostart_cmd" >/dev/null 2>&1 || true
-if [[ -s "$rt/dms-ensure.log" ]] && grep -q 'starting direct fallback' "$rt/dms-ensure.log"; then
-  check "M-R4.11: autostart path persists helper diagnostics to dms-ensure.log" 0 0
+if [[ -s "$rt/dms-ensure.log" ]]; then
+  check "M-R4.11: autostart path persists DMS diagnostics to dms-ensure.log" 0 0
 else
-  check "M-R4.11: autostart path persists helper diagnostics to dms-ensure.log" 1 0
+  check "M-R4.11: autostart path persists DMS diagnostics to dms-ensure.log" 1 0
 fi
 n="$(grep -c 'dms run -d' "$sandbox/r411-cmd.log" || true)"
 if [[ "$n" -eq 1 ]]; then

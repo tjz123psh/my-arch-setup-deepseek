@@ -147,44 +147,30 @@ DKMS 的 vmmon/vmnet）。clash-verge 只安装不启服务（配置私有，手
 证明。旧 KVM 批次记录
 属于历史证据，不替代当前 VMware 验收。
 
-**Hyprland 会话内 DMS 启动：一次性首帧调用下的按显示 best-effort 单 owner
-选择（2026-08-09，Codex R4.10；弱一次性首帧契约）。** DMS 自身不保证全局单实例
-（宿主实测 systemd backend 与额外 daemon 并存时出现两条相同顶栏），且两个
-"盲判断"都会误判：按进程名找 dms 是显示盲的——另一个显示的 backend 会错误地
-抑制当前显示启动；`systemctl --user start dms.service` 是用户全局的——rc=0
-只代表"某个"实例已 active/已启动，不代表当前显示有可用 backend（另一个显示
-会话的 DMS 不等于当前 Hyprland 已就绪）。因此 owner 决策改为**按当前
-WAYLAND_DISPLAY 逐个验证**：Hyprland start 钩子调用单一顺序执行的 helper
-`~/.local/bin/dms-ensure-display`（POSIX sh），顺序为：per-display 非阻塞
-flock（只防**重叠执行**期间双兜底）→ 当前显示 **pre-check**（已有 plausible
-owner——matching `danklinux-<pid>.session` 且 owner 存活、名为 dms——就直接
-返回，**不再请求 systemd**，避免 systemd 制造第二个 owner）→ 导入会话环境
-（`dbus-update-activation-environment --systemd`）→ 请求 systemd 启动
-dms.service（幂等，rc 仅记录不作数）→ 当前显示 **post-check** → 仅当当前
-显示确实 **absent/stale**（无 matching marker，或 owner 已死/明确不是 dms）
-时才执行 `dms run -d` daemon 兜底。三态判定：plausible（足够"不再启动第二
-owner"，不等于 bar/IPC ready）/ absent-stale（唯一允许兜底的类）/
-unverifiable（marker 不可读或 owner 状态无法查询——绝不盲目启动第二个 owner，
-返回独立非零码；/proc 查询失败保持真实 rc，不折叠成 plausible/absent）。
-PRE-check 阶段：已有 plausible owner 或状态 unverifiable 时直接返回，**完全
-不调用 dbus/systemctl/dms**。runtime 目录不可用时退出码明确：systemctl 失败
-→ 2（无 owner、无 fallback，绝无假成功）；systemctl rc=0 → 3（"systemd 已
-请求但当前显示状态 UNVERIFIED"，不声称就绪）。注意：第一帧时 graphical-session.target
-可能已经 active，也可能仍在 queued/activating（wayland-session-waitenv 在它
-之前等待 WAYLAND_DISPLAY 与 HYPRLAND_INSTANCE_SIGNATURE），不能假设它必然
-已 active；hyprland.start 只在**首帧触发一次**，reload 不重触发 helper；
-direct daemon 返回与其 marker 发布之间仍有窗口（弱契约，flock 不承诺任意
-顺序手工重复调用永远只发一次请求）。该 fallback 只在 Hyprland 会话内运行，
-不运行于 Niri。helper 的诊断写 stderr 并持久化到 `$XDG_RUNTIME_DIR/dms-ensure.log`
-（R4.11：autostart exec 路径下 stdout/stderr 会被重定向到 /dev/null，故显式落盘，
-rc 语义不变）——第一次真实 Hyprland 会话的 DMS 失败由此可见；VM 诊断仍以
-systemctl/journal、dms-ensure.log 与手工运行 helper 为准。宿主修复与真实会话
-内诊断步骤见
-[`docs/hyprland-dms-host-remediation.md`](docs/hyprland-dms-host-remediation.md)
-（含：安装 uwsm、部署当前配置与 helper、`dms-ensure.log` 消息→处置对照表、
-终端闪退判别路径）。合成 runtime-marker / fake-PATH 测试不等于真实 DMS bar/IPC
-已验证；真实 VMware 中的同显示单实例、跨 Niri→Hyprland 注销/登录、reload
-（仅验证 reload 不产生双栏）与退出清理仍待验收，不得声称 VM 已修复。
+**Hyprland 会话内 DMS 启动：与物理机已验证方式一致（2026-08-09，Codex R4.12）。**
+Hyprland 会话使用系统 stock 入口 `/usr/share/wayland-sessions/hyprland.desktop`
+（`Exec=/usr/bin/start-hyprland`）。`start-hyprland` 不触达
+`graphical-session.target`，因此 Hyprland 会话里没有 systemd dms.service——
+DMS 由 autostart 的 `hyprland.start` 首帧钩子直接启动，以 qs 进程守卫做幂等：
+
+```
+hl.exec_cmd("pgrep -f '[q]s -p /usr/share/quickshell/dms' >/dev/null || dms run -d 2>>${XDG_RUNTIME_DIR:-/tmp}/dms-ensure.log")
+```
+
+守卫匹配 qs（quickshell UI）而非 dms backend，并用字符类 `[q]s` 避免守卫自身
+命令行自匹配（物理机实测有效的写法）。为什么不会双顶栏：stock 会话里
+dms.service 本就是 inactive（无 graphical-session.target），daemon 启动是唯一
+backend；即使走 uwsm-managed 入口（systemd 拉起 dms），守卫看到 qs 已在跑也会
+跳过 daemon 兜底。Niri 侧不变：仍由 systemd dms.service 经
+`graphical-session.target` 启动。诊断：DMS 启动命令的 stderr 追加到
+`$XDG_RUNTIME_DIR/dms-ensure.log`（autostart exec 路径 stdout/stderr 被重定向
+到 /dev/null，显式落盘才能看到失败）。`~/.local/bin/dms-ensure-display` 作为
+可选诊断工具保留（手工运行可看三态判定与退出码），不再由 autostart 调用。
+注意：`hyprland.start` 只在首帧触发一次，reload 不重触发。合成测试不等于真实
+DMS bar/IPC 已验证；真实 VMware 中的同显示单实例、跨 Niri→Hyprland 注销/登录、
+reload（仅验证 reload 不产生双栏）与退出清理仍待验收，不得声称 VM 已修复。
+宿主修复与真实会话内诊断步骤见
+[`docs/hyprland-dms-host-remediation.md`](docs/hyprland-dms-host-remediation.md)。
 
 截至 2026-08-08，操作者报告物理机实战部署已完成；本轮只读复核了仓库与宿主
 已安装包/服务状态，未再次改动物理机。VMware guest 的 VM 模式与仿物理模式

@@ -1,43 +1,44 @@
 # Hyprland 会话 DMS 不加载 / 终端闪退 — 宿主修复与诊断清单
 
-> 2026-08-09（Codex R4.11）。本清单基于只读探查结论（宿主保留窗口内无 Hyprland
-> 会话痕迹；宿主缺 `uwsm`、`~/.config/hypr` 为 07-26~29 部署的旧版、helper 未部署；
-> 仓库 R4.10 设计正确但从未在真实 Hyprland 会话验证过；VMware 四轮 UNAVAILABLE）。
-> 仓库侧 R4.11 已把 helper 诊断持久化到 `$XDG_RUNTIME_DIR/dms-ensure.log`，使第一
-> 次真实会话的失败不再不可见。
+> 2026-08-09（Codex R4.12）。本清单基于只读探查结论：**物理机的既有配置是
+> 可工作参照**（stock `start-hyprland` + autostart 的 qs 守卫直接 `dms run -d`，
+> 来回切换 DMS 照常、终端正常）；仓库 R4.12 已把 Hyprland 的 DMS 启动**对齐物理机**
+> （autostart 直接启动 + qs 守卫，不再依赖 helper/uwsm 链）。宿主当前状态：配置
+> 已从备份还原（`~/.config/hypr.bak-20260809-190830`），`~/.local/bin/dms-ensure-display`
+> 已移除（可选诊断工具，需要时再装）。VM 若仍失败，按本清单会话内取证。
 
 ## 一、根因回顾（探查结论）
 
-1. **DMS 不加载**：
-   - 宿主未安装 `uwsm` → `hyprland-uwsm.desktop`（`TryExec=uwsm`）不可选 → 只剩
-     stock `Hyprland`（`Exec=/usr/bin/start-hyprland`）；
-   - `start-hyprland` 不触达 `graphical-session.target` → `dms.service`
-     （`WantedBy`+`Requisite=graphical-session.target`）永不自动拉起，
-     `systemctl --user start dms.service` 也会因 Requisite 失败；
-   - 宿主旧 autostart 用 `pgrep -f '[q]s ...' || dms run -d`（R4.7 否决形式）兜底，
-     且仓库 R4.10 helper 未部署到宿主 → 失败完全静默。
-2. **终端闪退**：配置层无关闭 kitty 的 windowrule、fish 无主动退出；放大器是
-   kitty.conf 的 `confirm_os_window_close 0`（任何启动失败立即关窗无确认）；头号
-   运行时嫌疑是 Hyprland spawn 环境完整性（WAYLAND_DISPLAY/PATH/XDG_RUNTIME_DIR）
-   与 VM/GPU 下 kitty 后端初始化。**必须真实会话内诊断才能定根因。**
+1. **DMS 不加载**：仓库 R4.7–R4.11 把 Hyprland DMS 启动换成了 uwsm+helper+systemd
+   链，该链**从未在真实会话验证过**（VMware 四轮 UNAVAILABLE），VM 里失败；而物理机
+   一直用 stock `start-hyprland` + autostart 直接 `dms run -d`（qs 守卫），工作正常。
+   R4.12 已把仓库 autostart 对齐物理机。注意：`start-hyprland` 不触达
+   `graphical-session.target`，所以 stock 会话里 dms.service 本就是 inactive，
+   autostart 的 daemon 启动是唯一 backend——不会双顶栏。
+2. **终端闪退**：配置层无关闭 kitty 的 windowrule、fish 无主动退出（与物理机
+   keybinds 逐字节核对，唯一差异是仓库多了 Super+Return 同一命令）；放大器是
+   kitty.conf 的 `confirm_os_window_close 0`（任何启动失败立即关窗无确认）。头号
+   运行时嫌疑是会话 spawn 环境完整性（WAYLAND_DISPLAY/PATH/XDG_RUNTIME_DIR）与
+   VM/GPU 下 kitty 后端初始化。**必须真实会话内诊断才能定根因。**
 
-## 二、需授权执行的宿主步骤（仓库边界外，agent 不代执行）
+## 二、宿主步骤（对齐物理机；uwsm 可选）
 
-以下命令需要你确认后自行执行（或明确授权 agent 逐条执行）：
+物理机无需 uwsm 即可工作；仓库 R4.12 的 autostart 不依赖 helper/uwsm。需要
+`Hyprland (uwsm-managed)` 入口时才需要 uwsm（可选）：
 
 ```sh
-# 1) 安装 uwsm（hyprland 的 UWSM 入口才能用）
-sudo pacman -S uwsm            # 或经 gsudo
-
-# 2) 部署当前 hypr 配置（先备份现有配置！会覆盖宿主 ~/.config/hypr）
+# 1) 部署当前 hypr 配置（先备份现有配置！会覆盖宿主 ~/.config/hypr）
 cp -a ~/.config/hypr ~/.config/hypr.bak-$(date +%Y%m%d)
 cp -a <repo>/config/home/.config/hypr/. ~/.config/hypr/
 
-# 3) 部署 helper 到 ~/.local/bin（新增，不覆盖）
+# 2)（可选）诊断工具：把 helper 装到 ~/.local/bin 供手工诊断
 install -Dm755 <repo>/config/home/.local/bin/dms-ensure-display ~/.local/bin/dms-ensure-display
 
-# 4) 验证入口可用
-test -x /usr/bin/uwsm && echo uwsm-ok
+# 3)（可选，仅当需要 uwsm-managed 入口）安装 uwsm
+sudo pacman -S uwsm
+
+# 4) 验证部署的 autostart 已对齐（应看到 qs 守卫 + dms 直接启动行）
+grep "dms run -d" ~/.config/hypr/conf/autostart.lua
 grep TryExec /usr/share/wayland-sessions/hyprland-uwsm.desktop   # 应为 TryExec=uwsm
 ```
 
@@ -56,7 +57,7 @@ cat "$XDG_RUNTIME_DIR/dms-ensure.log"
 systemctl --user status dms.service
 journalctl --user -u dms.service -b --no-pager | tail -40
 
-# 3) 手工重跑 helper（看 rc 与 stderr）
+# 3)（可选诊断工具已装时）手工重跑 helper，看三态判定与退出码
 "$HOME/.local/bin/dms-ensure-display"; echo "helper rc=$?"
 
 # 4) 终端闪退对照（Super+Return 与 Alt+Enter 同命令；都闪则排除 Alt 截获）
@@ -70,14 +71,15 @@ hyprctl configerrors
 
 ## 四、dms-ensure.log 消息 → 含义 → 处置
 
-| 日志消息 | 含义 | 处置 |
+R4.12 起 dms-ensure.log 记录的是 autostart DMS 启动命令（qs 守卫 + daemon 启动）
+的 stderr，不是 helper 的输出：
+
+| 日志内容 | 含义 | 处置 |
 |---|---|---|
-| `plausible dms owner already present` | pre-check 已有 owner（含旧会话残留 marker 且 owner 存活） | 若确认是旧会话残留：注销旧会话或清理 `$XDG_RUNTIME_DIR/danklinux-*` 后重登 |
-| `unverifiable at PRE-check` | marker 不可读/owner 状态无法查询 | 手工检查 `ls -la $XDG_RUNTIME_DIR/danklinux-*` 与 `/proc/<pid>/comm` |
-| `systemctl ... rc=0` + `plausible (post systemd)` | systemd 正常拉起 DMS | 顶栏若仍无 → 查 qs/journal |
-| `systemctl ... rc≠0` + `starting direct fallback` | Requisite 失败走了 daemon 兜底 | 确认 uwsm 已装；fallback 后看 `dms run -d` 的 daemon-child 是否存活 |
-| `direct fallback failed` | `dms run -d` 失败（rc=5） | 查 dms 是否在 PATH、journal 中 dms 报错 |
-| （空日志 / 无 dms-ensure.log） | helper 未执行（命令未找到 / $HOME 未展开） | 确认 `~/.local/bin/dms-ensure-display` 存在且 755、`$HOME` 已设置 |
+| 有 `dms run -d` 相关 stderr（含报错） | autostart 执行了 daemon 启动且失败 | 把报错贴出；查 `dms` 是否在 PATH、journal 中 dms 报错、VM GPU |
+| 日志为空/仅有无害行 | qs 已在跑（守卫短路，DMS 已就绪）**或** autostart 钩子未执行 | 顶栏有 → 正常；顶栏无 → 查钩子是否触发（`hyprctl configerrors`、日志时间戳） |
+| 无 dms-ensure.log | `dms run -d` 从未执行（守卫命中 qs 或命令未运行） | 同上 |
+| （手工 helper 已装时）`plausible/unverifiable/absent` | 三态判定的当前显示 owner 状态 | 按 R4.10 handoff 的三态语义处置；`unverifiable` → 查 marker/`/proc/<pid>/comm` |
 
 ## 五、终端闪退的判别结论路径
 
@@ -86,13 +88,15 @@ hyprctl configerrors
 2. 手工 `kitty -e fish` 的 rc 与 stderr：非 0 → kitty/fish 启动失败，看具体报错
    （Wayland 连接 / GL 初始化）；0 但窗口消失 → 窗口被合成器/规则关闭（`hyprctl
    configerrors` 与 windowrules 复核）。
-3. `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` 为空 → spawn 环境问题，修 UWSM/环境导入。
+3. `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` 为空 → spawn 环境问题（物理机 stock 入口
+   无此问题；VM 若走 uwsm-managed 入口则重点查 uwsm 会话 env 导入）。
 4. 若为 VM（VMware SVGA 3D）→ 按 comprehensive-review 的分层变量法（3D on/off、
    blur on/off）隔离。
 
 ## 六、验证完成标准（对应 R4.10 handoff 契约）
 
-- dms.service active、`dms run --session` 恰好一个、qs 恰好一个、bar 可见；
+- dms.service active（Niri 会话）；Hyprland 会话里 `qs -p /usr/share/quickshell/dms`
+  恰好一个、bar 可见；
 - `dms ipc call settings focusOrToggle` 可用；Super+Return 打开 kitty；
 - `hyprctl binds -j` 含仓库绑定；`hyprctl configerrors` 无错误；
 - reload 两次不产生双栏；注销回 Niri 无 daemon-child 残留。
