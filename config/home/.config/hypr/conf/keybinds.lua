@@ -38,6 +38,9 @@ hl.bind("CTRL + ALT + Delete", hl.dsp.exec_cmd("dms ipc call processlist focusOr
 
 -- ===== 应用启动 =====
 hl.bind("ALT + Return", hl.dsp.exec_cmd(terminal .. " -e fish")) -- 终端（同 niri Alt+Enter）
+-- VMware/宿主可能截获 Alt+Return（视频末段出现宿主 Niri 重载提示），补 Hyprland
+-- 惯用的 Super+Return 作为可靠备选；两者都走同一 terminal 命令。
+hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal .. " -e fish"))
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager)) -- 文件管理器
 hl.bind("ALT + Slash", hl.dsp.exec_cmd(terminal .. " --single-instance --class quickterminal")) -- 浮动终端
 hl.bind("ALT + B", hl.dsp.exec_cmd("$HOME/.local/bin/b23")) -- B 站链接播放

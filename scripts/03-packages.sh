@@ -91,13 +91,15 @@ if [[ "${HAVE_ARCHLINUXCN}" == "true" ]]; then
       "Server = https://mirrors.zju.edu.cn/archlinuxcn/\$arch" \
       >> /etc/pacman.conf'
   fi
+  # Step 2 (D-03, follow-up 3): exactly ONE database sync AFTER
+  # [archlinuxcn] is configured, regardless of whether the keyring is
+  # already installed - the db must be current before any archlinuxcn
+  # package install (resume with an existing keyring still needs the sync).
+  sync_archlinuxcn || die "pacman -Sy failed; cannot reach archlinuxcn repo"
   if ! pacman -Q archlinuxcn-keyring >/dev/null 2>&1; then
-    # Let pacman resolve the exact keyring package version from the repo.
-    run pacman -Sy --noconfirm || die "pacman -Sy failed; cannot reach archlinuxcn repo"
     run pacman -S --noconfirm archlinuxcn-keyring || \
       die "archlinuxcn-keyring install failed; cannot install archlinuxcn packages"
   fi
-  run pacman -Sy
 fi
 
 # flclash migration: the old AUR flclash-bin package provides the virtual

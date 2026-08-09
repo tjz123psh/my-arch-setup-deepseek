@@ -51,9 +51,74 @@ and it is not an audited/reproducible engineering system.
    reproduces that state.
 5. **greetd login, not SDDM.** greetd + dms-greeter login, with the greeter
    command following the desktop selection (C-02 fix 2026-08-08): niri →
-   `dms-greeter --command niri`, hyprland → `--command hyprland`, both →
-   niri (dms-greeter remembers the last session so the operator can switch),
-   none → no greetd (TTY login). SDDM-related pieces were deleted.
+   `dms-greeter --command niri`, both → niri (dms-greeter remembers the last
+   session so the operator can switch to Hyprland from the greeter menu),
+   none → no greetd (TTY login). **Pure `-d hyprland` was removed
+   2026-08-08**: Hyprland only runs inside "both", selected per session from
+   the greeter menu. SDDM-related pieces were deleted.
+   **Hyprland lifecycle is uwsm-managed (2026-08-09, Codex R4).** The
+   Round-2 oneshot watcher (pgrep polling, HYPR_WATCH_TIMEOUT=43200) and the
+   Round-3 custom systemd units + launcher (hyprland.service,
+   hyprland-shutdown.target, hyprland-session, user-level
+   `~/.local/share/wayland-sessions/hyprland.desktop`) were removed. The
+   hyprland package's system entry `/usr/share/wayland-sessions/
+   hyprland-uwsm.desktop` (Exec=`uwsm start -e -D Hyprland hyprland.desktop`,
+   `uwsm` is a wm-hyprland package) drives the session: uwsm imports the
+   whitelisted session env, waits for HYPRLAND_INSTANCE_SIGNATURE, manages
+   graphical-session.target (dms.service starts via WantedBy / stops via
+   PartOf) and cleans the systemd+D-Bus activation env on exit. A user-level
+   desktop entry can never be seen by dms-greeter (its HOME/XDG_DATA_HOME
+   point at the greeter cache, not the target user's ~/.local/share), so the
+   system entry is the only contract and 08-services verifies it (uwsm
+   binary + Exec/TryExec) in "both". `DESKTOP_ENV=none` skips the dms/
+   dsearch/greetd/Hyprland chain entirely. 08-services also runs a
+   hash/marker-protected migration cleanup (backup first, only
+   project-deployed content removed, daemon-reload + confirm) for Round-2/3
+   leftovers in an existing target HOME.
+   **Cleanup hardening (2026-08-09, Codex R4.1/R4.3).** The migration
+   cleanup lstat-checks every path component from TARGET_HOME down (a
+   symlinked `~/.config`/`~/.local` is never read/backed up/deleted),
+   handles only regular files (dirs/FIFOs/sockets/dangling symlinks kept +
+   reported), backs up to a unique mktemp dir first (no backup -> no
+   delete) and re-verifies after cleanup that UWSM's secondary resolution
+   of `hyprland.desktop` lands on the system entry. Resolution uses the
+   explicit target-session values `TARGET_XDG_DATA_HOME` (default
+   `${TARGET_HOME}/.local/share`) and `TARGET_XDG_DATA_DIRS` (default
+   `/usr/local/share:/usr/share`) - never the installer process's own
+   XDG_* - and validates the entry with structured parsing (regular file,
+   `[Desktop Entry]` section, non-empty Name/Exec, Exec program
+   resolvable); the first existing candidate is classified and an unusable
+   one fails closed (rc=2) instead of falling through. On the root/strap
+   path the backup tree (intermediate dirs included) is recursively chowned
+   to the target numeric uid/gid before any deletion; any ownership failure
+   keeps the original. Order is preflight (zero modification; includes
+   greetd.service, dms-greeter, niri, greeter config sources) -> cleanup ->
+   verify -> enable/write. Round-2 watcher files (hyprland-session.service/
+   watch/start, the niri ExecStop drop-in) were never committed, so their
+   exact content is unknown: they are detected + warned, never
+   guess-deleted. `DESKTOP_ENV=none` converges an existing desktop install
+   by disabling the project-managed greetd/dms/dsearch with verified
+   postconditions (dms wants-symlink gone incl. dangling; greetd is-enabled
+   must report disabled/not-found).
+   **Greeter session memory (R4.3/R4.4).** dms-greeter's remembered session
+   lives ONLY in `<cache>/.local/state/memory.json` (`lastSessionId` /
+   `lastSessionDesktopId` / `lastSuccessfulUser`); DMS theme/session files
+   (`session.json`, `users/*/session.json`) are never touched. When the
+   memory references `hyprland.desktop`, 08-services migrates it to
+   `hyprland-uwsm.desktop` with structured JSON parsing (only the two
+   session-selection fields are edited; the semantic VALUES of
+   `lastSuccessfulUser`, unknown fields and unrelated strings are preserved
+   - the file is re-serialized, so byte-for-byte format is not guaranteed),
+   a unique auditable backup, and a dir_fd-anchored atomic replace that
+   preserves uid/gid/mode (re-stat verified; a mismatch rolls back from the
+   verified backup). Any unsafe state (symlink components, FIFO, unreadable,
+   invalid JSON), a detected path race, or an inability to preserve
+   ownership as the current user fails closed with the exact memory path and
+   a manual action - never a guessed rewrite. This migration logic is
+   verified against the pinned dms-greater source contract via structural/
+   synthetic JSON tests; it is NOT proof of a real greeter login run - the
+   live greeter menu and UWSM runtime remain unverified until VM
+   acceptance.
 6. **Services mirror the host.** bluetooth, power-profiles, docker,
    NetworkManager, grub-btrfsd, paccache.timer, snapper-cleanup.timer,
    snapper-timeline.timer, btrfs-scrub@-.timer are enabled on *every* machine

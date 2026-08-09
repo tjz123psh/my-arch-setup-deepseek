@@ -182,6 +182,7 @@ udiskie	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit
 udisks2	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Daemon, tools and libraries to access and manipulate disks, storage devices and technologies
 unzip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	For extracting and viewing files in .zip archives
 uv	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	An extremely fast Python package installer and resolver written in Rust
+uwsm	pacman	extra	pacman	wm-hyprland	package-only	install	confirmed-desired	A standalone Wayland session manager (uwsm-managed Hyprland session lifecycle via hyprland-uwsm.desktop)
 vhs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A tool for recording terminal GIFs
 virt-manager	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Desktop user interface for managing virtual machines [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 virt-viewer	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Display and interaction with virtual machines (SPICE/VNC viewer) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]

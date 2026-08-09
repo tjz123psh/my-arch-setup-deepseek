@@ -18,6 +18,8 @@ DESKTOP_ENV="${DESKTOP_ENV:-}"
 MACHINE_TYPE="${MACHINE_TYPE:-}"
 TEST_PROFILE="${TEST_PROFILE:-}"
 ASSUME_YES="${ASSUME_YES:-false}"
+FORCE_REFRESH="${FORCE_REFRESH:-0}"
+FZF_AVAILABLE=1
 MODULES=()
 
 # Temporary scoped sudo drop-in used during the install. Scoped to pacman
@@ -45,10 +47,14 @@ One-click Arch desktop restore (Niri/Hyprland). Interactively select desktop and
 flags can specify them directly to skip the prompts.
 
 Options:
-  -d, --desktop niri|hyprland|both|none
+  -d, --desktop niri|both|none
+            (pure hyprland is intentionally removed: Hyprland only runs as
+             part of "both", selectable from the greetd/dms-greeter session menu)
   -t, --machine vm|physical
       --test-profile physical-sim-vmware   run the physical branch in a VMware guest,
                                            marking hardware-only effects NOT_APPLICABLE_SIMULATED
+      --force-refresh    repair mode: full database refresh (-Syyu) instead of -Syu
+                         in the single 02-system upgrade (NOT the default)
   -y, --assume-yes   auto-reboot without prompting after install
   -h, --help
 EOF
@@ -59,8 +65,9 @@ parse_args() {
     case "$1" in
       -d|--desktop)
         case "$2" in
-          niri|hyprland|both|none) DESKTOP_ENV="$2" ;;
-          *) die "invalid --desktop value: $2 (niri|hyprland|both|none)" ;;
+          niri|both|none) DESKTOP_ENV="$2" ;;
+          hyprland) die "invalid --desktop value: hyprland (no longer supported; use 'both' and pick Hyprland from the greetd session menu)" ;;
+          *) die "invalid --desktop value: $2 (niri|both|none)" ;;
         esac
         shift 2 ;;
       -t|--machine)
@@ -81,6 +88,7 @@ parse_args() {
         esac
         shift 2 ;;
       -h|--help) usage; exit 0 ;;
+      --force-refresh) FORCE_REFRESH="1" ;;
       -y|--assume-yes) ASSUME_YES="true" ;;
       *) die "unknown argument: $1 (see --help)" ;;
     esac
@@ -88,9 +96,13 @@ parse_args() {
 }
 
 ensure_fzf_ui() {
-  # fzf is only needed for interactive selection
+  # fzf is only needed for interactive selection; if missing we fall back to
+  # plain prompts (no pacman sync before mirror config, download-mode D-05).
+  FZF_AVAILABLE=1
   if [[ -z "${DESKTOP_ENV}" || -z "${MACHINE_TYPE}" ]]; then
-    ensure_fzf
+    if ! ensure_fzf; then
+      FZF_AVAILABLE=0
+    fi
   fi
 }
 
@@ -98,14 +110,27 @@ select_desktop() {
   [[ -n "${DESKTOP_ENV}" ]] && return
   section "Select desktop environment"
   local selected
-  selected="$(printf 'Niri (recommended)\nHyprland\nNiri + Hyprland (both)\nNo desktop (packages and config only)\n' \
-    | fzf --layout=reverse --border=rounded \
-        --header=' Select desktop (J/K move, Enter confirm) ' \
-        --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  if [[ "${FZF_AVAILABLE:-1}" == "1" ]]; then
+    selected="$(printf 'Niri (recommended)\nNiri + Hyprland (both)\nNo desktop (packages and config only)\n' \
+      | fzf --layout=reverse --border=rounded \
+          --header=' Select desktop (J/K move, Enter confirm) ' \
+          --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  else
+    printf '1) Niri (recommended)\n2) Niri + Hyprland (both)\n3) No desktop (packages and config only)\n'
+    printf 'Select [1-3]: '
+    if ! read -r selected; then
+      die "Selection cancelled (EOF / no input)"
+    fi
+    case "${selected}" in
+      1) selected="Niri" ;;
+      2) selected="Hyprland (both)" ;;
+      3) selected="No desktop" ;;
+      *) die "Invalid selection: ${selected}" ;;
+    esac
+  fi
   [[ -z "${selected}" ]] && die "Cancelled"
   case "${selected}" in
     *"Hyprland (both)"*) DESKTOP_ENV="both" ;;
-    *Hyprland*) DESKTOP_ENV="hyprland" ;;
     *"No desktop"*) DESKTOP_ENV="none" ;;
     *) DESKTOP_ENV="niri" ;;
   esac
@@ -116,10 +141,23 @@ select_machine() {
   [[ -n "${MACHINE_TYPE}" ]] && return
   section "Select machine type"
   local selected
-  selected="$(printf 'Physical machine (ASUS, full config)\nVirtual machine (same config, drivers skipped)\n' \
-    | fzf --layout=reverse --border=rounded \
-        --header=' Select machine type (J/K move, Enter confirm) ' \
-        --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  if [[ "${FZF_AVAILABLE:-1}" == "1" ]]; then
+    selected="$(printf 'Physical machine (ASUS, full config)\nVirtual machine (same config, drivers skipped)\n' \
+      | fzf --layout=reverse --border=rounded \
+          --header=' Select machine type (J/K move, Enter confirm) ' \
+          --bind 'j:down,k:up,esc:abort,ctrl-c:abort')" || true
+  else
+    printf '1) Physical machine (ASUS, full config)\n2) Virtual machine (same config, drivers skipped)\n'
+    printf 'Select [1-2]: '
+    if ! read -r selected; then
+      die "Selection cancelled (EOF / no input)"
+    fi
+    case "${selected}" in
+      1) selected="Physical machine" ;;
+      2) selected="Virtual machine" ;;
+      *) die "Invalid selection: ${selected}" ;;
+    esac
+  fi
   [[ -z "${selected}" ]] && die "Cancelled"
   case "${selected}" in
     *"Virtual machine"*) MACHINE_TYPE="vm" ;;
@@ -134,7 +172,6 @@ build_modules() {
   MODULES+=(04-drivers.sh)
   case "${DESKTOP_ENV}" in
     niri) MODULES+=(05-niri.sh) ;;
-    hyprland) MODULES+=(05-hyprland.sh) ;;
     both) MODULES+=(05-niri.sh 05-hyprland.sh) ;;
     none) log "Skipping desktop environment" ;;
   esac
@@ -144,6 +181,15 @@ build_modules() {
 main() {
   parse_args "$@"
   check_root
+  # Desktop whitelist (fail closed): pure hyprland is removed; a stale
+  # DESKTOP_ENV=hyprland from the environment (or an unknown value) must
+  # never be silently accepted as "both". Resume is additionally guarded by
+  # the progress context binding (desktop is part of the context hash).
+  case "${DESKTOP_ENV}" in
+    ""|niri|both|none) ;;
+    hyprland) die "DESKTOP_ENV=hyprland is no longer supported; use 'both' and pick Hyprland from the greetd session menu" ;;
+    *) die "unknown DESKTOP_ENV=${DESKTOP_ENV} (niri|both|none)" ;;
+  esac
   if [[ -n "${TEST_PROFILE}" ]] && [[ "${MACHINE_TYPE}" != "physical" ]]; then
     die "--test-profile physical-sim-vmware requires -t physical"
   fi
@@ -173,9 +219,20 @@ main() {
   # instead of resume-skipping modules (review H-02).
   setup_progress
 
-  section "Pre-Flight" "System update"
-  run pacman -Sy --noconfirm archlinux-keyring
-  run pacman -Syyu --noconfirm
+  # Step 2 (download-mode-lab D-00): apply mirror config BEFORE the first
+  # sync/upgrade so the first pacman transaction uses the optimized
+  # mirrorlist. 01-mirror.sh is idempotent and performs NO pacman sync or
+  # package install by itself; 02-system.sh owns the single official sync/
+  # upgrade (-Syu, or -Syyu only under --force-refresh). The old default
+  # `pacman -Syyu` here is gone (D-03): it forced a full db refresh and
+  # re-synced the database before the mirror config existed.
+  section "Pre-Flight" "Mirror configuration"
+  bash "${PROJECT_DIR}/scripts/01-mirror.sh"
+  # Step 2 (follow-up 1): 01-mirror.sh already ran in pre-flight; mark it
+  # done so the module loop below skips it instead of running it twice.
+  mark_done 01-mirror.sh
+
+  export FORCE_REFRESH
 
   # One password for the whole install: extend the sudo timestamp AND grant a
   # SCOPED NOPASSWD for /usr/bin/pacman only. makepkg deliberately runs every

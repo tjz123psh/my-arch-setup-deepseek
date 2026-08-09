@@ -229,5 +229,4 @@ physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Medium.ttf	.local
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Regular.ttf	.local/share/fonts/MiSans/MiSans-Regular.ttf	644
 physical-v1	fonts	config/home/.local/share/fonts/MiSans/MiSans-Semibold.ttf	.local/share/fonts/MiSans/MiSans-Semibold.ttf	644
 physical-v1	desktop-shared	config/home/md/vmware/VMware-使用与运维笔记.md	md/vmware/VMware-使用与运维笔记.md	644
-physical-v1	personal-user-services	config/home/.config/systemd/user/hyprland-session.target	.config/systemd/user/hyprland-session.target	644
 physical-v1	wm-niri	config/home/scripts/desktop/niri-vmtest-gen	scripts/desktop/niri-vmtest-gen	755

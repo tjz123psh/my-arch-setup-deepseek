@@ -5,28 +5,29 @@
 -- See https://wiki.hypr.land/Configuring/Basics/Autostart/
 
 -- Autostart necessary processes (like notifications daemons, status bars, etc.)
--- DMS (DankMaterialShell) 说明（2026-08-08 整改，review 6.2/6.3）：
---   niri 会话由 systemd 用户服务 dms.service（WantedBy=graphical-session.target）拉起 DMS。
---   之前 Hyprland 用 `dms run -d` 直接绕过 systemd 启动 DMS，绕开了 dms.service 的
---   restart/状态/日志管理和 graphical-session.target 生命周期。现在改为：
---     1) dbus-update-activation-environment --systemd --all 把 Wayland/XDG 环境导入
---        systemd 用户环境（dms.service 才能拿到 WAYLAND_DISPLAY 等）；
---     2) systemctl --user start hyprland-session.target，该 target Wants=
---        graphical-session.target + xdg-desktop-autostart.target，从而由 dms.service
---        （带 Restart=on-failure）统一管理 DMS 生命周期，与 niri 会话完全一致。
---   退出 Hyprland（登出）时 systemd --user 实例随 greetd 会话结束而停止，DMS 随之停止。
+-- DMS (DankMaterialShell) 说明（2026-08-09 Codex Round 4）：
+--   Hyprland 由 greetd/dms-greeter 会话菜单里的 "Hyprland (uwsm-managed)"
+--   系统入口（/usr/share/wayland-sessions/hyprland-uwsm.desktop，
+--   Exec=uwsm start -e -D Hyprland hyprland.desktop）启动。UWSM 负责：
+--   导入白名单会话环境、等 HYPRLAND_INSTANCE_SIGNATURE、拉起
+--   graphical-session.target（dms.service 经 WantedBy 自动启动，退出时经
+--   PartOf 停止）、退出时清除 systemd/D-Bus activation 环境。Hyprland
+--   0.56.2 自己也维护 systemd+D-Bus 环境（ready 时 import、退出时 unset）。
+--   本钩子不再做任何 systemctl import/unset/start——只需兜底拉起非
+--   systemd 的辅助进程。dms-greeter 的扫描路径是系统目录 + greeter 缓存
+--   （HOME/XDG_DATA_HOME 指向 /var/cache/dms-greeter），不是目标用户的
+--   ~/.local/share，因此用户级 desktop 入口方案已废弃。
 -- 与 niri 保持一致：U 盘自动挂载托盘。
--- XDG 自启动：hyprland-session.target Wants=xdg-desktop-autostart.target，登录时自动
---   拉起 ~/.config/autostart 和 /etc/xdg/autostart 里的 .desktop（fcitx5 输入法、
+-- XDG 自启动：由 uwsm 激活 xdg-desktop-autostart.target 拉起
+--   ~/.config/autostart 和 /etc/xdg/autostart 里的 .desktop（fcitx5 输入法、
 --   blueman 蓝牙托盘、FlClash 代理）。下面手动 exec 用 pgrep 守卫做幂等兜底，
 --   避免与残留进程重复（XDG 自启动失败时仍有保障）。只影响 Hyprland 会话。
 --   已由 socket/dbus 激活、无需补的：pipewire/wireplumber（音频）、xdg-desktop-portal(-gtk)、
 --   gvfs、polkitd（系统级）。图形 polkit 授权 agent 由 DMS（quickshell Polkit）接管。
 --   fcitx5 的 IM 环境变量（QT_IM_MODULE/XMODIFIERS）在 /etc/environment 全局生效，仅需起进程。
 hl.on("hyprland.start", function()
-	-- 环境导入 + systemd 会话生命周期：DMS 由 dms.service 管理（见上）。
-	hl.exec_cmd("dbus-update-activation-environment --systemd --all")
-	hl.exec_cmd("systemctl --user start hyprland-session.target")
+	-- 会话生命周期由 UWSM 管理（graphical-session.target 拉起/停止 dms），
+	-- 这里只兜底非 systemd 的辅助进程。
 	-- U 盘自动挂载托盘（同 niri config.kdl 的 spawn-at-startup "udiskie" "-t"）
 	hl.exec_cmd("pgrep -x udiskie >/dev/null || udiskie -t")
 	-- 输入法（IM 变量走 /etc/environment，这里只保证进程起来）

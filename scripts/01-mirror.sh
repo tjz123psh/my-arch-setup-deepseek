@@ -50,23 +50,28 @@ if [[ "${CN_MIRROR:-0}" == "1" ]] || \
     > /etc/pacman.d/mirrorlist'
   success "Switched to China mirror list (8 mirrors)"
 else
-  log "Aliyun not reachable; running reflector (60s hard cap)..."
-  run pacman -S --noconfirm --needed reflector
-  # Hard timeout prevents a multi-minute global scan on a restricted network.
-  # `run` wraps sudo; the timeout must wrap the ACTUAL command, so run executes
-  # `timeout 60 reflector ...` as root. The previous `timeout 60 run ...`
-  # could not resolve the shell function `run` as an external command and
-  # always died with rc=127 (review P1-9). timeout rc=124 means it fired.
-  if run timeout 60 reflector --protocol https -a 5 -f 3 --sort rate \
-      --save /etc/pacman.d/mirrorlist; then
-    success "Mirror selection finished"
-  else
-    rc=$?
-    if (( rc == 124 )); then
-      warn "reflector timed out after 60s; keeping existing mirror"
+  # Step 2 (D-05): this script performs NO pacman install/sync - 02-system
+  # owns the single official sync/upgrade. If reflector is already installed
+  # we may run it (it only writes the mirrorlist); otherwise we keep the
+  # existing mirrorlist and warn instead of triggering a pre-mirror sync.
+  if command -v reflector >/dev/null 2>&1; then
+    log "Aliyun not reachable; running reflector (60s hard cap)..."
+    # Hard timeout prevents a multi-minute global scan on a restricted network.
+    # `run` wraps sudo; the timeout must wrap the ACTUAL command, so run executes
+    # `timeout 60 reflector ...` as root. timeout rc=124 means it fired.
+    if run timeout 60 reflector --protocol https -a 5 -f 3 --sort rate \
+        --save /etc/pacman.d/mirrorlist; then
+      success "Mirror selection finished"
     else
-      warn "reflector failed (rc=${rc}); keeping existing mirror"
+      rc=$?
+      if (( rc == 124 )); then
+        warn "reflector timed out after 60s; keeping existing mirror"
+      else
+        warn "reflector failed (rc=${rc}); keeping existing mirror"
+      fi
     fi
+  else
+    warn "Aliyun not reachable and reflector not installed; keeping existing mirrorlist (run 'pacman -S reflector && reflector ...' after the install, or rely on 02-system's upgrade)"
   fi
 fi
 
@@ -94,5 +99,6 @@ else
   log "ParallelDownloads not set in /etc/pacman.conf; pacman defaults to 1 (see pacman.conf(5))"
 fi
 
-run pacman -Sy
+# Step 2 (D-03): NO pacman sync here. 02-system.sh owns the single official
+# sync/upgrade; syncing here would duplicate the pre-flight work.
 success "Mirror source ready"

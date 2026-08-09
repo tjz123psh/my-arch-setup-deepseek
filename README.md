@@ -53,7 +53,7 @@ sudo bash strap.sh
 交互流程：
 
 1. 选择机器类型：物理机（ASUS 完整配置 + VMware host）/ 虚拟机（VMware guest，除硬件驱动与虚拟化角色外全量一致，详见[颗粒度对照](#机器类型颗粒度vm-vs-物理机)）
-2. 选择桌面环境：Niri / Hyprland / 双会话 / 不装桌面
+2. 选择桌面环境：Niri / Niri + Hyprland（双会话）/ 不装桌面（纯 Hyprland 独立入口已移除，Hyprland 仅在双会话模式下从 greetd 会话菜单选择）
 3. 自动执行分步安装（每步记录 `.install_progress` 且绑定安装上下文，中断后重跑续传；参数/清单变化时拒绝误续传）
 
 ## 它做什么
@@ -62,12 +62,12 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（8 个国内镜像：阿里/中科大/清华/腾讯/华为/网易/兰大/浙大）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（191 安装 = 177 pacman（含 archlinuxcn）+ 14 AUR；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin） |
+| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（192 安装 = 178 pacman（含 archlinuxcn）+ 14 AUR；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制，required 失败即中止；VM 跳过） |
-| 05-niri/hyprland | 桌面环境（Niri 或 Hyprland，驱动之后） |
+|  05-niri/hyprland | 桌面环境（Niri 或 Niri+Hyprland 双会话，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（物理机 14 个目标 / VM 13 个，不含 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap，共 15 棵 recipe 树；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
-| 07-config | 部署个人配置映射（231 映射，先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
-| 08-services | 启用服务：greetd 登录（按桌面选择 dms-greeter→niri/hyprland）+ 用户服务（dms/dsearch）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
+| 07-config | 部署个人配置映射（230 映射，先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
+| 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 需在菜单选 "Hyprland (uwsm-managed)"；系统入口 `hyprland-uwsm.desktop`，cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验 UWSM 实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ greeter memory 迁移（仅 `<cache>/.local/state/memory.json`，结构化 JSON 只改精确 session 字段、保持 uid/gid/mode、唯一备份、原子替换，无法保权时保守 fail-closed 并给出路径）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
 | 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（VM=wf-recorder，物理=wl-screenrec）+ nomacs/PNG MIME 验收 |
 | 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
 
@@ -89,10 +89,10 @@ sudo bash strap.sh
 
 **完全一致的部分**（不做任何区分）：
 
-- 包清单主体（191 安装项中除上表 2–5 的虚拟化/硬件模块外）
-- 配置映射（同一 `physical-v1` 全量 231 映射；VM 不部署的仅上表第 6 项）
+- 包清单主体（192 安装项中除上表 2–5 的虚拟化/硬件模块外）
+- 配置映射（同一 `physical-v1` 全量 230 映射；VM 不部署的仅上表第 6 项）
 - 服务与定时器：bluetooth / power-profiles / docker / NetworkManager / grub-btrfsd / timesyncd、paccache / snapper-cleanup / snapper-timeline / btrfs-scrub
-- greetd 登录（dms-greeter，按桌面选择 niri/hyprland/both/none）
+- greetd 登录（dms-greeter 默认 niri；both 模式会话菜单可切 Hyprland）
 - snapper root+home 快照初始化、fish 登录 shell、GRUB 主题、locale/时区/zram、nomacs PNG MIME 验收
 
 **仿物理测试 profile**（`-t physical --test-profile physical-sim-vmware`）：仅允许在 VMware guest 内使用（`systemd-detect-virt` 必须为 `vmware`，否则中止）；走完整 physical 包/配置/AUR 分支，但 host-only 动作（host 网络、USB arbitration、硬件模式切换）记录为 `NOT_APPLICABLE_SIMULATED`，不实际执行。此 profile 不能替代真实物理机验收。
@@ -137,9 +137,12 @@ DKMS 的 vmmon/vmnet）。clash-verge 只安装不启服务（配置私有，手
 ## 验证背景
 
 软件包清单、配置映射与 AUR recipe 均基于真实 ASUS 机器检录；静态清单、配置
-映射、Niri 语法和 Hyprland fragments 已复核，目标行为测试也已运行。仓库没有
-可直接传给 `Hyprland --verify-config` 的单一配置，不能把旧宿主生成配置的 PASS
-扩大为仓库级 Hyprland runtime 证明。旧 KVM 批次记录
+映射、Niri 语法和 Hyprland fragments 已复核，目标行为测试也已运行。仓库的
+`hyprland.lua`（含 `conf/` 分片）已在本机真实宿主上通过 `Hyprland --verify-config`
+（显式 `-c` 与默认发现均 rc=0，见 `tests/session-lifecycle-test.sh` I 区）。这只
+证明配置可被 Hyprland 解析——真实 GPU 合成、greeter 会话菜单与 UWSM runtime
+生命周期仍需 VM 验收，不得把 verify-config PASS 扩大为仓库级 Hyprland runtime
+证明。旧 KVM 批次记录
 属于历史证据，不替代当前 VMware 验收。
 
 截至 2026-08-08，操作者报告物理机实战部署已完成；本轮只读复核了仓库与宿主
