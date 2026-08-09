@@ -124,7 +124,13 @@ and it is not an audited/reproducible engineering system.
    The helper's diagnostics go to stderr; under the Hyprland autostart exec
    path stdout/stderr are redirected to /dev/null, so they are not a
    persistent log - VM diagnostics rely on systemctl/journal and manual
-   helper runs. The fallback never runs under Niri. The state machine is
+   helper runs. R4.11 (2026-08-09): the helper's stderr is also persisted to
+   `$XDG_RUNTIME_DIR/dms-ensure.log` (the autostart exec path redirects
+   stdout/stderr to /dev/null, so an explicit `2>>` append keeps first-session
+   DMS failures visible; exit-status semantics are unchanged - no pipe). Host
+   remediation and in-session diagnostic steps live in
+   `docs/hyprland-dms-host-remediation.md`. The fallback never runs under
+   Niri. The state machine is
    covered by synthetic runtime-marker/fake-PATH tests only - that is NOT
    proof of a real DMS bar/IPC run; real VMware must still verify
    same-display single instance, cross Niri->Hyprland logout/login, reload

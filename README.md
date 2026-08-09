@@ -175,9 +175,14 @@ PRE-check 阶段：已有 plausible owner 或状态 unverifiable 时直接返回
 已 active；hyprland.start 只在**首帧触发一次**，reload 不重触发 helper；
 direct daemon 返回与其 marker 发布之间仍有窗口（弱契约，flock 不承诺任意
 顺序手工重复调用永远只发一次请求）。该 fallback 只在 Hyprland 会话内运行，
-不运行于 Niri。helper 的诊断写 stderr，autostart exec 路径下 stdout/stderr
-被重定向到 /dev/null、不保证持久可见——VM 诊断以 systemctl/journal 与手工
-运行 helper 为准。合成 runtime-marker / fake-PATH 测试不等于真实 DMS bar/IPC
+不运行于 Niri。helper 的诊断写 stderr 并持久化到 `$XDG_RUNTIME_DIR/dms-ensure.log`
+（R4.11：autostart exec 路径下 stdout/stderr 会被重定向到 /dev/null，故显式落盘，
+rc 语义不变）——第一次真实 Hyprland 会话的 DMS 失败由此可见；VM 诊断仍以
+systemctl/journal、dms-ensure.log 与手工运行 helper 为准。宿主修复与真实会话
+内诊断步骤见
+[`docs/hyprland-dms-host-remediation.md`](docs/hyprland-dms-host-remediation.md)
+（含：安装 uwsm、部署当前配置与 helper、`dms-ensure.log` 消息→处置对照表、
+终端闪退判别路径）。合成 runtime-marker / fake-PATH 测试不等于真实 DMS bar/IPC
 已验证；真实 VMware 中的同显示单实例、跨 Niri→Hyprland 注销/登录、reload
 （仅验证 reload 不产生双栏）与退出清理仍待验收，不得声称 VM 已修复。
 

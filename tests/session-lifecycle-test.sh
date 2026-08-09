@@ -1899,6 +1899,15 @@ if [[ "$n_helper_cmds" -eq 1 ]]; then
 else
   check "M: exactly one exec_cmd calls the dms helper (single sequential chain)" 1 0
 fi
+# R4.11: the helper's stderr must be persisted to a log under the runtime dir
+# (autostart exec redirects stdout/stderr to /dev/null, so without this the
+# first real Hyprland session's DMS failures are invisible). The redirect
+# must NOT wrap the helper in a pipe (which would change the exit status).
+if grep -q 'dms-ensure-display 2>>' "$autolua" && grep -q 'dms-ensure.log' "$autolua"; then
+  check "M: helper stderr persisted to dms-ensure.log (diagnostics visible)" 0 0
+else
+  check "M: helper stderr persisted to dms-ensure.log (diagnostics visible)" 1 0
+fi
 # the old inline chain (DMS-specific pgrep guard / systemctl / dms run -d)
 # must be GONE from autostart.lua - all DMS startup logic lives in the
 # helper now (generic pgrep guards for udiskie/fcitx5/etc. remain legal)
@@ -2478,6 +2487,33 @@ if grep -q 'WAYLAND_DISPLAY not set' "$sandbox/b6.err"; then
   check "M-B6: missing WAYLAND_DISPLAY reported" 0 0
 else
   check "M-B6: missing WAYLAND_DISPLAY reported" 1 0
+fi
+
+# --- R4.11: run the autostart exec_cmd end-to-end (as Hyprland would via
+# /bin/sh -c, $HOME -> repo root so the helper resolves) and assert the
+# helper's stderr is PERSISTED to $XDG_RUNTIME_DIR/dms-ensure.log while the
+# behavior (fallback on absent + systemctl failure) is unchanged. Without
+# the redirect the log file never appears and the first real Hyprland
+# session's DMS failure stays invisible.
+rm -rf "${rt:?}"/*
+autostart_cmd="$(grep -n 'hl.exec_cmd(.*dms-ensure-display' "$autolua" | head -1 | sed -n 's/^[0-9]*:.*hl\.exec_cmd("\([^"]*\)").*/\1/p' || true)"
+# $HOME in the deployed config resolves to the user HOME; in the test the
+# helper lives at $root/config/home/.local/bin/dms-ensure-display
+autostart_cmd="${autostart_cmd//\$HOME/$root/config/home}"
+: > "$sandbox/r411-cmd.log"
+env PATH="$mbin:$PATH" DMS_LOG="$sandbox/r411-cmd.log" WAYLAND_DISPLAY="wayland-new" \
+  XDG_RUNTIME_DIR="$rt" FAKE_SYSTEMCTL_RC=1 FAKE_DMS_LIVE_PID="$liveB2" \
+  bash -c "$autostart_cmd" >/dev/null 2>&1 || true
+if [[ -s "$rt/dms-ensure.log" ]] && grep -q 'starting direct fallback' "$rt/dms-ensure.log"; then
+  check "M-R4.11: autostart path persists helper diagnostics to dms-ensure.log" 0 0
+else
+  check "M-R4.11: autostart path persists helper diagnostics to dms-ensure.log" 1 0
+fi
+n="$(grep -c 'dms run -d' "$sandbox/r411-cmd.log" || true)"
+if [[ "$n" -eq 1 ]]; then
+  check "M-R4.11: redirect does not change behavior (fallback still ran)" 0 0
+else
+  check "M-R4.11: redirect does not change behavior (fallback still ran)" 1 0
 fi
 
 # --- cleanup + residue assertions: every fake pid from this run must be

@@ -60,7 +60,10 @@ hl.on("hyprland.start", function()
 	-- 只有当前显示确实 absent/stale 时才 daemon 兜底。整条链在 helper 内顺序
 	-- 执行（同一 exec_cmd，不能拆成两个异步 exec），也不得做显示盲的进程
 	-- 查找判断。hyprland.start 只在首帧触发一次，reload 不重触发。
-	hl.exec_cmd("$HOME/.local/bin/dms-ensure-display")
+	-- 诊断持久化：autostart exec 路径下 stdout/stderr 被重定向到 /dev/null，
+	-- 因此把 helper 的 stderr 追加到 $XDG_RUNTIME_DIR/dms-ensure.log（无管道，
+	-- 不改 helper 退出码语义），第一次真实会话的 DMS 失败不再不可见。
+	hl.exec_cmd("$HOME/.local/bin/dms-ensure-display 2>>${XDG_RUNTIME_DIR:-/tmp}/dms-ensure.log")
 	-- 其余辅助进程由 UWSM 的 graphical-session.target 链或 XDG 自启动负责，
 	-- 这里只兜底非 systemd 的辅助进程（幂等 pgrep 守卫，同 niri）。
 	-- U 盘自动挂载托盘（同 niri config.kdl 的 spawn-at-startup "udiskie" "-t"）
