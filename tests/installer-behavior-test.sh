@@ -171,6 +171,19 @@ if grep -q 'NOPASSWD: /usr/bin/pacman' "$root/install.sh" \
 else
   fail=$((fail + 1)); echo "  FAIL sudoers grant not scoped"
 fi
+# install.sh: the scoped pacman NOPASSWD drop-in must be created in the
+# strap.sh (root) path too. 06-aur runs makepkg via `runuser -u TARGET_USER`
+# and `makepkg -s` calls `sudo -k pacman` to install missing runtime deps;
+# without the grant and with no tty, sudo dies with "a terminal is required"
+# and every recipe needing an extra dep fails (found 2026-08-10 fresh VM:
+# fuzzel-ime-git/fcft+tllist, google-chrome/ttf-liberation,
+# linuxqq-appimage+wechat-appimage/fuse2).
+if grep -q 'NOPASSWD: /usr/bin/pacman' "$root/install.sh" \
+   && grep -q '> "${SUDOERS_DROPIN}"' "$root/install.sh"; then
+  pass=$((pass + 1)); echo "  ok   sudoers drop-in created on the root (strap) path"
+else
+  fail=$((fail + 1)); echo "  FAIL sudoers drop-in missing on the root (strap) path"
+fi
 # install.sh: EXIT trap cleans the drop-in
 if grep -q 'trap cleanup_install_sudoers EXIT' "$root/install.sh"; then
   pass=$((pass + 1)); echo "  ok   EXIT trap registered"

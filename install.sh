@@ -246,19 +246,36 @@ main() {
   # every other privileged step (systemctl/useradd/grub-mkconfig/...) still
   # needs the timestamp. The drop-in is removed by the EXIT trap above AND by
   # 99-cleanup, restoring stock sudo on every exit path.
-  if [[ "$(id -u)" -ne 0 ]]; then
+  #
+  # The grant is created in the strap.sh (root) path too: 06-aur runs makepkg
+  # via `runuser -u TARGET_USER`, and `makepkg -s` calls `sudo -k pacman` to
+  # install missing runtime deps. Without a NOPASSWD grant and with no tty,
+  # sudo dies with "a terminal is required to read the password" and every
+  # recipe needing an extra runtime dep fails (found 2026-08-10 fresh VM
+  # install: fuzzel-ime-git needs fcft+tllist, google-chrome needs
+  # ttf-liberation, linuxqq-appimage/wechat-appimage need fuse2).
+  if [[ -f "${SUDOERS_DROPIN}" ]]; then
     # Stale drop-in from an interrupted previous run: validate its syntax and
     # remove it before creating a fresh one. Never reuse an untested sudoers
     # file, and never leave an old ALL grant lying around.
-    if [[ -f "${SUDOERS_DROPIN}" ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      visudo -cf "${SUDOERS_DROPIN}" && rm -f "${SUDOERS_DROPIN}" \
+        || warn "could not remove stale ${SUDOERS_DROPIN}; remove it manually: rm -f ${SUDOERS_DROPIN}"
+    else
       log "Removing stale ${SUDOERS_DROPIN} from a previous run..."
       run bash -c "visudo -cf '${SUDOERS_DROPIN}' && rm -f '${SUDOERS_DROPIN}'" \
         || warn "could not remove stale ${SUDOERS_DROPIN}; remove it manually: sudo rm -f ${SUDOERS_DROPIN}"
     fi
+  fi
+  if [[ "$(id -u)" -eq 0 ]]; then
+    printf 'Defaults timestamp_timeout=240\n%s ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' "${TARGET_USER}" > "${SUDOERS_DROPIN}"
+    chmod 440 "${SUDOERS_DROPIN}"
+    visudo -cf "${SUDOERS_DROPIN}" || { error "could not create scoped sudoers drop-in"; exit 1; }
+  else
     run bash -c "printf 'Defaults timestamp_timeout=240\n${TARGET_USER} ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > '${SUDOERS_DROPIN}' && chmod 440 '${SUDOERS_DROPIN}' && visudo -cf '${SUDOERS_DROPIN}'" \
       || { error "could not create scoped sudoers drop-in"; exit 1; }
-    log "Scoped sudo grant active (pacman only, auto-removed on exit)"
   fi
+  log "Scoped sudo grant active (pacman only, auto-removed on exit)"
 
   local total="${#MODULES[@]}" current=0
   for module in "${MODULES[@]}"; do
