@@ -17,8 +17,8 @@
 --   该模式串，若直接写 "qs" 会自匹配导致永远"已在跑"而从不启动（物理机实测
 --   有效的写法）。
 --   为什么不会双顶栏：Hyprland stock 会话里 dms.service 本就是 inactive（没有
---   graphical-session.target），daemon 启动是唯一 backend；即使未来走
---   uwsm-managed 入口（graphical-session.target 经 WantedBy 拉起 systemd dms），
+--   graphical-session.target），daemon 启动是唯一 backend。uwsm 入口已于
+--   2026-08-09（R5）从安装清单移除；若升级主机残留 hyprland-uwsm.desktop，
 --   本守卫看到 qs 已在跑也会跳过 daemon 兜底——两条路径互不干扰。Niri 侧不受
 --   影响：niri 仍由 systemd 用户服务 dms.service 经 graphical-session.target 启动。
 --   诊断：DMS 启动命令的 stderr 追加到 $XDG_RUNTIME_DIR/dms-ensure.log

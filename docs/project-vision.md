@@ -56,22 +56,25 @@ and it is not an audited/reproducible engineering system.
    none → no greetd (TTY login). **Pure `-d hyprland` was removed
    2026-08-08**: Hyprland only runs inside "both", selected per session from
    the greeter menu. SDDM-related pieces were deleted.
-   **Hyprland lifecycle is uwsm-managed (2026-08-09, Codex R4).** The
-   Round-2 oneshot watcher (pgrep polling, HYPR_WATCH_TIMEOUT=43200) and the
+   **Hyprland lifecycle aligned with the physical machine (R5, 2026-08-09).**
+   The Round-2 oneshot watcher (pgrep polling, HYPR_WATCH_TIMEOUT=43200), the
    Round-3 custom systemd units + launcher (hyprland.service,
    hyprland-shutdown.target, hyprland-session, user-level
-   `~/.local/share/wayland-sessions/hyprland.desktop`) were removed. The
-   hyprland package's system entry `/usr/share/wayland-sessions/
-   hyprland-uwsm.desktop` (Exec=`uwsm start -e -D Hyprland hyprland.desktop`,
-   `uwsm` is a wm-hyprland package) drives the session: uwsm imports the
-   whitelisted session env, waits for HYPRLAND_INSTANCE_SIGNATURE, manages
-   graphical-session.target (dms.service starts via WantedBy / stops via
-   PartOf) and cleans the systemd+D-Bus activation env on exit. A user-level
-   desktop entry can never be seen by dms-greeter (its HOME/XDG_DATA_HOME
-   point at the greeter cache, not the target user's ~/.local/share), so the
-   system entry is the only contract and 08-services verifies it (uwsm
-   binary + Exec/TryExec) in "both". `DESKTOP_ENV=none` skips the dms/
-   dsearch/greetd/Hyprland chain entirely. 08-services also runs a
+   `~/.local/share/wayland-sessions/hyprland.desktop`) and the Round-4
+   uwsm-managed entry (hyprland-uwsm.desktop + greeter memory migration)
+   were all removed. The hyprland package's STOCK system entry
+   `/usr/share/wayland-sessions/hyprland.desktop`
+   (Exec=`/usr/bin/start-hyprland`) is the session entry: start-hyprland is
+   a plain binary that does NOT touch graphical-session.target, so the
+   Hyprland session has no systemd dms.service and DMS starts via the
+   autostart daemon. uwsm is NOT installed by fresh installs (removed from
+   05-hyprland.sh and the package manifest); a stale hyprland-uwsm.desktop
+   on an upgraded host is warned about, not verified. A user-level desktop
+   entry can never be seen by dms-greeter (its HOME/XDG_DATA_HOME point at
+   the greeter cache, not the target user's ~/.local/share), so the system
+   entry is the only contract and 08-services verifies it (valid desktop
+   entry + Exec=/usr/bin/start-hyprland) in "both". `DESKTOP_ENV=none` skips
+   the dms/dsearch/greetd/Hyprland chain entirely. 08-services also runs a
    hash/marker-protected migration cleanup (backup first, only
    project-deployed content removed, daemon-reload + confirm) for Round-2/3
    leftovers in an existing target HOME.
@@ -88,8 +91,9 @@ and it is not an audited/reproducible engineering system.
    command line never self-matches (proven on the physical machine). No
    double bar: the stock session has dms.service inactive (no
    graphical-session.target), so the daemon start is the only backend; even
-   under an uwsm-managed entry (systemd dms via the target), the guard sees qs
-   already running and skips the daemon - the two paths do not interfere.
+   if an upgraded host still has the uwsm entry (systemd dms via the
+   target), the guard sees qs already running and skips the daemon - the two
+   paths do not interfere.
    Niri is unchanged: systemd dms.service via `graphical-session.target`.
    Diagnostics: the DMS start's stderr is appended to
    `$XDG_RUNTIME_DIR/dms-ensure.log` (the autostart exec path redirects
@@ -129,25 +133,19 @@ and it is not an audited/reproducible engineering system.
    by disabling the project-managed greetd/dms/dsearch with verified
    postconditions (dms wants-symlink gone incl. dangling; greetd is-enabled
    must report disabled/not-found).
-   **Greeter session memory (R4.3/R4.4).** dms-greeter's remembered session
-   lives ONLY in `<cache>/.local/state/memory.json` (`lastSessionId` /
+   **Greeter session memory (R4.3/R4.4; migration removed in R5).**
+   dms-greeter's remembered session lives ONLY in
+   `<cache>/.local/state/memory.json` (`lastSessionId` /
    `lastSessionDesktopId` / `lastSuccessfulUser`); DMS theme/session files
-   (`session.json`, `users/*/session.json`) are never touched. When the
-   memory references `hyprland.desktop`, 08-services migrates it to
-   `hyprland-uwsm.desktop` with structured JSON parsing (only the two
-   session-selection fields are edited; the semantic VALUES of
-   `lastSuccessfulUser`, unknown fields and unrelated strings are preserved
-   - the file is re-serialized, so byte-for-byte format is not guaranteed),
-   a unique auditable backup, and a dir_fd-anchored atomic replace that
-   preserves uid/gid/mode (re-stat verified; a mismatch rolls back from the
-   verified backup). Any unsafe state (symlink components, FIFO, unreadable,
-   invalid JSON), a detected path race, or an inability to preserve
-   ownership as the current user fails closed with the exact memory path and
-   a manual action - never a guessed rewrite. This migration logic is
-   verified against the pinned dms-greater source contract via structural/
-   synthetic JSON tests; it is NOT proof of a real greeter login run - the
-   live greeter menu and UWSM runtime remain unverified until VM
-   acceptance.
+   (`session.json`, `users/*/session.json`) are never touched. The R4.x
+   migration that rewrote a `hyprland.desktop` memory reference to
+   `hyprland-uwsm.desktop` was removed 2026-08-09 (R5): the uwsm entry no
+   longer exists, so there is nothing to migrate; a stale uwsm memory on an
+   upgraded host simply resolves to nothing and the greeter falls back to
+   the session menu. Verified against the pinned dms-greater source contract
+   via structural/synthetic JSON tests; it is NOT proof of a real greeter
+   login run - the live greeter menu and session runtime remain unverified
+   until VM acceptance.
 6. **Services mirror the host.** bluetooth, power-profiles, docker,
    NetworkManager, grub-btrfsd, paccache.timer, snapper-cleanup.timer,
    snapper-timeline.timer, btrfs-scrub@-.timer are enabled on *every* machine
@@ -164,9 +162,10 @@ and it is not an audited/reproducible engineering system.
 7. **System settings.** locale zh_CN+en_US, timezone Asia/Shanghai, hostname
    default (archlinux), zram with zstd, fish as the login shell, snapper
    root+home snapshot configs (ALLOW_GROUPS=wheel SYNC_ACL=yes, mirroring the
-   host), a screen-recording engine preset (wf-recorder on VM,
-   wl-screenrec on physical — one of the machine-type adaptations; the full
-   VM vs physical granularity table lives in README ("机器类型颗粒度")),
+   host), a screen-recording engine preset (wf-recorder on BOTH machine
+   types — wl-screenrec-git was dropped from archlinuxcn and its binary is
+   broken by the ffmpeg 9 ABI, 2026-08-09; the full VM vs physical
+   granularity table lives in README ("机器类型颗粒度")),
    and nomacs as the PNG default image viewer (mimeapps.list + acceptance
    check).
 8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB

@@ -1,10 +1,12 @@
 # Hyprland 会话 DMS 不加载 / 终端闪退 — 宿主修复与诊断清单
 
-> 2026-08-09（Codex R4.12）。本清单基于只读探查结论：**物理机的既有配置是
+> 2026-08-09（Codex R4.12 / R5）。本清单基于只读探查结论：**物理机的既有配置是
 > 可工作参照**（stock `start-hyprland` + autostart 的 qs 守卫直接 `dms run -d`，
 > 来回切换 DMS 照常、终端正常）；仓库 R4.12 已把 Hyprland 的 DMS 启动**对齐物理机**
-> （autostart 直接启动 + qs 守卫，不再依赖 helper/uwsm 链）。宿主当前状态：配置
-> 已从备份还原（`~/.config/hypr.bak-20260809-190830`），`~/.local/bin/dms-ensure-display`
+> （autostart 直接启动 + qs 守卫，不再依赖 helper/uwsm 链；R5 起 uwsm 已从安装
+> 清单移除，Hyprland 会话入口固定为系统 stock `hyprland.desktop`）。宿主当前状态：
+> 配置已从备份还原（`~/.config/hypr.bak-20260809-190830`），
+> `~/.local/bin/dms-ensure-display`
 > 已移除（可选诊断工具，需要时再装）。VM 若仍失败，按本清单会话内取证。
 
 ## 一、根因回顾（探查结论）
@@ -21,10 +23,11 @@
    运行时嫌疑是会话 spawn 环境完整性（WAYLAND_DISPLAY/PATH/XDG_RUNTIME_DIR）与
    VM/GPU 下 kitty 后端初始化。**必须真实会话内诊断才能定根因。**
 
-## 二、宿主步骤（对齐物理机；uwsm 可选）
+## 二、宿主步骤（对齐物理机；入口固定为 stock hyprland.desktop）
 
-物理机无需 uwsm 即可工作；仓库 R4.12 的 autostart 不依赖 helper/uwsm。需要
-`Hyprland (uwsm-managed)` 入口时才需要 uwsm（可选）：
+物理机无需 uwsm 即可工作；仓库 R5 已把 uwsm 从安装清单移除，Hyprland 会话
+入口固定为系统 stock `hyprland.desktop`（`start-hyprland`），autostart 不依赖
+helper/uwsm：
 
 ```sh
 # 1) 部署当前 hypr 配置（先备份现有配置！会覆盖宿主 ~/.config/hypr）
@@ -34,18 +37,16 @@ cp -a <repo>/config/home/.config/hypr/. ~/.config/hypr/
 # 2)（可选）诊断工具：把 helper 装到 ~/.local/bin 供手工诊断
 install -Dm755 <repo>/config/home/.local/bin/dms-ensure-display ~/.local/bin/dms-ensure-display
 
-# 3)（可选，仅当需要 uwsm-managed 入口）安装 uwsm
-sudo pacman -S uwsm
-
-# 4) 验证部署的 autostart 已对齐（应看到 qs 守卫 + dms 直接启动行）
+# 3) 验证部署的 autostart 已对齐（应看到 qs 守卫 + dms 直接启动行）
 grep "dms run -d" ~/.config/hypr/conf/autostart.lua
-grep TryExec /usr/share/wayland-sessions/hyprland-uwsm.desktop   # 应为 TryExec=uwsm
+grep Exec /usr/share/wayland-sessions/hyprland.desktop   # 应为 Exec=/usr/bin/start-hyprland
 ```
 
 > 也可直接重跑安装器的 `07-config`+`08-services`（both 模式）完成部署与校验
-> （08-services 会 fail-closed 校验 uwsm 与系统入口）。
+> （08-services 会 fail-closed 校验系统 stock 入口：存在、desktop entry 有效、
+> Exec=/usr/bin/start-hyprland；升级主机残留 hyprland-uwsm.desktop 只警告不校验）。
 
-## 三、重登后会话内诊断清单（选 "Hyprland (uwsm-managed)"）
+## 三、重登后会话内诊断清单（greeter 菜单选 "Hyprland"，勿选 uwsm-managed 项）
 
 进 Hyprland 后逐项执行并记录：
 
@@ -89,7 +90,7 @@ R4.12 起 dms-ensure.log 记录的是 autostart DMS 启动命令（qs 守卫 + d
    （Wayland 连接 / GL 初始化）；0 但窗口消失 → 窗口被合成器/规则关闭（`hyprctl
    configerrors` 与 windowrules 复核）。
 3. `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR` 为空 → spawn 环境问题（物理机 stock 入口
-   无此问题；VM 若走 uwsm-managed 入口则重点查 uwsm 会话 env 导入）。
+   无此问题；VM 若仍失败，重点查会话 spawn env 导入与 VMware GPU/GL）。
 4. 若为 VM（VMware SVGA 3D）→ 按 comprehensive-review 的分层变量法（3D on/off、
    blur on/off）隔离。
 

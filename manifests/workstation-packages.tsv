@@ -182,7 +182,6 @@ udiskie	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit
 udisks2	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Daemon, tools and libraries to access and manipulate disks, storage devices and technologies
 unzip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	For extracting and viewing files in .zip archives
 uv	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	An extremely fast Python package installer and resolver written in Rust
-uwsm	pacman	extra	pacman	wm-hyprland	package-only	install	confirmed-desired	A standalone Wayland session manager (uwsm-managed Hyprland session lifecycle via hyprland-uwsm.desktop)
 vhs	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A tool for recording terminal GIFs
 virt-manager	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Desktop user interface for managing virtual machines [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
 virt-viewer	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	Display and interaction with virtual machines (SPICE/VNC viewer) [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]
@@ -195,7 +194,6 @@ wf-recorder	pacman	extra	pacman	recording	package-only	install	confirmed-desired
 wget	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Network utility to retrieve files from the web
 wireplumber	pacman	extra	pacman	audio	package-only	install	current-explicit	Session / policy manager implementation for PipeWire
 wl-clipboard	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Command-line copy/paste utilities for Wayland
-wl-screenrec-git	pacman	archlinuxcn	pacman	recording	package-only	install	current-explicit	High performance hardware accelerated wlroots screen recorder
 wooz-git	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Wayland screen magnifier utility
 wpa_supplicant	pacman	core	verify-only	base-tools	package-only	install	confirmed-desired	A utility providing key negotiation for WPA wireless networks
 wtype	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	xdotool type for wayland

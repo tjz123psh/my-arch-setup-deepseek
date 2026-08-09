@@ -6,5 +6,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/00-utils.sh"
 
 section "Installing Hyprland desktop"
-run pacman -S --needed --noconfirm hyprland uwsm socat xdg-desktop-portal-hyprland
-success "Hyprland installed (uwsm-managed session entry included)"
+run pacman -S --needed --noconfirm hyprland socat xdg-desktop-portal-hyprland
+success "Hyprland installed (stock session entry via start-hyprland)"

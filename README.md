@@ -69,8 +69,8 @@ sudo bash strap.sh
 |  05-niri/hyprland | 桌面环境（Niri 或 Niri+Hyprland 双会话，驱动之后） |
 | 06-aur | 构建安装固定 AUR recipe（物理机 14 个目标 / VM 13 个，不含 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap，共 15 棵 recipe 树；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
 | 07-config | 部署个人配置映射（230 映射，先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
-| 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 需在菜单选 "Hyprland (uwsm-managed)"；系统入口 `hyprland-uwsm.desktop`，cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验 UWSM 实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ greeter memory 迁移（仅 `<cache>/.local/state/memory.json`，结构化 JSON 只改精确 session 字段、保持 uid/gid/mode、唯一备份、原子替换，无法保权时保守 fail-closed 并给出路径）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
-| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（VM=wf-recorder，物理=wl-screenrec）+ nomacs/PNG MIME 验收 |
+| 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 用系统 stock 入口 `hyprland.desktop`（`start-hyprland`，R5 对齐物理机；uwsm/`hyprland-uwsm.desktop` 已从安装清单移除），cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
+| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（两机型统一 wf-recorder；wl-screenrec-git 已自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容）+ nomacs/PNG MIME 验收 |
 | 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
 
 ## 机器类型颗粒度（VM vs 物理机）
@@ -87,7 +87,7 @@ sudo bash strap.sh
 | 6 | 硬件配置（rog-control-center.cfg） | ✅ 部署 | ❌ 跳过 | 07-config（ctx=config） |
 | 7 | VMware host 服务（vmware-networks / vmware-usbarbitrator）+ DKMS vmmon 检查 | ✅ 启用，DKMS 缺失 required 失败 | ❌ 不启用 | 08-services.sh |
 | 8 | VMware guest 服务（vmtoolsd） | ❌ 不启用 | ✅ 启用（required） | 08-services.sh |
-| 9 | 录屏引擎预设 | `wl-screenrec`（GPU 加速） | `wf-recorder`（CPU，VM 无 GPU） | 09-settings.sh |
+| 9 | ~~录屏引擎预设~~（已无差异：2026-08-09 两机型统一 `wf-recorder`；`wl-screenrec-git` 自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容） | `wf-recorder`（CPU） | `wf-recorder`（CPU） | 09-settings.sh |
 
 **完全一致的部分**（不做任何区分）：
 
@@ -142,7 +142,7 @@ DKMS 的 vmmon/vmnet）。clash-verge 只安装不启服务（配置私有，手
 映射、Niri 语法和 Hyprland fragments 已复核，目标行为测试也已运行。仓库的
 `hyprland.lua`（含 `conf/` 分片）已在本机真实宿主上通过 `Hyprland --verify-config`
 （显式 `-c` 与默认发现均 rc=0，见 `tests/session-lifecycle-test.sh` I 区）。这只
-证明配置可被 Hyprland 解析——真实 GPU 合成、greeter 会话菜单与 UWSM runtime
+证明配置可被 Hyprland 解析——真实 GPU 合成、greeter 会话菜单与会话
 生命周期仍需 VM 验收，不得把 verify-config PASS 扩大为仓库级 Hyprland runtime
 证明。旧 KVM 批次记录
 属于历史证据，不替代当前 VMware 验收。
@@ -160,7 +160,7 @@ hl.exec_cmd("pgrep -f '[q]s -p /usr/share/quickshell/dms' >/dev/null || dms run 
 守卫匹配 qs（quickshell UI）而非 dms backend，并用字符类 `[q]s` 避免守卫自身
 命令行自匹配（物理机实测有效的写法）。为什么不会双顶栏：stock 会话里
 dms.service 本就是 inactive（无 graphical-session.target），daemon 启动是唯一
-backend；即使走 uwsm-managed 入口（systemd 拉起 dms），守卫看到 qs 已在跑也会
+backend；即使升级主机残留 uwsm 入口（systemd 拉起 dms），守卫看到 qs 已在跑也会
 跳过 daemon 兜底。Niri 侧不变：仍由 systemd dms.service 经
 `graphical-session.target` 启动。诊断：DMS 启动命令的 stderr 追加到
 `$XDG_RUNTIME_DIR/dms-ensure.log`（autostart exec 路径 stdout/stderr 被重定向

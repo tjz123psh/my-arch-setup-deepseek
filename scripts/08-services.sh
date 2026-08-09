@@ -23,12 +23,11 @@ as_user() {
   fi
 }
 
-# UWSM_BIN is injectable so tests are independent of the host's PATH (a host
-# with or without uwsm installed must behave identically; Codex R4.1). The
-# greetd/dms-greeter/niri preflight paths are injectable the same way
-# (R4.2/R4.3).
-UWSM_BIN="${UWSM_BIN:-uwsm}"
+# The Hyprland session entry check paths are injectable so tests are
+# independent of the host's /usr/share/wayland-sessions (R5). The
+# greetd/dms-greeter/niri preflight paths are injectable the same way.
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+WAYLAND_SESSIONS_DIR="${WAYLAND_SESSIONS_DIR:-/usr/share/wayland-sessions}"
 GREETD_SERVICE_UNIT="${GREETD_SERVICE_UNIT:-/usr/lib/systemd/system/greetd.service}"
 DMS_GREETER_BIN="${DMS_GREETER_BIN:-/usr/bin/dms-greeter}"
 NIRI_BIN="${NIRI_BIN:-/usr/bin/niri}"
@@ -37,13 +36,13 @@ GREETER_USER_NAME="${GREETER_USER_NAME:-greeter}"
 
 # P1-4 / Codex R4.5: 07-config deploys user units into ~/.config/systemd/user.
 # A is a TRUE zero-modification preflight: NO daemon-reload, NO stale
-# cleanup, NO LoadState query, NO memory migration, NO enable, NO /etc write
-# until every preflight check (python validator, uwsm, greetd.service,
-# dms-greeter, niri, greeter config sources, secondary candidate) has
+# cleanup, NO LoadState query, NO enable, NO /etc write until every preflight
+# check (python validator, stock Hyprland session entry, greetd.service,
+# dms-greeter, niri, greeter config sources, resolution candidate) has
 # succeeded. Only then is the user manager reloaded (so enable/LoadState
 # below see freshly deployed units), followed by B safe backup+cleanup,
-# C verify UWSM's effective entry, D enable/write. A preflight failure
-# therefore leaves the log free of daemon-reload.
+# C verify the effective Hyprland session entry, D enable/write. A preflight
+# failure therefore leaves the log free of daemon-reload.
 
 # --- A. zero-modification preflight (desktop modes) ---
 if [[ "${DESKTOP_ENV}" != "none" ]]; then
@@ -75,38 +74,50 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
     exit 1
   fi
   if [[ "${DESKTOP_ENV}" == "both" ]]; then
-    # R4.4: the python validator MUST be available and runnable BEFORE any
-    # cleanup / backup / daemon-reload / memory migration / enable / /etc
-    # write. An interpreter failure (42/126/127/...) is an infrastructure
-    # error, never a "corrupt desktop entry".
+    # R4.4/R5: the python validator MUST be available and runnable BEFORE
+    # any cleanup / backup / daemon-reload / enable / /etc write. An
+    # interpreter failure (42/126/127/...) is an infrastructure error,
+    # never a "corrupt desktop entry".
     if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
-      error "python/validator unavailable (${PYTHON_BIN} not found); cannot validate the UWSM desktop entry"
+      error "python/validator unavailable (${PYTHON_BIN} not found); cannot validate the Hyprland session entry"
       exit 1
     fi
     if ! "${PYTHON_BIN}" -c 'import sys; sys.exit(0)' >/dev/null 2>&1; then
-      error "python/validator unavailable (${PYTHON_BIN} interpreter failed); cannot validate the UWSM desktop entry"
+      error "python/validator unavailable (${PYTHON_BIN} interpreter failed); cannot validate the Hyprland session entry"
       exit 1
     fi
+    # R5: the Hyprland session entry is the hyprland package's STOCK
+    # <WAYLAND_SESSIONS_DIR>/hyprland.desktop (Exec=/usr/bin/start-hyprland),
+    # aligned with the physical machine. start-hyprland is a plain binary
+    # that does NOT touch graphical-session.target; DMS starts via the
+    # autostart daemon in autostart.lua. The uwsm-managed entry was removed
+    # 2026-08-09: it was never validated in a real VM session and failed
+    # there. If a stale hyprland-uwsm.desktop is present (e.g. an upgraded
+    # host), warn that it is NOT the verified chain.
     missing_hypr=0
-    if ! command -v "${UWSM_BIN}" >/dev/null 2>&1; then
-      error "uwsm not found (${UWSM_BIN}; uwsm package missing from the wm-hyprland install?)"
-      missing_hypr=1
-    fi
-    uwsm_entry="/usr/share/wayland-sessions/hyprland-uwsm.desktop"
-    if [[ ! -f "${uwsm_entry}" ]]; then
-      error "hyprland-uwsm.desktop session entry missing (hyprland package too old?)"
+    hypr_entry="${WAYLAND_SESSIONS_DIR}/hyprland.desktop"
+    if [[ ! -f "${hypr_entry}" ]]; then
+      error "system Hyprland session entry missing (${hypr_entry}; hyprland package not installed?)"
       missing_hypr=1
     else
-      uwsm_exec="$(sed -n 's/^Exec=//p' "${uwsm_entry}" | head -1)"
-      uwsm_try="$(sed -n 's/^TryExec=//p' "${uwsm_entry}" | head -1)"
-      if [[ "${uwsm_exec}" != "uwsm start -e -D Hyprland hyprland.desktop" ]]; then
-        error "hyprland-uwsm.desktop Exec unexpected: '${uwsm_exec}' (expected: uwsm start -e -D Hyprland hyprland.desktop)"
+      vrc=0
+      desktop_entry_ok "${hypr_entry}" || vrc=$?
+      if [[ "${vrc}" -eq 2 ]]; then
+        error "system Hyprland session entry unusable: ${hypr_entry} (symlink/non-regular/corrupt desktop file)"
         missing_hypr=1
-      fi
-      if [[ "${uwsm_try}" != "uwsm" ]]; then
-        error "hyprland-uwsm.desktop TryExec unexpected: '${uwsm_try}' (expected: uwsm)"
+      elif [[ "${vrc}" -ne 0 ]]; then
+        error "python/validator unavailable while validating ${hypr_entry}"
         missing_hypr=1
+      else
+        hypr_exec="$(sed -n 's/^Exec=//p' "${hypr_entry}" | head -1)"
+        if [[ "${hypr_exec}" != "/usr/bin/start-hyprland" ]]; then
+          error "system Hyprland session entry Exec unexpected: '${hypr_exec}' (expected: /usr/bin/start-hyprland)"
+          missing_hypr=1
+        fi
       fi
+    fi
+    if [[ -f "${WAYLAND_SESSIONS_DIR}/hyprland-uwsm.desktop" ]]; then
+      warn "hyprland-uwsm.desktop present (uwsm installed) but NOT part of the verified chain; pick the plain 'Hyprland' entry in the greeter"
     fi
     # classification (informational): where does `hyprland.desktop` resolve
     # BEFORE cleanup? The authoritative check runs after cleanup in C. rc=1
@@ -116,22 +127,22 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
     rc_pre=0
     pre_resolved="$(resolve_hyprland_desktop)" || rc_pre=$?
     if [[ "${rc_pre}" -eq 1 ]]; then
-      error "no hyprland.desktop candidate found for UWSM secondary resolution; cleanup cannot create a system entry"
+      error "no hyprland.desktop candidate found for the Hyprland session entry; cleanup cannot create a system entry"
       exit 1
     fi
     if [[ "${rc_pre}" -eq 2 ]]; then
       warn "preflight: hyprland.desktop first candidate unusable: ${pre_resolved}"
     elif [[ "${rc_pre}" -eq 3 ]]; then
-      error "python/validator unavailable during preflight; cannot validate the UWSM desktop entry"
+      error "python/validator unavailable during preflight; cannot validate the Hyprland session entry"
       exit 1
     elif [[ -n "${pre_resolved}" && "${pre_resolved}" != "/usr/share/wayland-sessions/hyprland.desktop" ]]; then
       warn "preflight: hyprland.desktop currently resolves to ${pre_resolved} (non-system); exact project files are removed below, a user-modified copy stays and BLOCKS verification"
     fi
     if (( missing_hypr > 0 )); then
-      error "uwsm-managed Hyprland session components missing (${missing_hypr}); refusing to continue"
+      error "stock Hyprland session entry invalid (${missing_hypr} problem(s)); refusing to continue"
       exit 1
     fi
-    log "preflight: uwsm + hyprland-uwsm.desktop present"
+    log "preflight: stock Hyprland session entry present (start-hyprland)"
   fi
 fi
 
@@ -166,43 +177,31 @@ for stale_unit in hyprland.service hyprland-shutdown.target hyprland-session.tar
   fi
 done
 
-# --- C. verify UWSM's effective secondary entry (both) ---
-# `uwsm start -e -D Hyprland hyprland.desktop` re-resolves hyprland.desktop
-# via XDG_DATA_HOME -> /usr/local/share -> /usr/share. A user/local override
-# that survived cleanup would shadow the system entry and break the
-# uwsm-managed session; fail closed with the offending path (Codex R4.1).
+# --- C. verify the effective Hyprland session entry (both) ---
+# The greeter launches the entry it scans (system dirs + greeter cache). A
+# user/local hyprland.desktop that survived cleanup would shadow the system
+# entry in resolution and launch an unverified session; fail closed with the
+# offending path (R5, aligned with the physical machine's stock entry).
 if [[ "${DESKTOP_ENV}" == "both" ]]; then
   rc_res=0
   resolved="$(resolve_hyprland_desktop)" || rc_res=$?
   if [[ "${rc_res}" -eq 2 ]]; then
-    error "UWSM secondary entry unusable: ${resolved} exists but is a symlink/non-regular/corrupt desktop file; remove or fix it, then re-run"
+    error "Hyprland session entry unusable: ${resolved} exists but is a symlink/non-regular/corrupt desktop file; remove or fix it, then re-run"
     exit 1
   fi
   if [[ "${rc_res}" -eq 3 ]]; then
-    error "python/validator unavailable; cannot validate the UWSM desktop entry (dependency missing)"
+    error "python/validator unavailable; cannot validate the Hyprland session entry (dependency missing)"
     exit 1
   fi
   if [[ -z "${resolved}" ]]; then
-    error "no hyprland.desktop found for UWSM secondary resolution (expected /usr/share/wayland-sessions/hyprland.desktop)"
+    error "no hyprland.desktop found (expected /usr/share/wayland-sessions/hyprland.desktop)"
     exit 1
   fi
   if [[ "${resolved}" != "/usr/share/wayland-sessions/hyprland.desktop" ]]; then
-    error "UWSM would resolve a non-system hyprland.desktop: ${resolved} (a user/local override shadows the system entry; the uwsm-managed session would be broken). Remove or restore it, then re-run."
+    error "Hyprland session entry resolves to a non-system hyprland.desktop: ${resolved} (a user/local override shadows the system entry). Remove or restore it, then re-run."
     exit 1
   fi
-  log "uwsm-managed Hyprland session verified (uwsm + hyprland-uwsm.desktop + effective hyprland.desktop)"
-  # dms-greeter remembers the last session; migrate any old
-  # hyprland.desktop memory reference to hyprland-uwsm.desktop atomically
-  # (Codex R4.2 item 7); failure is fail-closed with the path reported.
-  # /var/cache/dms-greeter is normally owned by the greeter account; the
-  # desktop user may be unable to traverse its parent directories.  Keep the
-  # migration fail-closed, but run only this narrowly scoped transaction via
-  # the existing privileged wrapper when needed.  The utility itself remains
-  # unprivileged by default for direct callers and tests.
-  if ! GREETER_MEMORY_USE_PRIVILEGED_RUN=1 migrate_greeter_memory; then
-    error "dms-greeter session memory still references the old hyprland.desktop and could not be migrated; remove/fix the reported file(s), then re-run"
-    exit 1
-  fi
+  log "stock Hyprland session verified (system hyprland.desktop -> start-hyprland)"
 fi
 
 # --- D. enable / write (desktop modes) or converge to TTY login (none) ---
@@ -250,11 +249,11 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
   # greetd login manager. `--command niri` selects ONLY the compositor that
   # renders the GREETER login screen itself - it does NOT set the target
   # user's default session (Codex R4.2 item 7): the user's session is chosen
-  # in the greeter UI and remembered in the greeter cache (an old
-  # hyprland.desktop memory reference was migrated to hyprland-uwsm.desktop
-  # above). dms-greeter supports --command niri|hyprland|sway|scroll|
-  # miracle|mango|labwc; the greeter always runs niri (pure hyprland entry
-  # removed 2026-08-08; Hyprland runs only via "both").
+  # in the greeter UI and remembered in the greeter cache. dms-greeter
+  # supports --command niri|hyprland|sway|scroll|miracle|mango|labwc; the
+  # greeter always runs niri (pure hyprland entry removed 2026-08-08;
+  # Hyprland runs only via "both" with the stock hyprland.desktop entry,
+  # R5).
   greeter_cmd="dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl"
   log "Configuring greetd (${greeter_cmd})..."
   if ! getent passwd "${GREETER_USER_NAME}" >/dev/null 2>&1; then

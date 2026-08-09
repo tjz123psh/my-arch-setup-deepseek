@@ -99,18 +99,15 @@ else
   warn "shorin-screenrec-menu not found in config; ShorinScreenrec plugin may fail its startup check"
 fi
 
-# Preset the recording engine per machine type. The plugin's startup check
-# only verifies shorin-screenrec-menu exists; the actual engine pick happens
-# at record time from ~/.cache/shorin-screenrec/engine. The script defaults
-# to wl-screenrec (GPU), which starts and immediately fails on a VM without
-# GPU acceleration - so a VM must be pinned to wf-recorder (CPU) up front.
+# Preset the recording engine. The plugin's startup check only verifies
+# shorin-screenrec-menu exists; the actual engine pick happens at record
+# time from ~/.cache/shorin-screenrec/engine. 2026-08-09: wl-screenrec-git
+# was dropped from archlinuxcn and its binary is broken by the ffmpeg 9 ABI
+# (libavutil.so.60 -> 61), so BOTH machine types are pinned to wf-recorder
+# (extra, rebuilt against the current ffmpeg; CPU encoding).
 log "Presetting screen recording engine for ${MACHINE_TYPE}..."
 mkdir -p "${TARGET_HOME}/.cache/shorin-screenrec"
-if [[ "${MACHINE_TYPE}" == "vm" ]]; then
-  printf 'wf-recorder\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
-else
-  printf 'wl-screenrec\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
-fi
+printf 'wf-recorder\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
 if [[ "$(id -u)" -eq 0 ]]; then
   chown -R "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.cache/shorin-screenrec"
 fi

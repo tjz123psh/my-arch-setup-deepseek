@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # session-lifecycle-test.sh - regression for the desktop/session lifecycle
-# (Codex Round 4 + 4.1: uwsm-managed Hyprland).
+# (R5, 2026-08-09: ALIGNED WITH THE PHYSICAL MACHINE - the Round-4
+# uwsm-managed Hyprland design was removed because it was never validated in
+# a real VM session and failed there. The Hyprland session entry is the
+# hyprland package's STOCK /usr/share/wayland-sessions/hyprland.desktop
+# (Exec=/usr/bin/start-hyprland); DMS starts via the autostart daemon in
+# autostart.lua. Fresh installs do NOT install uwsm).
 #
 # REJECTED architectures:
 #   Round 2 - oneshot watcher (pgrep polling, HYPR_WATCH_TIMEOUT=43200,
@@ -8,16 +13,15 @@
 #   Round 3 - custom systemd units + launcher (hyprland.service,
 #             hyprland-shutdown.target, hyprland-session, user-level
 #             ~/.local/share/wayland-sessions/hyprland.desktop)
+#   Round 4 - uwsm-managed Hyprland (hyprland-uwsm.desktop,
+#             Exec=uwsm start -e -D Hyprland hyprland.desktop, greeter
+#             memory migration to the uwsm entry)
 #
-# Hyprland lifecycle is uwsm-managed via the hyprland package's SYSTEM entry
-# /usr/share/wayland-sessions/hyprland-uwsm.desktop
-# (Exec=uwsm start -e -D Hyprland hyprland.desktop). dms-greeter scans the
-# system dirs + the greeter cache (HOME/XDG_DATA_HOME point at
-# /var/cache/dms-greeter, NOT the target user's ~/.local/share), so a
-# user-level desktop entry is invisible to the greeter - but UWSM itself
-# re-resolves `hyprland.desktop` via XDG_DATA_HOME -> /usr/local/share ->
-# /usr/share, so 08-services must verify the EFFECTIVE secondary entry after
-# cleanup and fail closed on a user/local override.
+# dms-greeter scans the system dirs + the greeter cache (HOME/XDG_DATA_HOME
+# point at /var/cache/dms-greeter, NOT the target user's ~/.local/share), so
+# a user-level desktop entry is invisible to the greeter; 08-services still
+# verifies the system entry (Exec=/usr/bin/start-hyprland) and fails closed
+# on a user/local hyprland.desktop override.
 #
 # Suites:
 #   A  validator pure predicate + source-time abort
@@ -26,10 +30,10 @@
 #   D  Round-2/3 custom lifecycle artifacts are ABSENT from the repo
 #   E  dms-greeter real scan path (fake greeter HOME/XDG_DATA_HOME)
 #   F  DESKTOP_ENV=none: no dms requirement, convergence disable, cleanup
-#   G  DMS required in niri/both; uwsm preflight; effective secondary entry
+#   G  DMS required in niri/both; stock Hyprland entry preflight
 #   H  stale-cleanup safety: parent symlinks, non-regular files, backup
 #   I  tool-missing is recorded UNAVAILABLE, never PASS (subshell probe)
-#   J  desktop-file-validate classification (PASS/KNOWN-UPSTREAM/FAIL)
+#   J  system Hyprland entry: Exec + desktop-file-validate classification
 #   K  systemd-analyze verify of dms.service (the enabled runtime chain)
 #   L  sandbox inside workspace
 set -Eeuo pipefail
@@ -329,13 +333,6 @@ if [[ "$1" == "systemctl" ]]; then
   exec "$(dirname "$0")/systemctl" "$@"
 fi
 if [[ "$1" == "useradd" ]]; then exit "${FAKE_USERADD_RC:-0}"; fi
-# The production memory migration is deliberately requested through the
-# privileged run() wrapper because /var/cache/dms-greeter is not necessarily
-# traversable by the desktop user. Execute only the injected Python probe in
-# this mock; all other arbitrary privileged commands remain no-ops.
-if [[ "$1" == "python3" || "$1" == "/usr/bin/python3" ]]; then
-  exec "$@"
-fi
 exit 0
 EOF
 # adversarial python shims (R4.4): a python3 that exits 42, and a dir with
@@ -352,12 +349,7 @@ mkdir -p "$toolbin"
 for t in id sed head grep cut sha256sum mkdir cp rm chmod cat date find stat touch getent readlink basename dirname tr mktemp sort wc xargs env bash sh; do
   [[ -x "/usr/bin/$t" ]] && ln -sf "/usr/bin/$t" "$toolbin/$t"
 done
-cat > "$sandbox/mockbin/uwsm" <<'EOF'
-#!/usr/bin/env bash
-echo "uwsm $*" >> "${FAKE_SYS_LOG:?}"
-exit 0
-EOF
-chmod +x "$sandbox/mockbin/systemctl" "$sandbox/mockbin/sudo" "$sandbox/mockbin/uwsm"
+chmod +x "$sandbox/mockbin/systemctl" "$sandbox/mockbin/sudo"
 
 # fake deployed home: 5 exact Round-3 artifacts (hash-removed), Round-2
 # watcher set (detected + warned, never auto-deleted), custom user unit
@@ -704,43 +696,41 @@ else
   check "none: rc=4+empty does NOT print Service disabled" 0 0
 fi
 
-echo "== G. DMS required in niri/both; uwsm preflight; effective secondary entry =="
+echo "== G. DMS required in niri/both; stock Hyprland entry preflight =="
 # shared fake home for the both-mode runs: wants symlink + exact stale unit
 fakehome_g="$sandbox/home-g"
 mkdir -p "$fakehome_g/.config/systemd/user/graphical-session.target.wants"
 ln -s /usr/lib/systemd/user/dms.service "$fakehome_g/.config/systemd/user/graphical-session.target.wants/dms.service"
 # G1: both + dms enable fails -> step fails nonzero BEFORE any /etc write
-# (uwsm present via UWSM_BIN injection - deterministic regardless of host)
 log1="$sandbox/g1.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log1" FAKE_DMS_ENABLE_RC=1 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   HOME="$fakehome_g" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log1" 2>&1 || rc=$?
 check "both: dms enable failure exits nonzero" "$rc" 1
 paru_after_g1="$(sha256sum /etc/paru.conf 2>/dev/null | cut -c1-16 || echo none)"
 assert_eq "/etc untouched in both-dms-fail (paru.conf unchanged)" "$paru_after_g1" "$paru_before"
 
-# G2: both + uwsm missing (UWSM_BIN points at a nonexistent path) -> fail
-# BEFORE any enable. The mockbin PATH carries a uwsm shim (simulating a host
-# that HAS uwsm installed) - UWSM_BIN injection must win over PATH.
+# G2: both + system Hyprland entry missing (WAYLAND_SESSIONS_DIR empty) ->
+# fail BEFORE any enable (aligned stock contract, R5).
 log2="$sandbox/g2.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log2" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin-nouwsm/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  WAYLAND_SESSIONS_DIR="$sandbox/empty-sessions" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   HOME="$fakehome_g" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log2" 2>&1 || rc=$?
-check "both: missing uwsm exits nonzero (UWSM_BIN wins over PATH)" "$rc" 1
-if grep -q 'uwsm not found' "$log2"; then
-  check "both: error names uwsm" 0 0
+check "both: missing system Hyprland entry exits nonzero" "$rc" 1
+if grep -q 'system Hyprland session entry missing' "$log2"; then
+  check "both: error names the missing entry" 0 0
 else
-  check "both: error names uwsm" 1 0
+  check "both: error names the missing entry" 1 0
   tail -3 "$log2" | sed 's/^/      /'
 fi
 if grep -q 'enable dms.service' "$log2"; then
-  check "both: uwsm preflight fails BEFORE dms enable" 1 0
+  check "both: entry preflight fails BEFORE dms enable" 1 0
 else
-  check "both: uwsm preflight fails BEFORE dms enable" 0 0
+  check "both: entry preflight fails BEFORE dms enable" 0 0
 fi
 
 # G3: both full pass: stale exact unit present -> cleanup -> confirmed ->
@@ -780,15 +770,15 @@ EOF
 log3="$sandbox/g3.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log3" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   HOME="$fakehome_g" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log3" 2>&1 || rc=$?
-check "both: full pass with uwsm + system entry (rc 0)" "$rc" 0
-assert_grep "both: uwsm verification log line present" 'uwsm-managed Hyprland session verified' "$log3"
+check "both: full pass with stock Hyprland entry (rc 0)" "$rc" 0
+assert_grep "both: stock session verified log line present" 'stock Hyprland session verified' "$log3"
 assert_grep "both: dms wants symlink verified" 'Verified:.*graphical-session.target.wants/dms.service' "$log3"
 a="$(lineno 'stale cleanup:' "$log3")"
 b="$(lineno 'confirmed: stale unit hyprland.service' "$log3")"
-c="$(lineno 'uwsm-managed Hyprland session verified' "$log3")"
+c="$(lineno 'stock Hyprland session verified' "$log3")"
 d="$(lineno 'enable dms.service' "$log3")"
 e="$(lineno 'Configuring greetd' "$log3")"
 if [[ -n "$a" && -n "$b" && -n "$c" && -n "$d" && -n "$e" \
@@ -807,16 +797,16 @@ cat > "$fakehome_g4/.local/share/wayland-sessions/hyprland.desktop" <<'EOF'
 Name=Hyprland
 Exec=/home/pang/.local/bin/hyprland-session
 Type=Application
-# user-modified copy (would be picked up by UWSM's secondary resolution)
+# user-modified copy (would shadow the system Hyprland entry in resolution)
 EOF
 log4="$sandbox/g4.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log4" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   HOME="$fakehome_g4" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log4" 2>&1 || rc=$?
 check "both: user hyprland.desktop override fails closed (rc 1)" "$rc" 1
-if grep -q 'uwsm-managed Hyprland session verified' "$log4"; then
+if grep -q 'stock Hyprland session verified' "$log4"; then
   check "both: override present -> NOT reported verified" 1 0
 else
   check "both: override present -> NOT reported verified" 0 0
@@ -906,7 +896,7 @@ cp "$backup/.config/systemd/user/hyprland.service" "$fakehome_g6/.config/systemd
 log6a="$sandbox/g6a.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log6a" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   DMS_GREETER_BIN="$sandbox/nonexistent-greeter" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log6a" 2>&1 || rc=$?
@@ -928,7 +918,7 @@ fi
 log6b="$sandbox/g6b.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log6b" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   GREETD_SERVICE_UNIT="$sandbox/nonexistent-greetd.service" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log6b" 2>&1 || rc=$?
@@ -945,7 +935,7 @@ fi
 log6c="$sandbox/g6c.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log6c" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   GREETER_CONFIG_DIR="$sandbox/nonexistent-greeter-config" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log6c" 2>&1 || rc=$?
@@ -963,7 +953,7 @@ fi
 log6d="$sandbox/g6d.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log6d" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   NIRI_BIN="$sandbox/nonexistent-niri" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log6d" 2>&1 || rc=$?
@@ -1000,7 +990,7 @@ ln -s /usr/lib/systemd/user/dms.service "$fakehome_g8/.config/systemd/user/graph
 log8a="$sandbox/g8a.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log8a" FAKE_DMS_ENABLE_RC=0 FAKE_USERADD_RC=1 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   GREETER_USER_NAME="no-such-greeter-r43" \
   HOME="$fakehome_g8" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log8a" 2>&1 || rc=$?
@@ -1010,7 +1000,7 @@ assert_grep "G8a: error names greeter user creation" 'could not create greeter u
 log8b="$sandbox/g8b.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log8b" FAKE_DMS_ENABLE_RC=0 FAKE_USERADD_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   GREETER_USER_NAME="no-such-greeter-r43" \
   HOME="$fakehome_g8" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log8b" 2>&1 || rc=$?
@@ -1025,7 +1015,7 @@ logp1="$sandbox/pa1.log"
 cp "$backup/.config/systemd/user/hyprland.service" "$fakehome_g6/.config/systemd/user/hyprland.service" 2>/dev/null || true
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$logp1" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   PYTHON_BIN="$sandbox/mockbin-nopython/python3" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$logp1" 2>&1 || rc=$?
@@ -1063,7 +1053,7 @@ logp2="$sandbox/pa2.log"
 cp "$backup/.config/systemd/user/hyprland.service" "$fakehome_g6/.config/systemd/user/hyprland.service" 2>/dev/null || true
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$logp2" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   PYTHON_BIN="$sandbox/mockbin/py42" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$logp2" 2>&1 || rc=$?
@@ -1086,7 +1076,7 @@ logp3="$sandbox/pa3.log"
 cp "$backup/.config/systemd/user/hyprland.service" "$fakehome_g6/.config/systemd/user/hyprland.service" 2>/dev/null || true
 rc=0
 PATH="$sandbox/mockbin:$sandbox/toolbin" FAKE_SYS_LOG="$logp3" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   HOME="$fakehome_g6" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$logp3" 2>&1 || rc=$?
 check "PA3: PATH without python3 aborts (rc 1)" "$rc" 1
@@ -1110,7 +1100,7 @@ cp "$backup/.config/systemd/user/hyprland.service" "$fakehome_g6e/.config/system
 log6e="$sandbox/g6e.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log6e" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
   TARGET_XDG_DATA_HOME="$sandbox/empty-share" TARGET_XDG_DATA_DIRS="$sandbox/empty-share" \
   HOME="$fakehome_g6e" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log6e" 2>&1 || rc=$?
@@ -1129,502 +1119,6 @@ else
   check "G6e: no user daemon-reload before abort" 0 0
 fi
 
-# G7: greeter memory migration (R4.3 item 1). The ONLY remembered-session
-# file is <GREETER_CACHE_DIR>/.local/state/memory.json. Structured JSON,
-# exact-case edits only, uid/gid/mode preserved, unique backup, atomic
-# replace, fail-closed on symlink/FIFO/dir/unreadable/invalid-JSON, and a
-# conservative path when ownership cannot be preserved as the current user.
-mig() { # mig <cache_dir> <home> <outfile> ; echoes "rc=<n>"
-  GREETER_CACHE_DIR="$1" HOME="$2" bash -c '
-    source "$0" >/dev/null 2>&1
-    rc=0
-    migrate_greeter_memory >"$1" 2>&1 || rc=$?
-    echo "rc=$rc"
-  ' "$utils" "$3"
-}
-# G7-perm: reproduce the missed privilege boundary without requiring real
-# sudo or another host account. A cache directory with mode 000 is not
-# traversable by the invoking user, so a direct migration must fail and leave
-# the file unchanged. The dedicated fake sudo explicitly grants traversal
-# before executing the same Python transaction; combined with G7a's service
-# log assertion below, this verifies both the boundary and privileged routing.
-perm_cache="$sandbox/cache-permission"
-mkdir -p "$perm_cache/.local/state" "$sandbox/mock-privileged"
-cat > "$perm_cache/.local/state/memory.json" <<'EOF'
-{"lastSessionDesktopId":"hyprland.desktop","lastSessionId":"hyprland.desktop"}
-EOF
-chmod 600 "$perm_cache/.local/state/memory.json"
-perm_hash_before="$(sha256sum "$perm_cache/.local/state/memory.json" | cut -d' ' -f1)"
-chmod 000 "$perm_cache"
-perm_direct="$(mig "$perm_cache" "$sandbox/home-permission" "$sandbox/g7-perm-direct.out")"
-assert_eq "G7-perm: direct unprivileged migration fails on non-traversable cache" "$perm_direct" "rc=3"
-chmod 700 "$perm_cache"
-perm_hash_after="$(sha256sum "$perm_cache/.local/state/memory.json" | cut -d' ' -f1)"
-assert_eq "G7-perm: direct failure leaves memory byte-identical" "$perm_hash_after" "$perm_hash_before"
-chmod 000 "$perm_cache"
-cat > "$sandbox/mock-privileged/sudo" <<'EOF'
-#!/usr/bin/env bash
-echo "sudo $*" >> "${GREETER_PRIV_TEST_LOG:?}"
-if [[ "$1" == "python3" || "$1" == "/usr/bin/python3" ]]; then
-  # Test-only privilege simulation: the owner can grant traversal even though
-  # the direct caller could not traverse the mode-000 directory.
-  chmod 700 "${GREETER_PRIV_TEST_CACHE:?}"
-  exec "$@"
-fi
-exit 99
-EOF
-chmod +x "$sandbox/mock-privileged/sudo"
-: > "$sandbox/g7-perm-priv.log"
-rc=0
-PATH="$sandbox/mock-privileged:$PATH" \
-  GREETER_PRIV_TEST_CACHE="$perm_cache" \
-  GREETER_PRIV_TEST_LOG="$sandbox/g7-perm-priv.log" \
-  GREETER_MEMORY_USE_PRIVILEGED_RUN=1 GREETER_CACHE_DIR="$perm_cache" \
-  HOME="$sandbox/home-permission" bash -c '
-    source "$0" >/dev/null 2>&1
-    migrate_greeter_memory
-  ' "$utils" >"$sandbox/g7-perm-priv.out" 2>&1 || rc=$?
-check "G7-perm: privileged migration succeeds on formerly inaccessible cache" "$rc" 0
-assert_grep "G7-perm: privileged route invoked sudo Python" 'sudo .*python3 -' "$sandbox/g7-perm-priv.log"
-assert_grep "G7-perm: privileged route migrated remembered desktop" '"lastSessionDesktopId": "hyprland-uwsm.desktop"' "$perm_cache/.local/state/memory.json"
-
-# G7a: happy path through 08-services (both mode) - migration preserves
-# mode/uid/gid, lastSuccessfulUser, unknown fields; DMS theme session.json
-# (even containing hyprland.desktop) is NEVER touched.
-fakehome_g7="$sandbox/home-g7"
-mkdir -p "$fakehome_g7/.local/state/DankMaterialShell" \
-         "$fakehome_g7/.config/systemd/user/graphical-session.target.wants" \
-         "$sandbox/greeter-cache/.local/state"
-ln -s /usr/lib/systemd/user/dms.service "$fakehome_g7/.config/systemd/user/graphical-session.target.wants/dms.service"
-cat > "$fakehome_g7/.local/state/DankMaterialShell/session.json" <<'EOF'
-{"theme": "dark", "launchPrefix": "hyprland.desktop --flag", "lastSessionId": "hyprland.desktop"}
-EOF
-theme_before="$(sha256sum "$fakehome_g7/.local/state/DankMaterialShell/session.json" | cut -d' ' -f1)"
-cat > "$sandbox/greeter-cache/.local/state/memory.json" <<'EOF'
-{
-  "lastSuccessfulUser": "alice",
-  "lastSessionDesktopId": "hyprland.desktop",
-  "lastSessionId": "/usr/share/wayland-sessions/hyprland.desktop",
-  "launchPrefix": "hyprland.desktop --flag"
-}
-EOF
-stat_before="$(stat -c '%u:%g:%a' "$sandbox/greeter-cache/.local/state/memory.json")"
-log7="$sandbox/g7.log"
-rc=0
-PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log7" FAKE_DMS_ENABLE_RC=0 \
-  UWSM_BIN="$sandbox/mockbin/uwsm" GREETER_CACHE_DIR="$sandbox/greeter-cache" \
-  HOME="$fakehome_g7" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
-  bash "$services" >>"$log7" 2>&1 || rc=$?
-check "G7a: memory migration rc 0" "$rc" 0
-# Regression: the real greeter cache is owned by greeter and may deny the
-# target user's directory traversal. The service path must request the
-# migration through run()/sudo rather than invoking Python directly.
-assert_grep "G7a: memory migration uses privileged run wrapper" 'sudo python3 -' "$log7"
-assert_grep "G7a: lastSessionDesktopId migrated" '"lastSessionDesktopId": "hyprland-uwsm.desktop"' "$sandbox/greeter-cache/.local/state/memory.json"
-assert_grep "G7a: lastSessionId basename migrated" 'wayland-sessions/hyprland-uwsm.desktop' "$sandbox/greeter-cache/.local/state/memory.json"
-assert_grep "G7a: lastSuccessfulUser preserved" '"lastSuccessfulUser": "alice"' "$sandbox/greeter-cache/.local/state/memory.json"
-assert_grep "G7a: unrelated field with hyprland.desktop untouched" '"launchPrefix": "hyprland.desktop --flag"' "$sandbox/greeter-cache/.local/state/memory.json"
-stat_after="$(stat -c '%u:%g:%a' "$sandbox/greeter-cache/.local/state/memory.json")"
-assert_eq "G7a: uid:gid:mode preserved after migration" "$stat_after" "$stat_before"
-theme_after="$(sha256sum "$fakehome_g7/.local/state/DankMaterialShell/session.json" | cut -d' ' -f1)"
-assert_eq "G7a: DMS theme session.json byte-identical" "$theme_after" "$theme_before"
-if find "$sandbox/greeter-cache/.local/state" -maxdepth 1 -name '.memory-backup-*' | grep -q .; then
-  check "G7a: auditable backup created" 0 0
-else
-  check "G7a: auditable backup created" 1 0
-fi
-if find "$sandbox/greeter-cache" "$fakehome_g7" \( -name '.memory-migrate-*' -o -name '.session-migrate-*' \) 2>/dev/null | grep -q .; then
-  check "G7a: no migration temp leftovers" 1 0
-else
-  check "G7a: no migration temp leftovers" 0 0
-fi
-# G7b: final symlink -> external sentinel untouched, rc nonzero
-sentinel="$sandbox/greeter-memory-sentinel"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sentinel"
-mkdir -p "$sandbox/cache-b/.local/state"
-ln -s "$sentinel" "$sandbox/cache-b/.local/state/memory.json"
-sent_hash="$(sha256sum "$sentinel" | cut -d' ' -f1)"
-mig "$sandbox/cache-b" "$fakehome_g7" "$sandbox/g7b.out" > "$sandbox/g7b.rc"
-rb="$(cat "$sandbox/g7b.rc")"
-if [[ "$rb" != "rc=0" ]]; then check "G7b: final symlink fails closed (nonzero)" 0 0; else check "G7b: final symlink fails closed (nonzero)" 1 0; fi
-assert_eq "G7b: external sentinel hash unchanged" "$(sha256sum "$sentinel" | cut -d' ' -f1)" "$sent_hash"
-# G7c: parent symlink -> outside untouched, rc nonzero
-mkdir -p "$sandbox/outside-state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/outside-state/memory.json"
-mkdir -p "$sandbox/cache-c"
-ln -s "$sandbox/outside-state" "$sandbox/cache-c/.local"
-out_hash="$(sha256sum "$sandbox/outside-state/memory.json" | cut -d' ' -f1)"
-mig "$sandbox/cache-c" "$fakehome_g7" "$sandbox/g7c.out" > "$sandbox/g7c.rc"
-if [[ "$(cat "$sandbox/g7c.rc")" != "rc=0" ]]; then check "G7c: parent symlink fails closed (nonzero)" 0 0; else check "G7c: parent symlink fails closed (nonzero)" 1 0; fi
-assert_eq "G7c: outside memory hash unchanged" "$(sha256sum "$sandbox/outside-state/memory.json" | cut -d' ' -f1)" "$out_hash"
-# G7d: FIFO -> fast nonzero (never rc=124). --kill-after guards against a
-# hang in unpatched code (bash defers SIGTERM while blocked on the FIFO);
-# the reaped grep would otherwise linger on the sandbox FIFO.
-mkdir -p "$sandbox/cache-d/.local/state"
-mkfifo "$sandbox/cache-d/.local/state/memory.json"
-# || true keeps a timeout-killed inner run from aborting the suite via set -e
-rd="$(timeout --kill-after=2 10 env GREETER_CACHE_DIR="$sandbox/cache-d" HOME="$fakehome_g7" bash -c '
-  source "$0" >/dev/null 2>&1
-  rc=0; migrate_greeter_memory >/dev/null 2>&1 || rc=$?; echo "rc=$rc"' "$utils" 2>/dev/null || true)"
-pkill -f "$sandbox/cache-d/.local/state/memory.json" 2>/dev/null || true
-if [[ -n "$rd" && "$rd" != "rc=0" && "$rd" != "rc=124" ]]; then
-  check "G7d: FIFO fails fast (nonzero, not timeout 124)" 0 0
-else
-  check "G7d: FIFO fails fast (nonzero, not timeout 124)" 1 0
-fi
-# G7e: directory -> nonzero + reported
-mkdir -p "$sandbox/cache-e/.local/state/memory.json"
-mig "$sandbox/cache-e" "$fakehome_g7" "$sandbox/g7e.out" > "$sandbox/g7e.rc"
-if [[ "$(cat "$sandbox/g7e.rc")" != "rc=0" ]]; then
-  check "G7e: directory fails closed (nonzero)" 0 0
-else
-  check "G7e: directory fails closed (nonzero)" 1 0
-fi
-assert_grep "G7e: directory reported with path" 'memory.json' "$sandbox/g7e.out"
-# G7f: unreadable -> nonzero (NOT treated as no-match)
-mkdir -p "$sandbox/cache-f/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-f/.local/state/memory.json"
-chmod 000 "$sandbox/cache-f/.local/state/memory.json"
-mig "$sandbox/cache-f" "$fakehome_g7" "$sandbox/g7f.out" > "$sandbox/g7f.rc"
-if [[ "$(cat "$sandbox/g7f.rc")" != "rc=0" ]]; then
-  check "G7f: unreadable fails closed (nonzero, not no-match)" 0 0
-else
-  check "G7f: unreadable fails closed (nonzero, not no-match)" 1 0
-fi
-chmod 644 "$sandbox/cache-f/.local/state/memory.json"
-# G7g: invalid JSON -> nonzero + byte-identical
-mkdir -p "$sandbox/cache-g/.local/state"
-printf 'not json{{{"\n' > "$sandbox/cache-g/.local/state/memory.json"
-g_hash="$(sha256sum "$sandbox/cache-g/.local/state/memory.json" | cut -d' ' -f1)"
-mig "$sandbox/cache-g" "$fakehome_g7" "$sandbox/g7g.out" > "$sandbox/g7g.rc"
-if [[ "$(cat "$sandbox/g7g.rc")" != "rc=0" ]]; then
-  check "G7g: invalid JSON fails closed (nonzero)" 0 0
-else
-  check "G7g: invalid JSON fails closed (nonzero)" 1 0
-fi
-assert_eq "G7g: invalid JSON byte-identical" "$(sha256sum "$sandbox/cache-g/.local/state/memory.json" | cut -d' ' -f1)" "$g_hash"
-# G7h: remembered session is niri.desktop -> no modification at all
-mkdir -p "$sandbox/cache-h/.local/state"
-cat > "$sandbox/cache-h/.local/state/memory.json" <<'EOF'
-{"lastSessionDesktopId": "niri.desktop", "launchPrefix": "hyprland.desktop --flag"}
-EOF
-h_hash="$(sha256sum "$sandbox/cache-h/.local/state/memory.json" | cut -d' ' -f1)"
-mig "$sandbox/cache-h" "$fakehome_g7" "$sandbox/g7h.out" > "$sandbox/g7h.rc"
-assert_eq "G7h: niri session -> rc=0 no-op" "$(cat "$sandbox/g7h.rc")" "rc=0"
-assert_eq "G7h: unrelated field with hyprland.desktop untouched" "$(sha256sum "$sandbox/cache-h/.local/state/memory.json" | cut -d' ' -f1)" "$h_hash"
-# G7i: conservative fail-closed (forced): detect, do not modify, nonzero
-mkdir -p "$sandbox/cache-i/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-i/.local/state/memory.json"
-i_hash="$(sha256sum "$sandbox/cache-i/.local/state/memory.json" | cut -d' ' -f1)"
-GREETER_MEMORY_FORCE_FAILCLOSED=1 mig "$sandbox/cache-i" "$fakehome_g7" "$sandbox/g7i.out" > "$sandbox/g7i.rc"
-if [[ "$(cat "$sandbox/g7i.rc")" != "rc=0" ]]; then
-  check "G7i: conservative path fails closed (nonzero)" 0 0
-else
-  check "G7i: conservative path fails closed (nonzero)" 1 0
-fi
-assert_eq "G7i: original byte-identical on conservative path" "$(sha256sum "$sandbox/cache-i/.local/state/memory.json" | cut -d' ' -f1)" "$i_hash"
-assert_grep "G7i: conservative message names the memory path" 'memory.json' "$sandbox/g7i.out"
-
-# G7j: deterministic TOCTOU race (R4.4 item 2). The migration runs under a
-# controlled failpoint handshake; between its safety walk and the read, the
-# state dir is atomically swapped for a symlink pointing OUTSIDE. The fixed
-# (dir_fd-anchored) code must fail closed with outside AND inside untouched.
-mkdir -p "$sandbox/cache-race/.local/state" "$sandbox/race-outside"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-race/.local/state/memory.json"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/race-outside/memory.json"
-race_out_hash="$(sha256sum "$sandbox/race-outside/memory.json" | cut -d' ' -f1)"
-fp="$sandbox/race-fp"
-rm -f "$sandbox/race-rc" "$fp.ready" "$fp.go"
-GREETER_CACHE_DIR="$sandbox/cache-race" HOME="$sandbox/home-race" \
-  MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_FAILPOINT="$fp" \
-  bash -c 'source "$0" >/dev/null 2>&1; rc=0; migrate_greeter_memory >/dev/null 2>&1 || rc=$?; echo "rc=$rc" > "$1"' \
-  "$utils" "$sandbox/race-rc" &
-bgpid=$!
-for i in $(seq 1 100); do [[ -e "$fp.ready" ]] && break; sleep 0.05; done
-[[ -e "$fp.ready" ]] || echo "race failpoint never became ready"
-mv "$sandbox/cache-race/.local/state" "$sandbox/cache-race/.local/state-orig"
-ln -s "$sandbox/race-outside" "$sandbox/cache-race/.local/state"
-touch "$fp.go"
-wait "$bgpid" 2>/dev/null || true
-race_rc="$(cat "$sandbox/race-rc" 2>/dev/null || echo missing)"
-if [[ "$race_rc" != "rc=0" ]]; then
-  check "race: fail-closed (nonzero rc)" 0 0
-else
-  check "race: fail-closed (nonzero rc)" 1 0
-fi
-assert_eq "race: outside sentinel hash unchanged" "$(sha256sum "$sandbox/race-outside/memory.json" | cut -d' ' -f1)" "$race_out_hash"
-if find "$sandbox/race-outside" -name '.memory-backup-*' 2>/dev/null | grep -q .; then
-  check "race: no backup written outside" 1 0
-else
-  check "race: no backup written outside" 0 0
-fi
-rc=0
-[[ -f "$sandbox/cache-race/.local/state-orig/memory.json" && \
-   "$(grep -c 'hyprland-uwsm.desktop' "$sandbox/cache-race/.local/state-orig/memory.json" 2>/dev/null || true)" == "0" ]] || rc=1
-check "race: original (anchored) memory not rewritten" "$rc" 0
-
-# G7k: backup verification failure -> pre-replace cleanup, original intact
-mkdir -p "$sandbox/cache-k/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-k/.local/state/memory.json"
-k_hash="$(sha256sum "$sandbox/cache-k/.local/state/memory.json" | cut -d' ' -f1)"
-k_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-k/.local/state/memory.json")"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_BACKUP_FAIL=1 mig "$sandbox/cache-k" "$sandbox/home-k" "$sandbox/g7k.out" > "$sandbox/g7k.rc"
-if [[ "$(cat "$sandbox/g7k.rc")" != "rc=0" ]]; then
-  check "G7k: backup failure fails closed (nonzero)" 0 0
-else
-  check "G7k: backup failure fails closed (nonzero)" 1 0
-fi
-assert_eq "G7k: original hash unchanged" "$(sha256sum "$sandbox/cache-k/.local/state/memory.json" | cut -d' ' -f1)" "$k_hash"
-assert_eq "G7k: original metadata unchanged" "$(stat -c '%u:%g:%a' "$sandbox/cache-k/.local/state/memory.json")" "$k_stat"
-if find "$sandbox/cache-k" -name '.memory-backup-*' -o -name '.memory-migrate-*' 2>/dev/null | grep -q .; then
-  check "G7k: no partial backup/temp left" 1 0
-else
-  check "G7k: no partial backup/temp left" 0 0
-fi
-
-# G7l: backup ownership failure blocks the replace (original intact)
-mkdir -p "$sandbox/cache-l/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-l/.local/state/memory.json"
-l_hash="$(sha256sum "$sandbox/cache-l/.local/state/memory.json" | cut -d' ' -f1)"
-l_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-l/.local/state/memory.json")"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_BACKUP_OWN_FAIL=1 mig "$sandbox/cache-l" "$sandbox/home-l" "$sandbox/g7l.out" > "$sandbox/g7l.rc"
-if [[ "$(cat "$sandbox/g7l.rc")" != "rc=0" ]]; then
-  check "G7l: backup ownership failure blocks replace (nonzero)" 0 0
-else
-  check "G7l: backup ownership failure blocks replace (nonzero)" 1 0
-fi
-assert_eq "G7l: original hash unchanged" "$(sha256sum "$sandbox/cache-l/.local/state/memory.json" | cut -d' ' -f1)" "$l_hash"
-assert_eq "G7l: original metadata unchanged" "$(stat -c '%u:%g:%a' "$sandbox/cache-l/.local/state/memory.json")" "$l_stat"
-
-# G7m: post-replace stat mismatch -> atomic rollback restores the original
-mkdir -p "$sandbox/cache-m/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-m/.local/state/memory.json"
-m_hash="$(sha256sum "$sandbox/cache-m/.local/state/memory.json" | cut -d' ' -f1)"
-m_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-m/.local/state/memory.json")"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_POSTSTAT_FAIL=1 mig "$sandbox/cache-m" "$sandbox/home-m" "$sandbox/g7m.out" > "$sandbox/g7m.rc"
-if [[ "$(cat "$sandbox/g7m.rc")" != "rc=0" ]]; then
-  check "G7m: post-replace mismatch fails closed (nonzero)" 0 0
-else
-  check "G7m: post-replace mismatch fails closed (nonzero)" 1 0
-fi
-assert_eq "G7m: original restored (hash)" "$(sha256sum "$sandbox/cache-m/.local/state/memory.json" | cut -d' ' -f1)" "$m_hash"
-assert_eq "G7m: original restored (metadata)" "$(stat -c '%u:%g:%a' "$sandbox/cache-m/.local/state/memory.json")" "$m_stat"
-if find "$sandbox/cache-m/.local/state" -maxdepth 1 -name '.memory-backup-*' 2>/dev/null | grep -q .; then
-  check "G7m: auditable backup kept after rollback" 0 0
-else
-  check "G7m: auditable backup kept after rollback" 1 0
-fi
-if find "$sandbox/cache-m/.local/state" -maxdepth 1 -name '.memory-migrate-*' 2>/dev/null | grep -q .; then
-  check "G7m: no temp leftover after rollback" 1 0
-else
-  check "G7m: no temp leftover after rollback" 0 0
-fi
-
-# G7n: final file swapped between lstat and open (deterministic failpoint) ->
-# nonzero, the swapped file is NOT migrated, no backup created (R4.5 三)
-mkdir -p "$sandbox/cache-n/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-n/.local/state/memory.json"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_FINAL_SWAP=1 mig "$sandbox/cache-n" "$sandbox/home-n" "$sandbox/g7n.out" > "$sandbox/g7n.rc"
-if [[ "$(cat "$sandbox/g7n.rc")" != "rc=0" ]]; then
-  check "G7n: final-swap fails closed (nonzero)" 0 0
-else
-  check "G7n: final-swap fails closed (nonzero)" 1 0
-fi
-if grep -q 'SENTINEL-SWAP' "$sandbox/cache-n/.local/state/memory.json"; then
-  check "G7n: swapped file NOT migrated (sentinel intact)" 1 1
-else
-  check "G7n: swapped file NOT migrated (sentinel intact)" 0 1
-fi
-if find "$sandbox/cache-n/.local/state" -maxdepth 1 -name '.memory-backup-*' 2>/dev/null | grep -q .; then
-  check "G7n: no backup created on identity mismatch" 1 0
-else
-  check "G7n: no backup created on identity mismatch" 0 0
-fi
-# G7o: final file swapped after replace, before verification -> nonzero and
-# the swapped file is NOT the migrated content; verified backup is kept
-mkdir -p "$sandbox/cache-o/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-o/.local/state/memory.json"
-o_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-o/.local/state/memory.json")"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_POSTSWAP=1 mig "$sandbox/cache-o" "$sandbox/home-o" "$sandbox/g7o.out" > "$sandbox/g7o.rc"
-if [[ "$(cat "$sandbox/g7o.rc")" != "rc=0" ]]; then
-  check "G7o: post-replace swap fails closed (nonzero)" 0 0
-else
-  check "G7o: post-replace swap fails closed (nonzero)" 1 0
-fi
-if grep -q 'SENTINEL-POSTSWAP' "$sandbox/cache-o/.local/state/memory.json"; then
-  check "G7o: swapped file NOT migrated (sentinel intact)" 1 1
-else
-  check "G7o: swapped file NOT migrated (sentinel intact)" 0 1
-fi
-assert_grep "G7o: current object NOT modified / auto-restore NOT executed" 'auto-restore NOT executed' "$sandbox/g7o.out"
-o_bak="$(find "$sandbox/cache-o/.local/state" -maxdepth 1 -name '.memory-backup-*' | head -1)"
-if [[ -n "$o_bak" ]]; then
-  check "G7o: verified backup kept after swap failure" 0 0
-else
-  check "G7o: verified backup kept after swap failure" 1 0
-fi
-if [[ -n "$o_bak" ]]; then
-  assert_eq "G7o: backup metadata matches original" "$(stat -c '%u:%g:%a' "$o_bak")" "$o_stat"
-fi
-if find "$sandbox/cache-o/.local/state" -maxdepth 1 -name '.memory-migrate-*' -o -name '.memory-restore-*' 2>/dev/null | grep -q .; then
-  check "G7o: no temp leftovers" 1 0
-else
-  check "G7o: no temp leftovers" 0 0
-fi
-
-# G7p: restore (rollback) failures - verified backup is NEVER deleted, the
-# failure is a distinct nonzero status with explicit AUTO-RESTORE FAILED log
-g7p_run() { # g7p_run <cache> <failpoint-suffix> <rcfile> <outfile>
-  local cache="$1" pfx="$2" rcfile="$3" outfile="$4"
-  (
-    export MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_POSTSTAT_FAIL=1
-    export "GREETER_MEMORY_TEST_RESTORE_${pfx}=1"
-    mig "$cache" "$sandbox/home-p" "$outfile" > "$rcfile"
-  )
-}
-for pfx in CREATE_FAIL OWN_FAIL REPLACE_FAIL VERIFY_FAIL; do
-  mkdir -p "$sandbox/cache-p-$pfx/.local/state"
-  printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-p-$pfx/.local/state/memory.json"
-done
-p_hash="$(sha256sum "$sandbox/cache-p-CREATE_FAIL/.local/state/memory.json" | cut -d' ' -f1)"
-p_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-p-CREATE_FAIL/.local/state/memory.json")"
-for pfx in CREATE_FAIL OWN_FAIL REPLACE_FAIL VERIFY_FAIL; do
-  g7p_run "$sandbox/cache-p-$pfx" "$pfx" "$sandbox/g7p-$pfx.rc" "$sandbox/g7p-$pfx.out"
-  if [[ "$(cat "$sandbox/g7p-$pfx.rc")" != "rc=0" && "$(cat "$sandbox/g7p-$pfx.rc")" != "rc=5" ]]; then
-    check "G7p-$pfx: restore failure is a distinct nonzero rc" 0 0
-  else
-    check "G7p-$pfx: restore failure is a distinct nonzero rc" 1 0
-  fi
-  assert_grep "G7p-$pfx: AUTO-RESTORE FAILED logged" 'AUTO-RESTORE FAILED' "$sandbox/g7p-$pfx.out"
-  if grep -q 'rolled back from verified backup' "$sandbox/g7p-$pfx.out"; then
-    check "G7p-$pfx: does NOT claim rollback success" 1 0
-  else
-    check "G7p-$pfx: does NOT claim rollback success" 0 0
-  fi
-  bak="$(find "$sandbox/cache-p-$pfx/.local/state" -maxdepth 1 -name '.memory-backup-*' | head -1)"
-  if [[ -n "$bak" ]]; then
-    check "G7p-$pfx: verified backup preserved" 0 0
-    assert_eq "G7p-$pfx: backup content == original" "$(sha256sum "$bak" | cut -d' ' -f1)" "$p_hash"
-    assert_eq "G7p-$pfx: backup metadata == original" "$(stat -c '%u:%g:%a' "$bak")" "$p_stat"
-  else
-    check "G7p-$pfx: verified backup preserved" 1 0
-  fi
-  if find "$sandbox/cache-p-$pfx/.local/state" -maxdepth 1 -name '.memory-restore-*' -o -name '.memory-migrate-*' 2>/dev/null | grep -q .; then
-    check "G7p-$pfx: no incomplete tmp left" 1 0
-  else
-    check "G7p-$pfx: no incomplete tmp left" 0 0
-  fi
-done
-
-# G7q: memory changed AFTER it was read, BEFORE the final replace (R4.6 一) ->
-# distinct nonzero rc, no commit, newer content preserved, verified backup
-# equals the originally-read version, no tmp leftovers
-mkdir -p "$sandbox/cache-q/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-q/.local/state/memory.json"
-q_orig_hash="$(sha256sum "$sandbox/cache-q/.local/state/memory.json" | cut -d' ' -f1)"
-q_stat="$(stat -c '%u:%g:%a' "$sandbox/cache-q/.local/state/memory.json")"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_PRECOMMIT_SWAP=1 mig "$sandbox/cache-q" "$sandbox/home-q" "$sandbox/g7q.out" > "$sandbox/g7q.rc"
-qq="$(cat "$sandbox/g7q.rc")"
-if [[ "$qq" != "rc=0" && "$qq" != "rc=5" ]]; then
-  check "G7q: pre-commit change fails closed (distinct nonzero rc)" 0 0
-else
-  check "G7q: pre-commit change fails closed (distinct nonzero rc)" 1 0
-fi
-assert_grep "G7q: 'memory changed after it was read' logged" 'memory changed after it was read' "$sandbox/g7q.out"
-assert_grep "G7q: 'migration not committed' logged" 'migration not committed' "$sandbox/g7q.out"
-if grep -q 'SENTINEL-PRECOMMIT' "$sandbox/cache-q/.local/state/memory.json"; then
-  check "G7q: newer content preserved (not overwritten)" 1 1
-else
-  check "G7q: newer content preserved (not overwritten)" 0 1
-fi
-q_bak="$(find "$sandbox/cache-q/.local/state" -maxdepth 1 -name '.memory-backup-*' | head -1)"
-if [[ -n "$q_bak" ]]; then
-  check "G7q: verified backup preserved" 0 0
-  assert_eq "G7q: backup content == originally-read version" "$(sha256sum "$q_bak" | cut -d' ' -f1)" "$q_orig_hash"
-  assert_eq "G7q: backup metadata == originally-read version" "$(stat -c '%u:%g:%a' "$q_bak")" "$q_stat"
-else
-  check "G7q: verified backup preserved" 1 0
-fi
-if find "$sandbox/cache-q/.local/state" -maxdepth 1 -name '.memory-migrate-*' 2>/dev/null | grep -q .; then
-  check "G7q: no tmp leftovers" 1 0
-else
-  check "G7q: no tmp leftovers" 0 0
-fi
-
-# G7r: post-replace final OPEN failure -> category B (object identity
-# unknown): distinct rc, current object NOT modified, auto-restore NOT
-# executed, verified backup preserved (R4.6 二)
-mkdir -p "$sandbox/cache-r/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-r/.local/state/memory.json"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_FINAL_OPEN_FAIL=1 mig "$sandbox/cache-r" "$sandbox/home-r" "$sandbox/g7r.out" > "$sandbox/g7r.rc"
-rr2="$(cat "$sandbox/g7r.rc")"
-if [[ "$rr2" != "rc=0" && "$rr2" != "rc=5" && "$rr2" != "rc=6" ]]; then
-  check "G7r: final-open failure -> distinct nonzero rc" 0 0
-else
-  check "G7r: final-open failure -> distinct nonzero rc" 1 0
-fi
-assert_grep "G7r: current object NOT modified / auto-restore NOT executed" 'auto-restore NOT executed' "$sandbox/g7r.out"
-r_bak="$(find "$sandbox/cache-r/.local/state" -maxdepth 1 -name '.memory-backup-*' | head -1)"
-if [[ -n "$r_bak" ]]; then
-  check "G7r: verified backup preserved" 0 0
-else
-  check "G7r: verified backup preserved" 1 0
-fi
-
-# G7s: parent changed AFTER the read, BEFORE the final replace (R4.6 三) ->
-# nonzero, no commit, outside untouched, anchored dir unmodified
-mkdir -p "$sandbox/cache-s/.local/state" "$sandbox/race-outside-s"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-s/.local/state/memory.json"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/race-outside-s/memory.json"
-s_out_hash="$(sha256sum "$sandbox/race-outside-s/memory.json" | cut -d' ' -f1)"
-fp2="$sandbox/race-fp-s"
-rm -f "$sandbox/race-rc-s" "$fp2.ready" "$fp2.go"
-GREETER_CACHE_DIR="$sandbox/cache-s" HOME="$sandbox/home-s" \
-  MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_PARENT_FAILPOINT="$fp2" \
-  bash -c 'source "$0" >/dev/null 2>&1; rc=0; migrate_greeter_memory >/dev/null 2>&1 || rc=$?; echo "rc=$rc" > "$1"' \
-  "$utils" "$sandbox/race-rc-s" &
-bgpid2=$!
-for i in $(seq 1 100); do [[ -e "$fp2.ready" ]] && break; sleep 0.05; done
-[[ -e "$fp2.ready" ]] || echo "parent failpoint never became ready"
-mv "$sandbox/cache-s/.local/state" "$sandbox/cache-s/.local/state-parent-s"
-ln -s "$sandbox/race-outside-s" "$sandbox/cache-s/.local/state"
-touch "$fp2.go"
-wait "$bgpid2" 2>/dev/null || true
-s_rc="$(cat "$sandbox/race-rc-s" 2>/dev/null || echo missing)"
-if [[ "$s_rc" != "rc=0" && "$s_rc" != "rc=5" ]]; then
-  check "G7s: parent pre-commit change fails closed (nonzero)" 0 0
-else
-  check "G7s: parent pre-commit change fails closed (nonzero)" 1 0
-fi
-assert_eq "G7s: outside sentinel unchanged" "$(sha256sum "$sandbox/race-outside-s/memory.json" | cut -d' ' -f1)" "$s_out_hash"
-rc=0
-[[ -f "$sandbox/cache-s/.local/state-parent-s/memory.json" && \
-   "$(grep -c 'hyprland-uwsm.desktop' "$sandbox/cache-s/.local/state-parent-s/memory.json" 2>/dev/null || true)" == "0" ]] || rc=1
-check "G7s: anchored dir memory not committed (unmigrated)" "$rc" 0
-
-# G7t: verified backup NAME swapped after verification -> a fresh verified
-# backup is created from raw; migration still commits; at least one verified
-# backup with the ORIGINAL content exists (R4.6 四)
-mkdir -p "$sandbox/cache-t/.local/state"
-printf '{"lastSessionDesktopId": "hyprland.desktop"}\n' > "$sandbox/cache-t/.local/state/memory.json"
-t_orig_hash="$(sha256sum "$sandbox/cache-t/.local/state/memory.json" | cut -d' ' -f1)"
-MY_ARCH_TEST_MODE=1 GREETER_MEMORY_TEST_BACKUP_SWAP=1 mig "$sandbox/cache-t" "$sandbox/home-t" "$sandbox/g7t.out" > "$sandbox/g7t.rc"
-assert_eq "G7t: backup-swap migration succeeds (rc 0)" "$(cat "$sandbox/g7t.rc")" "rc=0"
-if grep -q 'hyprland-uwsm.desktop' "$sandbox/cache-t/.local/state/memory.json"; then
-  check "G7t: migration committed normally" 0 0
-else
-  check "G7t: migration committed normally" 1 0
-fi
-t_good=0
-for b in "$sandbox/cache-t/.local/state/".memory-backup-*; do
-  [[ -e "$b" ]] || continue
-  if [[ "$(sha256sum "$b" | cut -d' ' -f1)" == "$t_orig_hash" ]]; then t_good=1; fi
-done
-if [[ "$t_good" -eq 1 ]]; then
-  check "G7t: at least one verified backup with original content" 0 0
-else
-  check "G7t: at least one verified backup with original content" 1 0
-fi
 
 echo "== H. stale cleanup safety: parent symlinks, non-regular files, backup =="
 # H1: parent-dir symlink (the Codex R4.1 repro): ~/.config and ~/.local
@@ -1778,15 +1272,13 @@ else
   unavail_note "Hyprland binary missing (verify-config skipped)"
 fi
 
-echo "== J. system uwsm entry: Exec/TryExec + desktop-file-validate classification =="
-if [[ -f /usr/share/wayland-sessions/hyprland-uwsm.desktop ]]; then
-  cp /usr/share/wayland-sessions/hyprland-uwsm.desktop "$sandbox/hyprland-uwsm.desktop"
-  exec_line="$(sed -n 's/^Exec=//p' "$sandbox/hyprland-uwsm.desktop" | head -1)"
-  try_line="$(sed -n 's/^TryExec=//p' "$sandbox/hyprland-uwsm.desktop" | head -1)"
-  assert_eq "system entry Exec" "$exec_line" "uwsm start -e -D Hyprland hyprland.desktop"
-  assert_eq "system entry TryExec" "$try_line" "uwsm"
+echo "== J. system Hyprland entry: Exec + desktop-file-validate classification =="
+if [[ -f /usr/share/wayland-sessions/hyprland.desktop ]]; then
+  cp /usr/share/wayland-sessions/hyprland.desktop "$sandbox/hyprland.desktop"
+  exec_line="$(sed -n 's/^Exec=//p' "$sandbox/hyprland.desktop" | head -1)"
+  assert_eq "system entry Exec" "$exec_line" "/usr/bin/start-hyprland"
 else
-  unavail_note "host hyprland-uwsm.desktop missing (parse skipped)"
+  unavail_note "host hyprland.desktop missing (parse skipped)"
 fi
 # desktop-file-validate classification (Codex R4.2/R4.3):
 #   rc=0 -> PASS; rc=1 + every non-empty line is EXACTLY the known
@@ -1821,10 +1313,10 @@ assert_eq "dv classify DesktopNames + extra diagnostic -> FAIL" "$(classify_dv 1
 printf 'x: error: file contains key "DesktopNames" in group "Desktop Entry", but keys extending the format should start with "X-"\n' > "$sandbox/err2k"
 assert_eq "dv classify rc=2 + known msg -> FAIL (rc must be 1)" "$(classify_dv 2 "$sandbox/err2k")" "FAIL"
 # real run against the system entry (host file; UNAVAILABLE if tool missing)
-if command -v desktop-file-validate >/dev/null 2>&1 && [[ -f /usr/share/wayland-sessions/hyprland-uwsm.desktop ]]; then
+if command -v desktop-file-validate >/dev/null 2>&1 && [[ -f /usr/share/wayland-sessions/hyprland.desktop ]]; then
   rc=0
   # desktop-file-validate reports on STDOUT (empty stderr) - capture both
-  desktop-file-validate "$sandbox/hyprland-uwsm.desktop" >"$sandbox/dv.err" 2>&1 || rc=$?
+  desktop-file-validate "$sandbox/hyprland.desktop" >"$sandbox/dv.err" 2>&1 || rc=$?
   cls="$(classify_dv "$rc" "$sandbox/dv.err")"
   case "$cls" in
     PASS) check "desktop-file-validate: clean pass" 0 0 ;;
@@ -1832,7 +1324,7 @@ if command -v desktop-file-validate >/dev/null 2>&1 && [[ -f /usr/share/wayland-
     FAIL) check "desktop-file-validate: FAIL (rc=$rc)" 1 0; cat "$sandbox/dv.err" | sed 's/^/      /' ;;
   esac
 elif command -v desktop-file-validate >/dev/null 2>&1; then
-  unavail_note "host hyprland-uwsm.desktop missing (validate skipped)"
+  unavail_note "host hyprland.desktop missing (validate skipped)"
 else
   unavail_note "desktop-file-validate missing"
 fi
