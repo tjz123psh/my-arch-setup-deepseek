@@ -53,11 +53,11 @@ modsel_cfg() { # modsel_cfg <machine> <desktop> <module>  -> echoes 0/1
 }
 [[ "$(modsel_cfg physical both asus-hardware)" == "0" ]]; check "asus-hardware config selected on physical" $? 0
 [[ "$(modsel_cfg vm both asus-hardware)" == "1" ]]; check "asus-hardware config excluded on vm" $? 0
-# desktop wm modules follow DESKTOP_ENV
+# desktop wm modules follow DESKTOP_ENV (niri/both/none; pure hyprland removed
+# 2026-08-08 - module_selected's both-fallback for unknown values is a pure
+# function safety net, install.sh rejects hyprland/unknown fail-closed)
 [[ "$(modsel vm niri wm-hyprland)" == "1" ]]; check "wm-hyprland excluded on niri" $? 0
 [[ "$(modsel vm niri wm-niri)" == "0" ]]; check "wm-niri selected on niri" $? 0
-[[ "$(modsel vm hyprland wm-niri)" == "1" ]]; check "wm-niri excluded on hyprland" $? 0
-[[ "$(modsel vm hyprland wm-hyprland)" == "0" ]]; check "wm-hyprland selected on hyprland" $? 0
 [[ "$(modsel vm both wm-niri)" == "0" ]]; check "wm-niri selected on both" $? 0
 [[ "$(modsel vm both wm-hyprland)" == "0" ]]; check "wm-hyprland selected on both" $? 0
 [[ "$(modsel vm none wm-niri)" == "1" ]]; check "wm-niri excluded on none" $? 0
@@ -92,7 +92,7 @@ check "setup_progress writes context header" $? 0
 # same context resumes fine
 [[ "$(run_ctx vm niri)" == "0" ]]; check "same context resumes" $? 0
 # different desktop must refuse to resume (exit 1)
-[[ "$(run_ctx vm hyprland)" == "1" ]]; check "different desktop refuses resume (exit 1)" $? 0
+[[ "$(run_ctx vm both)" == "1" ]]; check "different desktop refuses resume (exit 1)" $? 0
 # different machine must refuse
 [[ "$(run_ctx physical niri)" == "1" ]]; check "different machine refuses resume (exit 1)" $? 0
 # the sandbox file exists and the real repo file was never touched
@@ -182,6 +182,22 @@ if grep -q 'refusing to deploy' "$root/scripts/07-config.sh"; then
   pass=$((pass + 1)); echo "  ok   config deploy refuses symlinked paths"
 else
   fail=$((fail + 1)); echo "  FAIL symlink refusal missing"
+fi
+# install.sh: -d hyprland (removed pure-Hyprland entry) must exit nonzero
+rc=0
+bash "$root/install.sh" -d hyprland -t vm >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -ne 0 ]]; then
+  pass=$((pass + 1)); echo "  ok   -d hyprland rejected (rc=$rc)"
+else
+  fail=$((fail + 1)); echo "  FAIL -d hyprland not rejected"
+fi
+# install.sh: unknown desktop value must fail closed (not silently both)
+rc=0
+bash "$root/install.sh" -d bogus -t vm >/dev/null 2>&1 || rc=$?
+if [[ "$rc" -ne 0 ]]; then
+  pass=$((pass + 1)); echo "  ok   -d bogus rejected fail-closed (rc=$rc)"
+else
+  fail=$((fail + 1)); echo "  FAIL -d bogus not rejected"
 fi
 
 echo
