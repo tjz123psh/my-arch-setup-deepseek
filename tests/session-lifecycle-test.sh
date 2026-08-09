@@ -324,6 +324,13 @@ if [[ "$1" == "systemctl" ]]; then
   exec "$(dirname "$0")/systemctl" "$@"
 fi
 if [[ "$1" == "useradd" ]]; then exit "${FAKE_USERADD_RC:-0}"; fi
+# The production memory migration is deliberately requested through the
+# privileged run() wrapper because /var/cache/dms-greeter is not necessarily
+# traversable by the desktop user. Execute only the injected Python probe in
+# this mock; all other arbitrary privileged commands remain no-ops.
+if [[ "$1" == "python3" || "$1" == "/usr/bin/python3" ]]; then
+  exec "$@"
+fi
 exit 0
 EOF
 # adversarial python shims (R4.4): a python3 that exits 42, and a dir with
@@ -1130,6 +1137,52 @@ mig() { # mig <cache_dir> <home> <outfile> ; echoes "rc=<n>"
     echo "rc=$rc"
   ' "$utils" "$3"
 }
+# G7-perm: reproduce the missed privilege boundary without requiring real
+# sudo or another host account. A cache directory with mode 000 is not
+# traversable by the invoking user, so a direct migration must fail and leave
+# the file unchanged. The dedicated fake sudo explicitly grants traversal
+# before executing the same Python transaction; combined with G7a's service
+# log assertion below, this verifies both the boundary and privileged routing.
+perm_cache="$sandbox/cache-permission"
+mkdir -p "$perm_cache/.local/state" "$sandbox/mock-privileged"
+cat > "$perm_cache/.local/state/memory.json" <<'EOF'
+{"lastSessionDesktopId":"hyprland.desktop","lastSessionId":"hyprland.desktop"}
+EOF
+chmod 600 "$perm_cache/.local/state/memory.json"
+perm_hash_before="$(sha256sum "$perm_cache/.local/state/memory.json" | cut -d' ' -f1)"
+chmod 000 "$perm_cache"
+perm_direct="$(mig "$perm_cache" "$sandbox/home-permission" "$sandbox/g7-perm-direct.out")"
+assert_eq "G7-perm: direct unprivileged migration fails on non-traversable cache" "$perm_direct" "rc=3"
+chmod 700 "$perm_cache"
+perm_hash_after="$(sha256sum "$perm_cache/.local/state/memory.json" | cut -d' ' -f1)"
+assert_eq "G7-perm: direct failure leaves memory byte-identical" "$perm_hash_after" "$perm_hash_before"
+chmod 000 "$perm_cache"
+cat > "$sandbox/mock-privileged/sudo" <<'EOF'
+#!/usr/bin/env bash
+echo "sudo $*" >> "${GREETER_PRIV_TEST_LOG:?}"
+if [[ "$1" == "python3" || "$1" == "/usr/bin/python3" ]]; then
+  # Test-only privilege simulation: the owner can grant traversal even though
+  # the direct caller could not traverse the mode-000 directory.
+  chmod 700 "${GREETER_PRIV_TEST_CACHE:?}"
+  exec "$@"
+fi
+exit 99
+EOF
+chmod +x "$sandbox/mock-privileged/sudo"
+: > "$sandbox/g7-perm-priv.log"
+rc=0
+PATH="$sandbox/mock-privileged:$PATH" \
+  GREETER_PRIV_TEST_CACHE="$perm_cache" \
+  GREETER_PRIV_TEST_LOG="$sandbox/g7-perm-priv.log" \
+  GREETER_MEMORY_USE_PRIVILEGED_RUN=1 GREETER_CACHE_DIR="$perm_cache" \
+  HOME="$sandbox/home-permission" bash -c '
+    source "$0" >/dev/null 2>&1
+    migrate_greeter_memory
+  ' "$utils" >"$sandbox/g7-perm-priv.out" 2>&1 || rc=$?
+check "G7-perm: privileged migration succeeds on formerly inaccessible cache" "$rc" 0
+assert_grep "G7-perm: privileged route invoked sudo Python" 'sudo .*python3 -' "$sandbox/g7-perm-priv.log"
+assert_grep "G7-perm: privileged route migrated remembered desktop" '"lastSessionDesktopId": "hyprland-uwsm.desktop"' "$perm_cache/.local/state/memory.json"
+
 # G7a: happy path through 08-services (both mode) - migration preserves
 # mode/uid/gid, lastSuccessfulUser, unknown fields; DMS theme session.json
 # (even containing hyprland.desktop) is NEVER touched.
@@ -1158,6 +1211,10 @@ PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log7" FAKE_DMS_ENABLE_RC=0 \
   HOME="$fakehome_g7" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
   bash "$services" >>"$log7" 2>&1 || rc=$?
 check "G7a: memory migration rc 0" "$rc" 0
+# Regression: the real greeter cache is owned by greeter and may deny the
+# target user's directory traversal. The service path must request the
+# migration through run()/sudo rather than invoking Python directly.
+assert_grep "G7a: memory migration uses privileged run wrapper" 'sudo python3 -' "$log7"
 assert_grep "G7a: lastSessionDesktopId migrated" '"lastSessionDesktopId": "hyprland-uwsm.desktop"' "$sandbox/greeter-cache/.local/state/memory.json"
 assert_grep "G7a: lastSessionId basename migrated" 'wayland-sessions/hyprland-uwsm.desktop' "$sandbox/greeter-cache/.local/state/memory.json"
 assert_grep "G7a: lastSuccessfulUser preserved" '"lastSuccessfulUser": "alice"' "$sandbox/greeter-cache/.local/state/memory.json"

@@ -180,10 +180,10 @@ VMware/Hyprland acceptance contract live in
 that a real VMware login, snapshot/revert round or physical deployment has
 passed.
 
-- Fresh-install database staleness: `ensure_fzf` now syncs (`pacman -Sy`)
-  before installing fzf, because a brand-new install's local database points
-  at versions the mirrors already pruned (404). Test baselines had newer
-  databases and missed this; the operator's fresh VM exposed it (fixed in
-  f90e47f).
+- Fresh-install selector bootstrap: `ensure_fzf` performs no package or
+  database operation before mirror setup. If `fzf` is absent on the fresh
+  base, the installer uses built-in numbered prompts; the normal package
+  stage installs `fzf` later. This keeps the first pacman sync behind the
+  reviewed mirror configuration instead of reintroducing an early `-Sy`.
 - libfakeroot `payload not recognized!` during AUR builds is a known-harmless
   upstream warning; builds complete and packages install correctly.

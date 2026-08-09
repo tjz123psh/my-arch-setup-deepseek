@@ -194,7 +194,12 @@ if [[ "${DESKTOP_ENV}" == "both" ]]; then
   # dms-greeter remembers the last session; migrate any old
   # hyprland.desktop memory reference to hyprland-uwsm.desktop atomically
   # (Codex R4.2 item 7); failure is fail-closed with the path reported.
-  if ! migrate_greeter_memory; then
+  # /var/cache/dms-greeter is normally owned by the greeter account; the
+  # desktop user may be unable to traverse its parent directories.  Keep the
+  # migration fail-closed, but run only this narrowly scoped transaction via
+  # the existing privileged wrapper when needed.  The utility itself remains
+  # unprivileged by default for direct callers and tests.
+  if ! GREETER_MEMORY_USE_PRIVILEGED_RUN=1 migrate_greeter_memory; then
     error "dms-greeter session memory still references the old hyprland.desktop and could not be migrated; remove/fix the reported file(s), then re-run"
     exit 1
   fi

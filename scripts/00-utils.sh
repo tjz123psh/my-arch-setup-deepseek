@@ -156,7 +156,7 @@ ensure_fzf() {
   # selectors (install.sh) fall back to a plain read-prompt. No network, no
   # pacman here.
   if ! command -v fzf >/dev/null 2>&1; then
-    warn "fzf not available; interactive selection will use plain prompts (install it later if you want the menu)"
+    log "fzf is not installed yet; using built-in numbered prompts (expected on a fresh base; package operations start after mirror setup)"
     return 1
   fi
   return 0
@@ -477,7 +477,17 @@ migrate_greeter_memory() {
     return 1
   fi
   local rc=0
-  "${PYTHON_BIN}" - "${cache}" "${mem_force}" <<'PYEOF' || rc=$?
+  # The real cache is owned by the greeter account and its parent directories
+  # may intentionally deny traversal to the desktop user.  Callers that are
+  # handling the installed system cache can opt into the existing privileged
+  # run() wrapper; direct/test callers remain unprivileged by default so this
+  # helper never unexpectedly escalates on its own.
+  local -a python_runner=()
+  if [[ "${GREETER_MEMORY_USE_PRIVILEGED_RUN:-0}" == "1" ]] \
+     && [[ "$(id -u)" -ne 0 ]]; then
+    python_runner=(run)
+  fi
+  "${python_runner[@]}" "${PYTHON_BIN}" - "${cache}" "${mem_force}" <<'PYEOF' || rc=$?
 import json, os, random, stat, string, sys, time
 
 def fail(reason):
