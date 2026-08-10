@@ -1,0 +1,37 @@
+{
+  "$schema": "./schemas/deepseek-guard.schema.json",
+  "enabled": true,
+  "mode": "auto",
+  "visibility": "minimal",
+  "parameterTuning": "conservative",
+  "detection": {
+    "includeProviders": [],
+    "includeModels": [],
+    "excludeModels": []
+  },
+  "complexity": {
+    "deepScore": 2,
+    "longInputChars": 4000,
+    "constraintCount": 3
+  },
+  "context": {
+    "maxAnchorChars": 3600
+  },
+  "review": {
+    "enabled": true,
+    "maxCorrections": 1,
+    "timeoutMs": 60000,
+    "maxTaskChars": 12000,
+    "maxCandidateChars": 24000,
+    "independent": {
+      "enabled": false,
+      "providerID": "",
+      "modelID": "",
+      "context": "minimal"
+    }
+  },
+  "state": {
+    "persist": true,
+    "ttlDays": 30
+  }
+}

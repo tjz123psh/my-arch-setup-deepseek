@@ -188,7 +188,7 @@ flclash  pacman  archlinuxcn  pacman  personal-autostart  config-backed  install
 
 **2.3 收尾状态（2026-08-10）**：
 
-1. ✅ 已重跑 reconciliation，当前为 install=191 / verify=12 / deferred=8（总 211）、mappings=231、recipes=15——上文 191、177/14 为迁移前旧值，已过时；
+1. ✅ 已重跑 reconciliation，当前为 install=197 / verify=12 / deferred=8（总 217）、mappings=231、recipes=15——上文 191、177/14 为迁移前旧值，已过时；
 2. ✅ 已对 `third_party/aur/` 全部 15 棵 recipe 树运行 `makepkg --printsrcinfo`，15/15 通过；
 3. ⏳ `.aur-sources` 重新生成/清理由用户自测（须确认不含旧 FlClash AUR 输入），测完后再核销；
 4. ✅ 例行已满足：每次提交均做 staged diff + secret scan；

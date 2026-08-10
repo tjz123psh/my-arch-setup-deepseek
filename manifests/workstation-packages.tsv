@@ -213,3 +213,9 @@ vmware-workstation	aur	aur	makepkg	virtualization-vmware-host	package-only	insta
 open-vm-tools	pacman	extra	pacman	virtualization-vmware-guest	package-only	install	current-explicit	VMware guest tools (vmtoolsd + vmware-vmblock-fuse)
 nomacs	pacman	archlinuxcn	pacman	desktop-apps	config-backed	install	current-explicit	Qt image viewer; PNG default app restored via mimeapps.list
 grok-build-git	pacman	archlinuxcn	pacman	cli-tools	package-only	install	current-explicit	xAI terminal AI coding agent (grok-build)
+qt6-multimedia	pacman	extra	pacman	audio	package-only	install	current-explicit	Qt6 multimedia classes; dms-shell notification-sound dependency (QMediaPlayer), 2026-08-09 no-sound fix
+qt6-multimedia-ffmpeg	pacman	extra	pacman	audio	package-only	install	current-explicit	FFmpeg backend for qt6-multimedia (provides qt6-multimedia-backend)
+yt-dlp-ejs	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	External JavaScript for yt-dlp (bilibili b23 downloader)
+nvtop	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	GPU process monitoring TUI for AMD/Intel/NVIDIA
+chafa	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Image-to-text converter for terminal preview
+7zip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	File archiver with high compression (p7zip replacement)

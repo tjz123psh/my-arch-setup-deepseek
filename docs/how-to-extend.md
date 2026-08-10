@@ -23,7 +23,7 @@
 | 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
 
-> 数字会漂移：`README.md` 里的包数（当前 install=191 / verify=12 / deferred=8，总 211）、映射数（231）、recipe 树（15）、config 文件数
+> 数字会漂移：`README.md` 里的包数（当前 install=197 / verify=12 / deferred=8，总 217）、映射数（231）、recipe 树（15）、config 文件数
 > （330）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
 > `find config -type f | wc -l`、`awk` 统计清单行数核对），并重新打包
 > `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`）。
