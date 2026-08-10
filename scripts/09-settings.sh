@@ -109,9 +109,6 @@ fi
 # `sh -c 'command -v ...'` whose PATH does not include ~/.local/bin.
 log "Creating dms plugin dependency paths..."
 mkdir -p "${TARGET_HOME}/.cache/checkallupdates"
-if [[ "$(id -u)" -eq 0 ]]; then
-  chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.cache/checkallupdates"
-fi
 run mkdir -p /.snapshots /home/.snapshots
 if [[ -f "${PROJECT_DIR}/config/home/.local/bin/shorin-screenrec-menu" ]]; then
   run install -m 755 "${PROJECT_DIR}/config/home/.local/bin/shorin-screenrec-menu" /usr/local/bin/shorin-screenrec-menu
@@ -129,8 +126,17 @@ fi
 log "Presetting screen recording engine for ${MACHINE_TYPE}..."
 mkdir -p "${TARGET_HOME}/.cache/shorin-screenrec"
 printf 'wf-recorder\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
+# root/strap path: mkdir -p creates root-owned dirs; chown the whole chain
+# (including the ~/.cache parent itself) so the first desktop session can
+# write its caches. Chowning only the leaves leaves ~/.cache root-owned and
+# fontconfig/GTK/Chromium-class apps fail with EACCES (same defect class as
+# the 07-config dir-chown fix, found 2026-08-10 swarm audit).
 if [[ "$(id -u)" -eq 0 ]]; then
-  chown -R "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.cache/shorin-screenrec"
+  for d in "${TARGET_HOME}/.cache" \
+           "${TARGET_HOME}/.cache/checkallupdates" \
+           "${TARGET_HOME}/.cache/shorin-screenrec"; do
+    chown "${TARGET_USER}:${TARGET_USER}" "${d}" 2>/dev/null || true
+  done
 fi
 log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine")"
 success "dms plugin dependencies ready"

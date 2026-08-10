@@ -14,10 +14,28 @@ section "Enabling system and user services (${MACHINE_TYPE})"
 # user units (always; run as the target user so systemctl --user works)
 as_user() {
   if [[ "$(id -u)" -eq 0 ]]; then
+    local uid
+    uid="$(id -u "${TARGET_USER}")"
     # runuser does not inherit the caller's session env; systemctl --user
     # needs XDG_RUNTIME_DIR to reach the user bus (else enable silently
     # fails and e.g. dms.service stays disabled -> no desktop shell).
-    runuser -u "${TARGET_USER}" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "${TARGET_USER}")" "$@"
+    # On a fresh system the target user may never have logged in, so
+    # /run/user/<uid> and the user manager do not exist yet: create the
+    # runtime dir and start the manager (linger) so systemctl --user works
+    # from the root/strap path too (found 2026-08-10 swarm audit; the
+    # normal-user ./install.sh path has a live session and is unaffected).
+    if [[ ! -d "/run/user/${uid}" ]]; then
+      install -d -o "${TARGET_USER}" -g "${TARGET_USER}" -m 0700 "/run/user/${uid}" 2>/dev/null || true
+    fi
+    if ! systemctl is-active "user@${uid}.service" >/dev/null 2>&1; then
+      loginctl enable-linger "${TARGET_USER}" 2>/dev/null || true
+      systemctl start "user@${uid}.service" 2>/dev/null || true
+    fi
+    # Pin XDG_CONFIG_HOME so `systemctl --user enable` writes under the same
+    # ~/.config/systemd/user the dms .wants verification below checks (a
+    # customized XDG_CONFIG_HOME in the root env would split them - found
+    # 2026-08-10 swarm audit).
+    runuser -u "${TARGET_USER}" -- env XDG_RUNTIME_DIR="/run/user/${uid}" XDG_CONFIG_HOME="${TARGET_HOME}/.config" "$@"
   else
     "$@"
   fi
@@ -345,10 +363,17 @@ SERVICES=(bluetooth.service power-profiles-daemon.service docker.service \
           systemd-timesyncd.service)
 run systemctl daemon-reload
 for s in "${SERVICES[@]}"; do
-  if run systemctl enable --now "${s}" 2>/dev/null; then
+  # Capture the real error instead of swallowing stderr: a failed enable with
+  # no visible reason (e.g. NetworkManager) otherwise looks like a success
+  # until reboot shows no network (found 2026-08-10 swarm audit).
+  if errout="$(run systemctl enable --now "${s}" 2>&1)"; then
     log "Service: ${s}"
   else
-    warn "could not enable ${s} (unit missing?)"
+    if [[ "${s}" == "NetworkManager.service" ]]; then
+      error "could not enable ${s} (required for networking): ${errout}"
+      exit 1
+    fi
+    warn "could not enable ${s}: ${errout}"
   fi
 done
 # cleanup + timeline timers. snapper-timeline.timer is what actually

@@ -220,6 +220,45 @@ if [[ -n "$cp_line" && -n "$chown_line" && "$chown_line" -gt "$cp_line" ]]; then
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur chown not after cp -a (cp=$cp_line chown=$chown_line)"
 fi
+# swarm audit fixes (2026-08-10): boundary/path-symmetry guards present
+# 07-config: deploy_one rejects absolute/.. targets (path escape, C-06)
+if grep -q 'path escapes HOME (absolute' "$root/scripts/07-config.sh"; then
+  pass=$((pass + 1)); echo "  ok   07-config rejects .. /absolute deploy targets"
+else
+  fail=$((fail + 1)); echo "  FAIL 07-config path-escape guard missing"
+fi
+# 07-config: failed backup must warn, not silently overwrite
+if grep -q 'backup of ${tgt} failed' "$root/scripts/07-config.sh"; then
+  pass=$((pass + 1)); echo "  ok   07-config warns on backup failure"
+else
+  fail=$((fail + 1)); echo "  FAIL 07-config backup failure not warned"
+fi
+# 08-services: as_user bootstraps /run/user + user manager on the root path
+# and pins XDG_CONFIG_HOME so `systemctl --user enable` matches the .wants check
+if grep -q 'loginctl enable-linger' "$root/scripts/08-services.sh" \
+   && grep -q 'XDG_CONFIG_HOME="${TARGET_HOME}/.config"' "$root/scripts/08-services.sh"; then
+  pass=$((pass + 1)); echo "  ok   08-services bootstraps user manager + pins XDG_CONFIG_HOME"
+else
+  fail=$((fail + 1)); echo "  FAIL 08-services user-manager bootstrap missing"
+fi
+# 08-services: NetworkManager enable failure must fail closed with the error
+if grep -q 'required for networking' "$root/scripts/08-services.sh"; then
+  pass=$((pass + 1)); echo "  ok   08-services NetworkManager required with visible error"
+else
+  fail=$((fail + 1)); echo "  FAIL 08-services NetworkManager not fail-closed"
+fi
+# 09-settings: ~/.cache chain chowned on the root path (not just leaves)
+if grep -q 'TARGET_HOME}/.cache" \\' "$root/scripts/09-settings.sh"; then
+  pass=$((pass + 1)); echo "  ok   09-settings chowns ~/.cache chain on root path"
+else
+  fail=$((fail + 1)); echo "  FAIL 09-settings ~/.cache chain chown missing"
+fi
+# 06-aur: DLAGENT patch must be verified after sed
+if grep -q 'could not patch makepkg DLAGENTS' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur verifies DLAGENT timeout patch"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur DLAGENT patch not verified"
+fi
 # install.sh: -d hyprland (removed pure-Hyprland entry) must exit nonzero
 rc=0
 bash "$root/install.sh" -d hyprland -t vm >/dev/null 2>&1 || rc=$?
@@ -285,6 +324,17 @@ if grep -q 'apply_vmware_graphics_workaround' "$root/scripts/09-settings.sh" \
   pass=$((pass + 1)); echo "  ok   09-settings applies workaround gated on is_vmware_guest"
 else
   fail=$((fail + 1)); echo "  FAIL 09-settings workaround gate missing"
+fi
+# 00-utils: the workaround must write /etc/environment through run() (sudo)
+# when invoked as a normal user - a direct append died with "Permission
+# denied" at 09-settings on the user's ./install.sh run (2026-08-10). The
+# root/strap path (and tests with a writable temp file) keep the direct
+# write via the [[ -w ]] branch.
+if grep -q '\[\[ -w "\${envf}" \]\]' "$root/scripts/00-utils.sh" \
+   && grep -q 'run bash -c .*LIBGL_ALWAYS_SOFTWARE' "$root/scripts/00-utils.sh"; then
+  pass=$((pass + 1)); echo "  ok   workaround writes via run() when env file not writable"
+else
+  fail=$((fail + 1)); echo "  FAIL workaround has no sudo fallback for /etc/environment"
 fi
 
 echo

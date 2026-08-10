@@ -525,9 +525,20 @@ apply_vmware_graphics_workaround() { # apply_vmware_graphics_workaround [env-fil
     return 0
   fi
   # idempotent: never duplicate the line if a previous run (or the operator)
-  # already set it.
-  grep -q '^LIBGL_ALWAYS_SOFTWARE=' "${envf}" 2>/dev/null \
-    || printf 'LIBGL_ALWAYS_SOFTWARE=1\n' >> "${envf}"
+  # already set it. Match exactly "=1" so an operator's deliberate
+  # LIBGL_ALWAYS_SOFTWARE=0 (disable the workaround) is NOT treated as
+  # already-applied - 09-settings verifies "=1" and would otherwise abort
+  # (found 2026-08-10 swarm audit).
+  grep -q '^LIBGL_ALWAYS_SOFTWARE=1' "${envf}" 2>/dev/null && return 0
+  if [[ -w "${envf}" ]]; then
+    # writable from this context (root/strap path, or tests with a temp file)
+    printf 'LIBGL_ALWAYS_SOFTWARE=1\n' >> "${envf}"
+  else
+    # normal-user ./install.sh path: /etc/environment is root-owned, so the
+    # write must go through run() (sudo). A direct append died with
+    # "Permission denied" at 09-settings on the user's run (2026-08-10).
+    run bash -c "grep -q '^LIBGL_ALWAYS_SOFTWARE=1' '${envf}' 2>/dev/null || printf 'LIBGL_ALWAYS_SOFTWARE=1\n' >> '${envf}'"
+  fi
 }
 
 # --- diagnostics panel (plain text) ---

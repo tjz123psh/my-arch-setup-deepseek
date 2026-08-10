@@ -58,6 +58,12 @@ fi
 if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
   log "Adding timeouts to makepkg download agents..."
   run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - -sS --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3|g' /etc/makepkg.conf"
+  # verify the patch actually landed: a customized makepkg.conf (different
+  # quoting/line) makes the sed a silent no-op, leaving dead hosts able to
+  # hang the build forever (found 2026-08-10 swarm audit; codeberg 504).
+  if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
+    warn "could not patch makepkg DLAGENTS (pattern mismatch?); source fetches have NO timeout"
+  fi
 fi
 
 # base-devel/git/curl are already installed by 03-packages (build-foundation

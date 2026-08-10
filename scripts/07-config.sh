@@ -38,6 +38,15 @@ deploy_one() {
 
   local target="${TARGET_HOME}/${tgt}"
 
+  # C-06: never deploy outside HOME. An absolute tgt or a path containing
+  # ".." escapes TARGET_HOME (on the root/strap path cp -a would write
+  # anywhere). The symlink check below cannot catch ".." (it is a real
+  # directory), so reject it here explicitly - same principle as
+  # 00-utils path_no_symlink_components (found 2026-08-10 swarm audit).
+  case "${tgt}" in
+    /*|*".."*) warn "refusing to deploy ${tgt}: path escapes HOME (absolute or '..')"; skipped=$((skipped + 1)); return 0 ;;
+  esac
+
   # C-05: never follow a symlink anywhere in the target path. A symlinked
   # target (or path component) would write through to a file outside HOME -
   # e.g. a dotfiles repo or a shared path - silently modifying something the
@@ -52,10 +61,14 @@ deploy_one() {
   done
 
   # backup the existing target; if it is a symlink, back up the LINK itself
-  # (cp -aP), never what it points at.
+  # (cp -aP), never what it points at. A failed backup must not silently
+  # proceed to overwrite the original (would lose the old config with no
+  # copy) - warn instead (found 2026-08-10 swarm audit).
   if [[ -e "${target}" || -L "${target}" ]]; then
     mkdir -p "${BACKUP_DIR}/$(dirname "${tgt}")"
-    cp -aP "${target}" "${BACKUP_DIR}/${tgt}" 2>/dev/null || true
+    if ! cp -aP "${target}" "${BACKUP_DIR}/${tgt}" 2>/dev/null; then
+      warn "backup of ${tgt} failed; the original will be overwritten without a backup copy"
+    fi
   fi
   # remove an existing symlink so cp -a creates a real file; the symlink's
   # target is left untouched (the backup above saved the link itself)
@@ -93,6 +106,13 @@ done < "${MAPPINGS}"
 
 log "Deployed: ${deployed} file(s), skipped: ${skipped}"
 echo "CONFIG_RESULT deployed=${deployed} skipped=${skipped}"
+
+# root/strap path: the backup tree under TARGET_HOME was created by root; hand
+# it to the target user so they can inspect/remove it without sudo (found
+# 2026-08-10 swarm audit).
+if [[ "$(id -u)" -eq 0 && -d "${BACKUP_DIR}" ]]; then
+  chown -R "${TARGET_USER}:${TARGET_USER}" "${BACKUP_DIR}" 2>/dev/null || true
+fi
 
 # P1-5: niri VM test config generation. After the normal config.kdl is
 # deployed, regenerate config.kdl.vmtest (keybinds disabled, switch key
