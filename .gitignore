@@ -33,3 +33,6 @@ download-mode-lab/**/__pycache__/
 # archived lab (2026-08-10): same fixture/bytecode rules apply after the move
 docs/archive/download-mode-lab-20260808/fixtures/
 docs/archive/download-mode-lab-20260808/**/__pycache__/
+
+# sync-scripts.sh 的 rollback 备份（2026-08-10 起忽略，防误提交）
+.sync-backup-*/
