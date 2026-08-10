@@ -131,6 +131,20 @@ printf 'wf-recorder\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
 # 切到 h264_vaapi，脚本对 VAAPI 自动用恒定质量 qp=18）。libx264 参数按冒号拆分
 # 后作为 wf-recorder 的 -p 传入；画质预设菜单（仅 libx264 时显示）可切 3 档。
 printf 'preset=fast:crf=18\n' > "${TARGET_HOME}/.cache/shorin-screenrec/enc_params_wf"
+# 编码格式预置（2026-08-10）：物理机且 VAAPI 硬件编码可用 -> h264_vaapi
+# （GPU 编码：零 CPU、144Hz 不掉帧、qp=18 恒定质量锐利）；VM/仿物理模拟保持
+# libx264（VMware guest 的 vmwgfx 没有 VAAPI 编码器，预置了会录不了）。
+# 探测用 ffmpeg 实际编码一帧验证，任何一步失败都安全回退 libx264。
+codec="libx264"
+if [[ "${MACHINE_TYPE}" == "physical" ]] && ! is_vmware_guest \
+    && [[ -e /dev/dri/renderD128 ]] && command -v ffmpeg >/dev/null 2>&1; then
+  if ffmpeg -hide_banner -loglevel error -f lavfi -i color=black:s=128x128:d=0.1 \
+      -vf "format=nv12,hwupload" -c:v h264_vaapi -vaapi_device /dev/dri/renderD128 \
+      -f null - >/dev/null 2>&1; then
+    codec="h264_vaapi"
+  fi
+fi
+printf '%s\n' "$codec" > "${TARGET_HOME}/.cache/shorin-screenrec/codec_wf"
 # root/strap path: mkdir -p creates root-owned dirs; chown the whole chain
 # (including the ~/.cache parent itself) so the first desktop session can
 # write its caches. Chowning only the leaves leaves ~/.cache root-owned and
@@ -142,8 +156,13 @@ if [[ "$(id -u)" -eq 0 ]]; then
            "${TARGET_HOME}/.cache/shorin-screenrec"; do
     chown "${TARGET_USER}:${TARGET_USER}" "${d}" 2>/dev/null || true
   done
+  # 配置文件本身也 chown 给用户：否则 root/strap 路径下文件 root-owned 644，
+  # 用户在设置菜单里改引擎/编码格式/画质会 EACCES（printf > 需要文件写权限）。
+  for f in engine enc_params_wf codec_wf; do
+    chown "${TARGET_USER}:${TARGET_USER}" "${TARGET_HOME}/.cache/shorin-screenrec/${f}" 2>/dev/null || true
+  done
 fi
-log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine") params: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/enc_params_wf")"
+log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine") codec: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/codec_wf") params: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/enc_params_wf")"
 success "dms plugin dependencies ready"
 
 # --- snapper snapshot configs (align the host snapshot: root + home) ---

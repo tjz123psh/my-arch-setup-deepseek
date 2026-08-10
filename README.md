@@ -70,7 +70,7 @@ sudo bash strap.sh
 | 06-aur | 构建安装固定 AUR recipe（物理机 14 个目标 / VM 13 个，不含 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap，共 15 棵 recipe 树；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
 | 07-config | 部署个人配置映射（230 映射，先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
 | 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 用系统 stock 入口 `hyprland.desktop`（`start-hyprland`，R5 对齐物理机；uwsm/`hyprland-uwsm.desktop` 已从安装清单移除），cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
-| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（两机型统一 wf-recorder：默认轻档 preset=fast/crf=18；物理机在设置菜单把编码格式切到 h264_vaapi 即走 GPU 编码——qp=18 恒定质量、零 CPU、144Hz 不掉帧；libx264 时画质菜单可切 3 档；wl-screenrec-git 已自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容）+ nomacs/PNG MIME 验收 |
+| 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（两机型统一 wf-recorder：默认轻档 preset=fast/crf=18；**物理机安装时 VAAPI 探测通过则自动预置 h264_vaapi**（GPU 编码，qp=18 恒定质量、零 CPU、144Hz 不掉帧），VM/仿物理保持 libx264；libx264 时画质菜单可切 3 档；wl-screenrec-git 已自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容）+ nomacs/PNG MIME 验收 |
 | 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
 
 ## 机器类型颗粒度（VM vs 物理机）
