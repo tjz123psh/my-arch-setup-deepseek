@@ -24,3 +24,4 @@
 - 目标：重装 Arch、完成手工基础安装（分区/GRUB/首次启动/联网）后，一条命令恢复 ASUS 工作站的完整桌面环境（Niri/Hyprland、软件包、AUR、个人配置与系统服务）。
 - 设计原则：**简单优先、面向个人**。安装器是 strap.sh + install.sh + scripts/ 的分步流程，直接读取 manifests 中精简的清单；不做审阅引擎、不做哈希 pin、不做模块生产就绪分级等工程化机制。
 - 数据资产（config/ 配置、third_party/aur/ recipe、manifests 清单）是仓库的核心价值，修改须保持安装器可读。
+- **增改门禁**：任何增改提交前必须运行 `./check-extend.sh`（一键总检：bash 语法/shellcheck/清单一致性/配置内容语法/recipe 双向引用/secret scan/README 数字/行为测试），任一节失败即禁止提交。改 manifests schema、config-mappings scope、DESKTOP_ENV 过滤或安装器核心脚本主流程属红线改动，必须 VM 重验并换新 TEST_ID（按 clean-baseline 规则，旧 PASS 自动失效）。

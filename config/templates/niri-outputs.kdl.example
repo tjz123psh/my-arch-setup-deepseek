@@ -1,7 +1,9 @@
 // Copy to ~/.config/niri/dms/outputs.kdl only after replacing the output name.
 // Discover names with `niri msg outputs` in the target session.
+// The mode must be a concrete string from `niri msg outputs` (e.g. "1920x1080@60.000");
+// "preferred"/"max" are not accepted by niri 26.04's validator.
 output "REPLACE_WITH_OUTPUT_NAME" {
-    mode "preferred"
+    mode "1920x1080@60.000"
     scale 1
     position x=0 y=0
 }

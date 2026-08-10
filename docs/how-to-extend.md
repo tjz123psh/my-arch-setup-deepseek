@@ -4,7 +4,12 @@
 
 结论：**不大，但有固定套路。** 仓库是「数据驱动」的——安装器不写死清单，而是读
 `manifests/` 下的表格；你加东西 = 加一行数据（+ 对应文件），极少需要改脚本本身。
-按下面的清单逐项做，跑一遍 `tests/` 就能自证没破坏现有流程。
+按下面的清单逐项做，**提交前跑一次 `./check-extend.sh`**（一键总检，红了不许提交）
+就能自证没破坏现有流程。
+
+> **增改门禁（强制）**：任何增改 commit 前必须 `./check-extend.sh` 全绿。
+> 该脚本聚合 8 节：bash 语法、shellcheck、清单一致性、配置内容语法、
+> recipe 双向引用、secret scan、README 数字、行为测试。模型与操作者一视同仁。
 
 ## 总原则
 
@@ -88,14 +93,14 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 注意：新增服务如果只在物理机有意义（如 supergfxd 之类），要包在
 `[[ "${MACHINE_TYPE}" == "physical" ]]` 判断里；否则 VM 会多装一个起不来的服务。
 
-## 六、验证纪律（每次增改后）
+## 六、验证纪律（每次增改后，提交前）
 
-1. `bash -n scripts/*.sh install.sh strap.sh` —— 语法。
-2. `tests/workstation-package-reconciliation-test.sh` —— 清单/映射/recipe 一致性。
-3. 改脚本逻辑（非纯数据）时，**至少跑一次 VM 全新重装**（`-d niri -t vm`），
+1. **跑 `./check-extend.sh`** —— 一键总检（8 节，见上）。**任一节红 = 禁止提交**；
+   红了按输出定位到节，修复后重跑至全绿。
+2. 改脚本逻辑（非纯数据）时，至少跑一次 VM 全新重装（`-d niri -t vm`），
    确认闭环 10/10。物理机专属改动用 `-t physical` 在 VM 里跑路径。
-4. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
-5. commit + push（git-push 约定见 AGENTS/仓库惯例）。
+3. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
+4. commit + push（git-push 约定见 AGENTS/仓库惯例）。
 
 ## 增改的「穿插成本」到底多大
 
@@ -103,6 +108,11 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 - **加 AUR 包**：30 分钟级别，因为要生成离线缓存 + 可能要调 PKGBUILD；
   当前有 14 个 AUR 目标（另有 vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、离线缓存脚本和 manifest。
 - **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
+- **红线（伤筋动骨，必须 VM 重验 + 换新 TEST_ID）**：改 manifests schema（表格列含义）、
+  改 config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑、改安装器核心脚本主流程
+  （00-utils/03/06/07/08/09）。按 TEST_ID/clean-baseline 规则，任何代码/清单/recipe/
+  cache 变化都使旧 PASS 失效——红线改动不能拿旧验收结果宣称"验收通过"，必须重新冻结
+  payload、生成新 TEST_ID 并完整重验。
 - **唯一「伤筋动骨」的改动**：改 manifests schema（表格列含义）、改
   config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑——这些会牵动 03/07 两个
   步骤和全部数据，需要额外小心并完整重验。除此之外，穿插增改是安全的。
@@ -121,3 +131,6 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 | `fetch-aur-sources.sh` | 生成 AUR 离线缓存（增 AUR 后必跑） |
 | `sync-scripts.sh` | 同步本机 ~/scripts 进仓库 |
 | `tests/` | 数据一致性测试 |
+| `check-extend.sh` | 提交前一键总检（增改门禁；`--full` 追加慢速套件，`--only=`/`--skip=` 局部调试） |
+| `tests/validate-config-syntax.sh` | 配置内容语法校验（按类型分流；缺工具 SKIP 并列出人工清单） |
+| `tests/check-extend-test.sh` | 错误注入自证（坏配置/重复包/数字漂移/secret/孤儿 recipe 必须被抓住） |
