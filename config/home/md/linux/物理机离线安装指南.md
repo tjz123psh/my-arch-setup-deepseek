@@ -8,7 +8,7 @@
 | 文件 | 说明 |
 |---|---|
 | `my-arch-setup.tar` | 仓库代码（含安装器 + AUR 离线缓存支持） |
-| `aur-sources.tar.gz` | AUR 离线源码缓存（14 个 AUR 的源码 + Go/cargo 依赖，约 1GB） |
+| `aur-sources.tar.gz` | AUR 离线源码缓存（14 个 AUR 目标的源码 + vmware-keymaps 构建依赖 + Go/cargo 依赖，约 1GB） |
 
 获取方式：
 - 代码：GitHub clone 或本机 `tar --exclude='.git' -czf my-arch-setup.tar my-arch-setup-deepseek`
@@ -47,7 +47,7 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d niri -t physical
 
 - 全程**只需输一次 sudo 密码**（安装器临时授权，装完自动恢复）
 - 镜像 2GB 走国内源；AUR 阶段显示 `Using local AUR source cache ... (offline mode)`
-  = 离线缓存生效，14 个 AUR 全部本地构建
+  = 离线缓存生效，14 个 AUR 目标全部本地构建（vmware-keymaps 先行作为构建依赖）
 - 结束后按提示重启
 
 ### 5. 装完验收
@@ -64,7 +64,9 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d niri -t physical
   （`ls ~/my-arch-setup-deepseek/.aur-sources/` 应有 cargo、go-mod 等）；06 日志应出现
   `Using local AUR source cache`。
 - **某 AUR 构建失败**：06 会自动重试一次；仍失败则报错退出，网络环境恢复后重跑
-  `./install.sh` 会从失败步骤续跑（已装的不会重装）。
+  `./install.sh` 会从失败步骤续跑（已装的不会重装）。FlClash 不在该缓存中，
+  它由 `archlinuxcn/flclash` 通过 pacman 安装；若旧系统有 `flclash-bin`，03 会
+  先显式移除旧 AUR 包，再安装并核对新包。
 - **重新生成缓存**：在能联网的机器 `fetch-aur-sources.sh`（需 go/cargo 工具链）。
 - **strap.sh 不可用**：strap.sh 靠 https clone 拉代码（仓库是公开的，无需认证），但物理机无海外网络连不上 GitHub；此时用本指南的 U 盘方式即可。
 

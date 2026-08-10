@@ -167,8 +167,12 @@ fi
 # --apply
 echo
 echo "== 3/4 apply: staging + backup + switch =="
-# staging inside the workspace (never touches the live tree)
-staging="$(mktemp -d "${REPO_DIR}/.sync-staging.XXXXXX")"
+# staging + backup 放在工作区外（2026-08-10：备份目录曾被误提交进仓库；
+# ~/.cache 保留 rollback 能力又不污染 git 树）
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/my-arch-setup"
+mkdir -p "${cache_dir}"
+# staging inside the cache (never touches the live tree)
+staging="$(mktemp -d "${cache_dir}/.sync-staging.XXXXXX")"
 trap 'rm -rf "${staging}"' EXIT
 rsync -a --exclude='.git' "${SRC}/" "${staging}/"
 # pre-switch dry-run so the exact change set is visible before the switch
@@ -176,9 +180,9 @@ echo "  dry-run of the switch (staging -> ${DEST}):"
 rsync -a --dry-run --delete "${staging}/" "${DEST}/" \
   | grep -vE '^sending incremental|^$|^sent |^total size' || true
 
-# timestamped backup of the current state (workspace-internal, rollback source)
+# timestamped backup of the current state (cache-internal, rollback source)
 ts="$(date +%Y%m%d-%H%M%S)"
-backup="${REPO_DIR}/.sync-backup-${ts}"
+backup="${cache_dir}/.sync-backup-${ts}"
 mkdir -p "${backup}/scripts"
 rsync -a "${DEST}/" "${backup}/scripts/"
 cp -f "${MAPPINGS}" "${backup}/mappings.tsv.backup"
