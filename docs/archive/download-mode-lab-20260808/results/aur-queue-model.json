@@ -1,0 +1,35 @@
+{
+  "bounded_elapsed_seconds": 0.617,
+  "bounded_jobs": 3,
+  "checks": [
+    {
+      "evidence": "rc=0",
+      "name": "serial model succeeds",
+      "passed": true
+    },
+    {
+      "evidence": "rc=0",
+      "name": "bounded model succeeds",
+      "passed": true
+    },
+    {
+      "evidence": "max_active=3",
+      "name": "bounded model overlaps requests",
+      "passed": true
+    },
+    {
+      "evidence": "serial=1.674s parallel=0.617s speedup=2.71x",
+      "name": "bounded model materially reduces queue time",
+      "passed": true
+    }
+  ],
+  "delay_seconds_per_request": 0.25,
+  "passed": true,
+  "schema": 1,
+  "serial_elapsed_seconds": 1.674,
+  "serial_jobs": 1,
+  "server_max_active": 3,
+  "source_count": 6,
+  "speedup": 2.71,
+  "test": "aur-prefetch-queue-model"
+}

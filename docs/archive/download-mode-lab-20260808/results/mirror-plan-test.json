@@ -1,0 +1,212 @@
+{
+  "checks": [
+    {
+      "evidence": "{\"applyable\": true, \"repos\": {\"archlinuxcn\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinuxcn\", \"servers\": 3, \"status\": \"ok\"}, \"official\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinux\", \"servers\": 3, \"status\": \"ok\"}}, \"status\": \"ok\"}",
+      "name": "valid repeated observations produce an OK plan",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": true, \"repos\": {\"archlinuxcn\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinuxcn\", \"servers\": 3, \"status\": \"ok\"}, \"official\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinux\", \"servers\": 3, \"status\": \"ok\"}}, \"status\": \"ok\"}",
+      "name": "official primary is the fastest stable median",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": true, \"repos\": {\"archlinuxcn\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinuxcn\", \"servers\": 3, \"status\": \"ok\"}, \"official\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinux\", \"servers\": 3, \"status\": \"ok\"}}, \"status\": \"ok\"}",
+      "name": "archlinuxcn primary is selected independently",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "official server template is pacman-compatible",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "archlinuxcn server template is pacman-compatible",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "unavailable observations remain visible",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "minimum fallback count is enforced",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "raw diagnostic text is not copied",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "same observations produce deterministic ordering",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"stale\"}",
+      "name": "stale observations fail closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"future\"}",
+      "name": "future observations fail closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {\"official\": {\"family\": null, \"primary\": null, \"servers\": 0, \"status\": \"unavailable\"}}, \"status\": \"unavailable\"}",
+      "name": "all mirrors unavailable never produce an empty success plan",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {\"official\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinux\", \"servers\": 1, \"status\": \"degraded\"}}, \"status\": \"degraded\"}",
+      "name": "degraded plan is nonzero and non-applyable by default",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {\"official\": {\"family\": \"package\", \"primary\": \"https://mirror.example/archlinux\", \"servers\": 1, \"status\": \"degraded\"}}, \"status\": \"degraded\"}",
+      "name": "degraded plan requires explicit allow flag",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": true, \"repos\": {\"official\": {\"family\": \"package\", \"primary\": \"https://ustc.example/archlinux\", \"servers\": 2, \"status\": \"ok\"}}, \"status\": \"ok\"}",
+      "name": "package lane wins over database lane",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "nonselected measurement is not mislabeled unavailable",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {\"official\": {\"family\": null, \"primary\": null, \"servers\": 0, \"status\": \"unavailable\"}}, \"status\": \"unavailable\"}",
+      "name": "Range-unsupported servers never satisfy fallback",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "Range support is represented as a separate failure state",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "contradictory RANGE_UNSUPPORTED fields fail closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "numeric Range flag cannot bypass the boolean contract",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "explicit RANGE_UNSUPPORTED requires the complete probe schema",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "successful probe with bad HTTP fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "successful probe with nonzero exit fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "mirror userinfo is rejected without disclosure",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "control mirror URL fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "query mirror URL fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "fragment mirror URL fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "malformed mirror URL fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "surrogate mirror URL fails closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "diagnostics are reduced to a safe error class",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "unknown repository names are rejected",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "invalid planner clock input writes an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "non-finite age limits fail closed",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "invalid UTF-8 input writes an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "JSON integer conversion errors write an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "deep JSON recursion errors write an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "derived infinite throughput writes an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "UTC conversion overflow writes an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": false, \"repos\": {}, \"status\": \"invalid\"}",
+      "name": "expiration overflow writes an invalid report",
+      "status": "PASS"
+    },
+    {
+      "evidence": "",
+      "name": "range probe emits the strict 206/200/failure contract",
+      "status": "PASS"
+    },
+    {
+      "evidence": "{\"applyable\": true, \"repos\": {\"official\": {\"family\": \"package\", \"primary\": \"https://ok.package.example/archlinux\", \"servers\": 1, \"status\": \"ok\"}}, \"status\": \"ok\"}",
+      "name": "real probe rows feed planner without re-enabling unsupported/failure rows",
+      "status": "PASS"
+    }
+  ],
+  "passed": true,
+  "schema": 2,
+  "test": "mirror-plan-test"
+}

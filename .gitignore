@@ -30,3 +30,6 @@ artifacts/
 # generated mock fixtures or bytecode (30M+ of throwaway pacman roots).
 download-mode-lab/fixtures/
 download-mode-lab/**/__pycache__/
+# archived lab (2026-08-10): same fixture/bytecode rules apply after the move
+docs/archive/download-mode-lab-20260808/fixtures/
+docs/archive/download-mode-lab-20260808/**/__pycache__/
