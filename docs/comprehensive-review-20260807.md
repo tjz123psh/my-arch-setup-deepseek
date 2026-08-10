@@ -15,7 +15,7 @@
 > 代码链、niri-vmtest-gen、.local/bin、vmware-keymaps 缓存名、VCS commit 固定、
 > nomacs/DKMS/guest-tools/greetd required 传播、FlClash 文件验收。
 > 未完成（如实）：VMware 四轮 runtime 验收、断网 AUR 构建、宿主 flclash 迁移
-> （未批准）、Hyprland 真实登录/退出/重登与 3D/blur 对比。commit/push 未执行。
+> （未批准；2026-08-10 用户确认当前物理机不需要，条目关闭）、Hyprland 真实登录/退出/重登与 3D/blur 对比。commit/push 未执行。
 - 项目定位：个人 ASUS Arch Linux 恢复工具；公开 Git 仓库
 - 当前用户状态：用户报告物理机实战部署已完成；VMware 测试仍在进行
 - 本文性质：代码/清单/配置/文档的证据驱动复审 + 后续模型执行任务书
@@ -27,7 +27,7 @@
 
 1. **仓库静态资产已经比较完整，但“静态通过”不等于恢复成功。**包清单、配置映射、AUR recipe、Niri/Hyprland 配置和若干行为测试都存在；仍有脚本会把 warning 当作继续条件、机器角色没有贯穿所有阶段、桌面运行时没有真实登录/退出/重登证据。
 2. **FlClash 已按用户要求从 AUR 迁移到 `archlinuxcn` 的 pacman 包。**当前目标是 `flclash`，不是 `flclash-bin`；AUR recipe、离线下载项和 AUR 执行列表已移除旧目标，启动配置改用包提供的 `flclash` 命令。安装器还加入旧包冲突迁移和逐名验收逻辑。
-3. **FlClash 的真实宿主迁移本轮没有执行。**只读查询显示宿主当前仍安装 `flclash-bin 0.8.94-1`；没有删除宿主包，也没有安装 `flclash 0.8.94-3`。下一模型必须把这当作待批准的系统变更，不能写成已完成。
+3. **FlClash 的真实宿主迁移本轮没有执行。**只读查询显示宿主当前仍安装 `flclash-bin 0.8.94-1`；没有删除宿主包，也没有安装 `flclash 0.8.94-3`。下一模型必须把这当作待批准的系统变更，不能写成已完成。（2026-08-10 用户确认：当前物理机不需要宿主迁移，条目关闭；宿主 `flclash-bin` 保持现状，仓库侧迁移逻辑仅作用于全新安装。）
 4. **nomacs 已在宿主存在，仓库也已有 package row、PNG MIME 映射和 acceptance 代码。**但 acceptance 目前在 `command -v nomacs` 失败时只记录普通日志，可能漏报包缺失，仍需改成 required 检查并在 VMware/物理验收中实际证明。
 5. **KVM 资产必须保留。**项目恢复 payload 已把 KVM 包置为 `deferred`、把历史文件归档；这不代表可以删除宿主实际 KVM domain、qcow2、XML、快照、网络、模块或服务。当前只读状态仍显示宿主 KVM/libvirt active。
 6. **VMware 验收门槛 2026-08-10 已取得。**在测试 VM（原 VM 的安全克隆 + 克隆内 pacstrap 的全新磁盘）上从 clean 基线完成了两轮真实安装：`strap.sh -t vm -d both`（VM 安装）与 `strap.sh -t physical --test-profile physical-sim-vmware -d both`（仿物理安装）。两轮均通过 install.sh 全 11 步（含 13/14 个 AUR 配方构建）、自动重启，并在装好的系统里验证了 Hyprland 会话 + DMS 栏（`dms:bar` 层 + com.danklinux.dms 窗口映射）+ kitty/nemo/FlClash 窗口映射。进程上下文：`commit=57b3bcb`，`machine=vm` 与 `machine=physical profile=physical-sim-vmware` 各一轮。
