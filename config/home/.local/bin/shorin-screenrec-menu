@@ -65,7 +65,7 @@ IS_GIF_MODE="false"
 _DEFAULT_ENGINE="wl-screenrec"
 _DEFAULT_CODEC_WL="auto"
 _DEFAULT_CODEC_WF="libx264"
-_DEFAULT_ENC_PARAMS_WF="preset=medium:crf=18:tune=animation:aq-mode=2"
+_DEFAULT_ENC_PARAMS_WF="preset=fast:crf=18"
 _DEFAULT_FRAMERATE=""
 _DEFAULT_AUDIO="on"
 _DEFAULT_SAVE_EXT="auto"
@@ -532,7 +532,7 @@ show_settings_menu() {
     local -a set_items=()
     set_items+=( "$(msg menu_set_engine "$ENGINE")" )
     set_items+=( "$(msg menu_set_fps "$fps_display")" )
-    if [[ "$ENGINE" == "wf-recorder" ]]; then
+    if [[ "$ENGINE" == "wf-recorder" && "$CODEC_WF" == "libx264" ]]; then
       set_items+=( "$(msg menu_set_quality "$(quality_label "$ENC_PARAMS_WF")")" )
     fi
     set_items+=( "$(msg menu_toggle_audio "$audio_display")" "$(msg menu_set_audio_dev "$ad_display")" "$(msg menu_set_codec "$current_codec")" "$(msg menu_set_filefmt "$ff_display")" "$(msg menu_set_render "$render_display_now")" "$(msg menu_back)" )
@@ -699,13 +699,22 @@ start_rec() {
       [[ -n "$output" ]] && args+=( -o "$output" )
       [[ -n "$GEOM" ]]   && args+=( -g "$GEOM" )
       args+=( --file "$SAVE_PATH" -c "$CODEC_WF" )
-      # 编码质量参数：libx264 默认 CRF 23 对屏幕录制偏糊，固定 crf=18 + preset=veryfast
-      # （屏幕录制常用配置；enc_params_wf 内容按冒号拆分为多个 -p key=value）
-      if [[ -n "$ENC_PARAMS_WF" ]]; then
-        local -a wf_params=()
-        IFS=':' read -r -a wf_params <<< "$ENC_PARAMS_WF"
-        for p in "${wf_params[@]}"; do [[ -n "$p" ]] && args+=( -p "$p" ); done
-      fi
+      # 编码质量参数按 codec 分发（2026-08-10：libx264 的 preset/crf/tune 不能传给
+      # VAAPI/NVENC，会直接报未知选项）：
+      #   libx264    -> enc_params_wf（x264 专用参数，冒号拆分为多个 -p key=value）
+      #   *vaapi     -> 恒定质量 qp=18（GPU 编码：零 CPU、144Hz 不掉帧、画面锐利）
+      #   *nvenc     -> 恒定质量 cq=18（同上）
+      case "$CODEC_WF" in
+        libx264)
+          if [[ -n "$ENC_PARAMS_WF" ]]; then
+            local -a wf_params=()
+            IFS=':' read -r -a wf_params <<< "$ENC_PARAMS_WF"
+            for p in "${wf_params[@]}"; do [[ -n "$p" ]] && args+=( -p "$p" ); done
+          fi
+          ;;
+        *vaapi) args+=( -p qp=18 ) ;;
+        *nvenc) args+=( -p cq=18 ) ;;
+      esac
       [[ -n "$dev" ]] && args+=( -d "$dev" )
       if [[ "$AUDIO" == "on" ]]; then 
         local ad="$AUDIO_DEVICE"
