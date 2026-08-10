@@ -36,12 +36,26 @@ expect_fail() { # expect_fail <描述> <副本> <only 节>
   fi
 }
 
-echo "== 0. 正向对照：干净副本通过快速闸门 =="
+echo "== 0. 正向对照：干净副本通过快速闸门 + --only 真正执行指定节 =="
 d="$tmp/s0"; clone_repo "$d"
 if "$d/check-extend.sh" --fast >/dev/null 2>&1; then
   check_ok "干净副本通过快速闸门"
 else
   check_bad "干净副本未通过快速闸门"
+fi
+# 正向断言（2026-08-10）：--only 必须真正执行指定节并输出结果。
+# 防 run() 过滤返回非零 + set -e 静默杀脚本那类回归（之前注入测试"假通过"就漏在这）。
+out=$("$d/check-extend.sh" --only=reconcile 2>&1) || true
+if [[ "$out" == *"Workstation package checks passed"* ]]; then
+  check_ok "--only=reconcile 真正执行并输出数字"
+else
+  check_bad "--only=reconcile 未真正执行（过滤/set -e 回归？）"
+fi
+out=$("$d/check-extend.sh" --only=syntax 2>&1) || true
+if [[ "$out" == *"config syntax:"* ]]; then
+  check_ok "--only=syntax 真正执行并输出校验结果"
+else
+  check_bad "--only=syntax 未真正执行（过滤/set -e 回归？）"
 fi
 
 echo "== 1. 配置语法：坏 lua 必须被抓住 =="

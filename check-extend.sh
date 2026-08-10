@@ -169,10 +169,10 @@ numbers() {
   while read -r m val; do
     if [[ "$m" == "install" ]]; then want="$actual_install"; else want="$actual_total"; fi
     if [[ "$val" != "$want" ]]; then
-      echo "  FAIL README 数字漂移：$m=$val 应为 $m=$want"
+      echo "  FAIL 数字漂移（README/how-to-extend）：$m=$val 应为 $m=$want"
       rc=1
     fi
-  done < <(grep -oE '(install|total)=[0-9]+' README.md | sed 's/=/ /')
+  done < <(grep -oE '(install|total)=[0-9]+' README.md docs/how-to-extend.md | sed -E 's/^[^:]+://; s/=/ /')
   return $rc
 }
 
@@ -185,20 +185,27 @@ pacman-order()      { bash tests/pacman-sync-order-test.sh; }
 flclash()           { bash tests/flclash-migration-test.sh; }
 nvim-config()       { bash tests/nvim-config-test.sh; }
 
-# 部署对：host|repo|mode（deploy-sync 比对用；--deploy 安装用）。
-# 只覆盖部署态文件（脚本/插件 QML），不覆盖运行时状态（engine/codec_wf/enc_params_wf 是用户可改的）。
-declare -a DEPLOY_PAIRS=(
-  "$HOME/.local/bin/shorin-screenrec-menu|config/home/.local/bin/shorin-screenrec-menu|755"
-  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml|644"
-  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml|644"
-  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml|644"
-  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json|644"
-)
+# deploy_pairs：输出 host|repo|mode 行（动态扫描，避免硬编码白名单漏文件）。
+# 覆盖：config/home/.local/bin 全部可执行物 → ~/.local/bin 同名；ShorinScreenrec 插件目录。
+# 只覆盖部署态文件，不覆盖运行时状态（engine/codec_wf/enc_params_wf 是用户可改的）。
+deploy_pairs() {
+  local f name m
+  while IFS= read -r f; do
+    name=$(basename "$f")
+    if [[ -x "$f" ]]; then m=755; else m=644; fi
+    printf '%s|%s|%s\n' "$HOME/.local/bin/$name" "$f" "$m"
+  done < <(find config/home/.local/bin -maxdepth 1 -type f 2>/dev/null)
+  local rdir="config/home/.config/DankMaterialShell/plugins/ShorinScreenrec"
+  while IFS= read -r f; do
+    name=$(basename "$f")
+    printf '%s|%s|644\n' "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/$name" "$f"
+  done < <(find "$rdir" -maxdepth 1 -type f 2>/dev/null)
+}
 
 # deploy-sync：宿主部署副本 vs 仓库 diff（信息性——提示"改动没部署到宿主"，不阻断提交）。
 deploy-sync() {
   local pair host repo synced=0 drifted=0
-  for pair in "${DEPLOY_PAIRS[@]}"; do
+  while IFS= read -r pair; do
     host="${pair%%|*}"; rest="${pair#*|}"; repo="${rest%%|*}"
     if [[ ! -f "$host" ]]; then
       echo "  提示: 宿主无 $host（非本机/未部署，跳过）"
@@ -210,7 +217,7 @@ deploy-sync() {
       echo "  ⚠ 宿主 $host 与仓库不一致（可用 --deploy 同步）"
       drifted=$((drifted + 1))
     fi
-  done
+  done < <(deploy_pairs)
   echo "  部署同步: $synced 一致 / $drifted 漂移（信息性，不阻断提交）"
   return 0
 }
@@ -219,12 +226,12 @@ deploy-sync() {
 deploy_host() {
   local pair host repo mode
   echo "== deploy =="
-  for pair in "${DEPLOY_PAIRS[@]}"; do
+  while IFS= read -r pair; do
     host="${pair%%|*}"; rest="${pair#*|}"; repo="${rest%%|*}"; mode="${rest##*|}"
     if [[ ! -f "$repo" ]]; then echo "  SKIP $repo（仓库无此文件）"; continue; fi
     mkdir -p "$(dirname "$host")"
     if install -m "$mode" "$repo" "$host"; then echo "  → $host"; fi
-  done
+  done < <(deploy_pairs)
   # /usr/local/bin（DMS 插件启动检查用）需要 root：尝试 gsudo，失败给出提示
   if [[ -x "$HOME/scripts/desktop/gsudo" ]]; then
     if timeout 15 "$HOME/scripts/desktop/gsudo" -- install -m 755 config/home/.local/bin/shorin-screenrec-menu /usr/local/bin/shorin-screenrec-menu 2>/dev/null; then
