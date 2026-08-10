@@ -15,7 +15,7 @@
 #   SC-check  对核心脚本跑 shellcheck -S error（注释行不能以 shellcheck 开头，会被当作指令）
 #   reconcile  tests/workstation-package-reconciliation-test.sh（清单一致性）
 #   syntax     tests/validate-config-syntax.sh（配置内容语法，含 QML 结构配平）
-#   refs       recipe 目录 <-> aur-recipes.tsv 双向引用 + PKGBUILD 存在性
+#   refs       recipe 目录 <-> aur-recipes.tsv 双向引用 + PKGBUILD 存在性 + fetch 缓存孤儿条目
 #   secret     config/ 载荷 + staged diff 高置信凭据模式
 #   numbers    README 过期数字字面量 + 打印权威数字
 #   behavior   tests/installer-behavior-test.sh（快速行为套件）
@@ -137,6 +137,15 @@ refs() {
       rc=1
     fi
   done
+  # fetch-aur-sources.sh 中 `# recipe名` 精确注释头必须是有效 recipe：
+  # 删包时漏删离线缓存条目（如 leaf-markdown-viewer-bin）会在这里被抓到。
+  # 只匹配精确注释头（不匹配 vmware 长注释 / linuxqq 带后缀注释），避免误报。
+  while IFS= read -r name; do
+    if ! grep -qx "$name" manifests/aur-recipes.tsv; then
+      echo "  FAIL fetch-aur-sources.sh 孤儿缓存条目（不在 aur-recipes.tsv）：$name"
+      rc=1
+    fi
+  done < <(grep -oE '^# [a-z0-9@._+:-]+$' fetch-aur-sources.sh | sed 's/^# //')
   return $rc
 }
 
@@ -157,7 +166,7 @@ secret() {
 }
 
 numbers() {
-  local rc=0 out actual_install actual_total
+  local rc=0 out actual_install actual_total actual_mappings actual_recipes
   out=$(bash tests/workstation-package-reconciliation-test.sh 2>&1 | tail -1)
   echo "  $out"
   echo "  config 文件数: $(find config -type f | wc -l)"
@@ -166,18 +175,26 @@ numbers() {
     echo "  FAIL reconcile 未通过（numbers 依赖其输出，先修 reconcile 节）"
     return 1
   fi
-  # 动态比对（2026-08-10）：README 中任何 install=N / total=N 字面量必须与当前实际一致。
-  # 旧版用固定"过期字面量"清单，数字一变清单自己就过期，会把当前值误报成漂移。
+  # 动态比对（2026-08-10）：README/how-to-extend 中任何 install=N / total=N /
+  # mappings=N / recipes=N 字面量必须与当前实际一致；README 的清单计数已改为
+  # 指向本输出，不再写死，但未来若又出现字面量仍会拦截。
   actual_install=$(sed -n 's/.*install=\([0-9]*\).*/\1/p' <<<"$out")
   actual_total=$(sed -n 's/.*total=\([0-9]*\).*/\1/p' <<<"$out")
+  actual_mappings=$(sed -n 's/.*mappings=\([0-9]*\).*/\1/p' <<<"$out")
+  actual_recipes=$(sed -n 's/.*recipes=\([0-9]*\).*/\1/p' <<<"$out")
   local m val want
   while read -r m val; do
-    if [[ "$m" == "install" ]]; then want="$actual_install"; else want="$actual_total"; fi
+    case "$m" in
+      install)  want="$actual_install" ;;
+      total)    want="$actual_total" ;;
+      mappings) want="$actual_mappings" ;;
+      recipes)  want="$actual_recipes" ;;
+    esac
     if [[ "$val" != "$want" ]]; then
       echo "  FAIL 数字漂移（README/how-to-extend）：$m=$val 应为 $m=$want"
       rc=1
     fi
-  done < <(grep -oE '(install|total)=[0-9]+' README.md docs/how-to-extend.md | sed -E 's/^[^:]+://; s/=/ /')
+  done < <(grep -oE '(install|total|mappings|recipes)=[0-9]+' README.md docs/how-to-extend.md | sed -E 's/^[^:]+://; s/=/ /')
   return $rc
 }
 
