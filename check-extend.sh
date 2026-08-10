@@ -66,10 +66,12 @@ section_count=0
 
 run() { # run <name>
   local name="$1"
+  # 过滤命中/未命中都要 return 0：run 在循环里是裸调用，返回非零会被 set -e 杀掉
+  # （2026-08-10 发现：原来 || return 返回 1，--only 会让脚本在第一个被跳过的节就静默退出）
   if [[ -n "$only" ]]; then
-    [[ ",$only," == *",$name,"* ]] || return
+    [[ ",$only," == *",$name,"* ]] || return 0
   elif [[ -n "$skip" ]]; then
-    [[ ",$skip," == *",$name,"* ]] && return
+    [[ ",$skip," == *",$name,"* ]] && return 0
   fi
   section_count=$((section_count + 1))
   echo "== $name =="
@@ -155,16 +157,22 @@ secret() {
 }
 
 numbers() {
-  local rc=0 out stale
-  stale='install=191|total=211|191 安装|177 pacman|177/14'
-  if grep -nE -- "$stale" README.md >/dev/null 2>&1; then
-    echo "  FAIL README 含过期包数字："
-    grep -nE -- "$stale" README.md
-    rc=1
-  fi
+  local rc=0 out actual_install actual_total
   out=$(bash tests/workstation-package-reconciliation-test.sh 2>&1 | tail -1)
   echo "  $out"
   echo "  config 文件数: $(find config -type f | wc -l)"
+  # 动态比对（2026-08-10）：README 中任何 install=N / total=N 字面量必须与当前实际一致。
+  # 旧版用固定"过期字面量"清单，数字一变清单自己就过期，会把当前值误报成漂移。
+  actual_install=$(sed -n 's/.*install=\([0-9]*\).*/\1/p' <<<"$out")
+  actual_total=$(sed -n 's/.*total=\([0-9]*\).*/\1/p' <<<"$out")
+  local m val want
+  while read -r m val; do
+    if [[ "$m" == "install" ]]; then want="$actual_install"; else want="$actual_total"; fi
+    if [[ "$val" != "$want" ]]; then
+      echo "  FAIL README 数字漂移：$m=$val 应为 $m=$want"
+      rc=1
+    fi
+  done < <(grep -oE '(install|total)=[0-9]+' README.md | sed 's/=/ /')
   return $rc
 }
 

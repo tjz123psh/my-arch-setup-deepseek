@@ -212,3 +212,4 @@ zram-generator	pacman	extra	verify-only	base-tools	package-only	install	confirme
 vmware-workstation	aur	aur	makepkg	virtualization-vmware-host	package-only	install	current-explicit	VMware Workstation Pro host (AUR; vmware-keymaps bootstrapped first by 06-aur)
 open-vm-tools	pacman	extra	pacman	virtualization-vmware-guest	package-only	install	current-explicit	VMware guest tools (vmtoolsd + vmware-vmblock-fuse)
 nomacs	pacman	archlinuxcn	pacman	desktop-apps	config-backed	install	current-explicit	Qt image viewer; PNG default app restored via mimeapps.list
+grok-build-git	pacman	archlinuxcn	pacman	cli-tools	package-only	install	current-explicit	xAI terminal AI coding agent (grok-build)

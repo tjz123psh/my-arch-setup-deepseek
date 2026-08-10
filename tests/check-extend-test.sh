@@ -57,7 +57,9 @@ expect_fail "重复包行" "$d" "reconcile"
 
 echo "== 3. README 数字漂移：过期字面量必须被抓住 =="
 d="$tmp/s3"; clone_repo "$d"
-printf '\ncheck: install=191 total=211 drift test\n' >> "$d/README.md"
+# 注：2026-08-10 numbers 检查改为动态比对（README 里 install=N/total=N 必须等于实际值）。
+# 注入"回到旧值"的错误数字（当前实际是 191/211）。
+printf '\ncheck: install=190 total=210 drift test\n' >> "$d/README.md"
 expect_fail "README 过期数字" "$d" "numbers"
 
 echo "== 4. 凭据泄漏：私钥进 config/ 必须被抓住 =="
