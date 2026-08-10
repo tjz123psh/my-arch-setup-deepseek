@@ -12,6 +12,15 @@ PluginComponent {
     property bool isRecording: false
     property string elapsed: ""
     property string tooltipText: ""
+    // 防连点：1.5s 内忽略重复点击（双击会重复 execDetached / 重复拉起 slurp）
+    property bool actionPending: false
+    // 模式菜单项：无论状态都显示（录制中前置"停止录制"，模式项置灰防误触）
+    property var modeItems: [
+        { icon: "fullscreen", label: "全屏录制", args: ["start", "-f"], danger: false },
+        { icon: "crop", label: "区域录制", args: ["start", "-r"], danger: false },
+        { icon: "gif_box", label: "录制 GIF (区域)", args: ["start", "-g"], danger: false },
+        { icon: "settings", label: "设置…", args: ["settings"], danger: false }
+    ]
     // 轮询间隔（毫秒），可在设置里调整
     property int pollInterval: (pluginData.pollInterval || 1) * 1000
 
@@ -35,9 +44,12 @@ PluginComponent {
     }
 
     function runRec(args) {
+        if (root.actionPending) return
+        root.actionPending = true
         Quickshell.execDetached(["shorin-screenrec-menu"].concat(args))
         // 触发操作后稍延迟刷新，让状态文件写入完成
         refreshDebounce.restart()
+        actionPendingReset.restart()
     }
 
     Component.onCompleted: refreshStatus()
@@ -52,9 +64,16 @@ PluginComponent {
     // 用户执行开始/停止后短延迟再刷新
     Timer {
         id: refreshDebounce
-        interval: 700
+        interval: 350
         repeat: false
         onTriggered: root.refreshStatus()
+    }
+
+    Timer {
+        id: actionPendingReset
+        interval: 1500
+        repeat: false
+        onTriggered: root.actionPending = false
     }
 
     // 右键强制停止
@@ -106,7 +125,7 @@ PluginComponent {
                 text: root.elapsed
                 color: Theme.error
                 font.pixelSize: Theme.fontSizeSmall
-                font.family: "monospace"
+                font.family: "Fira Code"
             }
         }
     }
@@ -156,26 +175,25 @@ PluginComponent {
             headerText: root.isRecording ? "正在录制" : "屏幕录制"
             detailsText: root.isRecording ? (root.elapsed.length ? ("已用时 " + root.elapsed) : "录制进行中") : "选择录制模式"
             showCloseButton: true
+            // 弹出瞬间立即刷新状态，消除轮询滞后（≤1s）导致的旧状态显示
+            Component.onCompleted: root.refreshStatus()
 
             Column {
                 width: parent.width
                 spacing: Theme.spacingS
 
-                // 录制中只显示停止；空闲显示三种模式 + 设置
+                // 无论状态都显示完整菜单（全屏/区域/GIF/设置）；
+                // 录制中额外在顶部加"停止录制"，模式项置灰防误触
                 Repeater {
                     model: root.isRecording
-                        ? [{ icon: "stop_circle", label: "停止录制", args: ["stop"], danger: true }]
-                        : [
-                            { icon: "fullscreen", label: "全屏录制", args: ["start", "-f"], danger: false },
-                            { icon: "crop", label: "区域录制", args: ["start", "-r"], danger: false },
-                            { icon: "gif_box", label: "录制 GIF (区域)", args: ["start", "-g"], danger: false },
-                            { icon: "settings", label: "设置…", args: ["settings"], danger: false }
-                        ]
+                        ? [{ icon: "stop_circle", label: "停止录制", args: ["stop"], danger: true }].concat(root.modeItems)
+                        : root.modeItems
 
                     delegate: StyledRect {
                         width: parent.width
                         height: 44
                         radius: Theme.cornerRadius
+                        opacity: root.isRecording && !modelData.danger ? 0.45 : 1.0
                         color: rowMouse.containsMouse
                             ? (modelData.danger ? Theme.errorHover : Theme.surfaceContainerHighest)
                             : Theme.surfaceContainerHigh
@@ -206,6 +224,8 @@ PluginComponent {
                             anchors.fill: parent
                             hoverEnabled: true
                             cursorShape: Qt.PointingHandCursor
+                            // 录制中模式项置灰不可点（防误触），"停止录制"始终可点
+                            enabled: modelData.danger || !root.isRecording
                             onClicked: {
                                 root.runRec(modelData.args)
                                 popout.closePopout()
@@ -218,5 +238,5 @@ PluginComponent {
     }
 
     popoutWidth: 320
-    popoutHeight: root.isRecording ? 160 : 300
+    popoutHeight: root.isRecording ? 360 : 300
 }
