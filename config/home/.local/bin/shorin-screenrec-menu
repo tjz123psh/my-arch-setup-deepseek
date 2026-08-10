@@ -65,7 +65,7 @@ IS_GIF_MODE="false"
 _DEFAULT_ENGINE="wl-screenrec"
 _DEFAULT_CODEC_WL="auto"
 _DEFAULT_CODEC_WF="libx264"
-_DEFAULT_ENC_PARAMS_WF="crf=18:preset=veryfast"
+_DEFAULT_ENC_PARAMS_WF="preset=medium:crf=18:tune=animation:aq-mode=2"
 _DEFAULT_FRAMERATE=""
 _DEFAULT_AUDIO="on"
 _DEFAULT_SAVE_EXT="auto"
@@ -89,6 +89,26 @@ ENGINE="${ENGINE:-${engine_from_file:-$_DEFAULT_ENGINE}}"
 CODEC_WL="${CODEC_WL:-${codec_wl_from_file:-$_DEFAULT_CODEC_WL}}"
 CODEC_WF="${CODEC_WF:-${codec_wf_from_file:-$_DEFAULT_CODEC_WF}}"
 ENC_PARAMS_WF="${ENC_PARAMS_WF:-${enc_params_wf_from_file:-$_DEFAULT_ENC_PARAMS_WF}}"
+
+# ====== wf-recorder 画质预设（写入 enc_params_wf，冒号分隔的 -p key=value） ======
+# 2026-08-10 调研结论："小糊"第一元凶是 preset=veryfast（subme=2/ref=1，运动文字糊），
+# 提 preset 到 medium/slow 比继续降 CRF 收益更大；tune=animation 适配屏幕内容
+# （纯色区块 + 高对比文字）；aq-mode=2 让文字区拿到更足码率。
+# 约束：值一律不含冒号（IFS=':' 拆分）；no_deblock 在 ffmpeg9 libx264 不存在，不用。
+_PRESET_WF_BALANCED="preset=medium:crf=18:tune=animation:aq-mode=2"
+_PRESET_WF_SHARP="preset=slow:crf=16:tune=animation:aq-mode=2"
+_PRESET_WF_ULTRA="preset=slow:crf=13:aq-mode=2:aq-strength=0.6:psy=0"
+
+# quality_label <enc_params_str> -> 预设显示名，未知内容显示"自定义：内容"
+quality_label() {
+  case "${1:-}" in
+    "$_PRESET_WF_BALANCED") printf '%s' "$(msg quality_balanced)" ;;
+    "$_PRESET_WF_SHARP")    printf '%s' "$(msg quality_sharp)" ;;
+    "$_PRESET_WF_ULTRA")    printf '%s' "$(msg quality_ultra)" ;;
+    "") printf '%s' "$(msg quality_balanced)" ;;
+    *)  printf '%s' "$(msg quality_custom "$1")" ;;
+  esac
+}
 FRAMERATE="${FRAMERATE:-${fps_from_file:-$_DEFAULT_FRAMERATE}}"
 AUDIO="${AUDIO:-${audio_from_file:-$_DEFAULT_AUDIO}}"
 AUDIO_DEVICE="${AUDIO_DEVICE:-${audio_dev_from_file:-}}"
@@ -179,6 +199,7 @@ msg() {
         menu_set_engine) printf "引擎：%s" "$@" ;;
         menu_set_codec)  printf "编码格式：%s" "$@" ;;
         menu_set_fps)    printf "最高帧率：%s" "$@" ;;
+        menu_set_quality) printf "画质：%s" "$@" ;;
         menu_set_filefmt) printf "文件格式：%s" "$@" ;;
         menu_toggle_audio) printf "音频：%s" "$@" ;;
         menu_set_audio_dev) printf "音频设备：%s" "$@" ;;
@@ -192,6 +213,11 @@ msg() {
         title_select_engine) printf "选择录屏后端引擎" ;;
         title_select_codec) printf "选择编码格式" ;;
         title_select_fps)     printf "选择最高帧率" ;;
+        title_select_quality) printf "选择画质预设" ;;
+        quality_balanced) printf "均衡（preset=medium crf=18）" ;;
+        quality_sharp)    printf "清晰（preset=slow crf=16）" ;;
+        quality_ultra)    printf "极致（preset=slow crf=13 psy=0）" ;;
+        quality_custom)   printf "自定义：%s" "$@" ;;
         title_select_filefmt) printf "选择文件格式" ;;
         title_select_render) printf "选择渲染设备（/dev/dri/renderD*）" ;;
         mode_full)        printf "全屏" ;;
@@ -231,6 +257,7 @@ msg() {
         menu_set_engine) printf "Engine: %s" "$@" ;;
         menu_set_codec)  printf "Codec: %s" "$@" ;;
         menu_set_fps)    printf "Max Framerate: %s" "$@" ;;
+        menu_set_quality) printf "Quality: %s" "$@" ;;
         menu_set_filefmt) printf "File Format: %s" "$@" ;;
         menu_toggle_audio) printf "Audio: %s" "$@" ;;
         menu_set_audio_dev) printf "Audio Device: %s" "$@" ;;
@@ -244,6 +271,11 @@ msg() {
         title_select_engine) printf "Select Backend Engine" ;;
         title_select_codec) printf "Select Codec" ;;
         title_select_fps)     printf "Select Max Framerate" ;;
+        title_select_quality) printf "Select Quality Preset" ;;
+        quality_balanced) printf "Balanced (preset=medium crf=18)" ;;
+        quality_sharp)    printf "Sharp (preset=slow crf=16)" ;;
+        quality_ultra)    printf "Ultra (preset=slow crf=13 psy=0)" ;;
+        quality_custom)   printf "Custom: %s" "$@" ;;
         title_select_filefmt) printf "Select File Format" ;;
         title_select_render) printf "Select Render Device (/dev/dri/renderD*)" ;;
         mode_full)        printf "Fullscreen" ;;
@@ -496,7 +528,15 @@ show_settings_menu() {
     local ff_display; if [[ -z "$SAVE_EXT" || "${SAVE_EXT,,}" == "auto" ]]; then ff_display="$(msg ext_auto)"; else ff_display="$SAVE_EXT"; fi
     local current_codec; [[ "$ENGINE" == "wl-screenrec" ]] && current_codec="$CODEC_WL" || current_codec="$CODEC_WF"
 
-    local pick; pick="$(menu_pick "$(msg title_settings)" "$(msg menu_set_engine "$ENGINE")" "$(msg menu_set_fps "$fps_display")" "$(msg menu_toggle_audio "$audio_display")" "$(msg menu_set_audio_dev "$ad_display")" "$(msg menu_set_codec "$current_codec")" "$(msg menu_set_filefmt "$ff_display")" "$(msg menu_set_render "$render_display_now")" "$(msg menu_back)")" || return 0
+    local pick
+    local -a set_items=()
+    set_items+=( "$(msg menu_set_engine "$ENGINE")" )
+    set_items+=( "$(msg menu_set_fps "$fps_display")" )
+    if [[ "$ENGINE" == "wf-recorder" ]]; then
+      set_items+=( "$(msg menu_set_quality "$(quality_label "$ENC_PARAMS_WF")")" )
+    fi
+    set_items+=( "$(msg menu_toggle_audio "$audio_display")" "$(msg menu_set_audio_dev "$ad_display")" "$(msg menu_set_codec "$current_codec")" "$(msg menu_set_filefmt "$ff_display")" "$(msg menu_set_render "$render_display_now")" "$(msg menu_back)" )
+    pick="$(menu_pick "$(msg title_settings)" "${set_items[@]}")" || return 0
 
     if [[ "$pick" == "$(msg menu_set_engine "$ENGINE")" ]]; then
       local new_eng="$(menu_pick "$(msg title_select_engine)" "wl-screenrec" "wf-recorder")" || continue
@@ -505,6 +545,15 @@ show_settings_menu() {
       local newf; newf="$(menu_pick "$(msg title_select_fps)" "60" "30" "120" "144" "165" "240" "$(msg fps_unlimited)")" || continue
       if [[ "$newf" == "$(msg fps_unlimited)" ]]; then FRAMERATE=""; rm -f "$CFG_FPS"
       elif [[ "$newf" =~ ^[0-9]+$ && "$newf" -gt 0 ]]; then FRAMERATE="$newf"; printf '%s' "$FRAMERATE" >"$CFG_FPS"; fi
+    elif [[ "$pick" == "$(msg menu_set_quality "$(quality_label "$ENC_PARAMS_WF")")" ]]; then
+      local qpick
+      qpick="$(menu_pick "$(msg title_select_quality)" "$(msg quality_balanced)" "$(msg quality_sharp)" "$(msg quality_ultra)" "$(msg menu_back)")" || continue
+      case "$qpick" in
+        "$(msg quality_balanced)") ENC_PARAMS_WF="$_PRESET_WF_BALANCED"; printf '%s' "$ENC_PARAMS_WF" >"$CFG_PARAMS_WF" ;;
+        "$(msg quality_sharp)")    ENC_PARAMS_WF="$_PRESET_WF_SHARP";    printf '%s' "$ENC_PARAMS_WF" >"$CFG_PARAMS_WF" ;;
+        "$(msg quality_ultra)")    ENC_PARAMS_WF="$_PRESET_WF_ULTRA";    printf '%s' "$ENC_PARAMS_WF" >"$CFG_PARAMS_WF" ;;
+        *) continue ;;
+      esac
     elif [[ "$pick" == "$(msg menu_toggle_audio "$audio_display")" ]]; then
       if [[ "$AUDIO" == "on" ]]; then AUDIO="off"; else AUDIO="on"; fi; printf '%s' "$AUDIO" >"$CFG_AUDIO"
     elif [[ "$pick" == "$(msg menu_set_audio_dev "$ad_display")" ]]; then choose_audio_device_menu
