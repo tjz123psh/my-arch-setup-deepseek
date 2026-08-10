@@ -1,0 +1,519 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SELF")"
+# shellcheck source=lib/ui.sh
+. "$SCRIPT_DIR/lib/ui.sh"
+# shellcheck source=lib/config.sh
+. "$SCRIPT_DIR/lib/config.sh"
+maintenance_config_load || exit 2
+
+SOURCE="$(maintenance_config_get BACKUP_TARGET "" MAINTENANCE_BACKUP_TARGET)"
+REQUESTED_SET=""
+PLAN_DIR=""
+APPLY_HOME=0
+ASSUME_YES=0
+DEST=""
+SET_DIR=""
+MIGRATION_DIR=""
+SOURCE_KIND="offsite"
+STAGE=""
+
+cancel_to_parent() {
+  if [[ "${TERM_MENU_CHILD:-0}" == "1" ]]; then
+    exit 130
+  fi
+  exit 0
+}
+
+usage() {
+  cat <<'EOF'
+用法: backup-restore --source <路径> [选项]
+
+  --source PATH   migration、备份磁盘、maintenance-backup-* 或 set-* 目录
+  --set NAME      指定 set-* 集合；默认交互选择，非交互时选择 latest
+  --output DIR    恢复计划输出目录
+  --apply-home    校验并预览后，把备份内容合并进 HOME
+  --yes           与 --apply-home 同用，跳过关键词确认
+
+默认只生成恢复计划，不覆盖文件、不安装包、不启用服务。HOME 恢复不会删除
+当前系统多出的文件；被覆盖的旧文件会保存到 ~/.cache/maintenance-restore-rollback。
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --source) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; SOURCE="$2"; shift 2 ;;
+    --set) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; REQUESTED_SET="$2"; shift 2 ;;
+    --output) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; PLAN_DIR="$2"; shift 2 ;;
+    --apply-home) APPLY_HOME=1; shift ;;
+    --yes) ASSUME_YES=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) ui_err "未知参数: %s" "$1"; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$ASSUME_YES" -eq 1 && "$APPLY_HOME" -ne 1 ]]; then
+  ui_err "--yes 只能与 --apply-home 一起使用"
+  exit 2
+fi
+
+for cmd in awk comm df find grep pacman realpath sha256sum sort systemctl tar; do
+  command -v "$cmd" >/dev/null 2>&1 || { ui_err "缺少依赖: %s" "$cmd"; exit 127; }
+done
+
+choose_candidate() {
+  local title="$1"
+  shift
+  local candidates=("$@") selected="" index=""
+
+  ((${#candidates[@]} > 0)) || return 1
+  if ((${#candidates[@]} == 1)); then
+    printf '%s\n' "${candidates[0]}"
+    return 0
+  fi
+  if [[ -t 0 && -t 1 ]] && command -v fzf >/dev/null 2>&1; then
+    selected="$(printf '%s\n' "${candidates[@]}" | fzf \
+      --height=80% --layout=reverse --border=rounded --cycle \
+      --border-label=" $title " --prompt='  ' \
+      --header='Enter 选择   ↑↓ 循环移动   Esc 取消' --color="$(ui_fzf_colors)")" || return 130
+    printf '%s\n' "$selected"
+    return 0
+  fi
+  if [[ -t 0 ]]; then
+    local i
+    for ((i = 0; i < ${#candidates[@]}; i++)); do
+      printf '%d. %s\n' "$((i + 1))" "${candidates[$i]}" >&2
+    done
+    printf '输入编号: ' >&2
+    read -r index
+    [[ "$index" =~ ^[1-9][0-9]*$ ]] && ((index <= ${#candidates[@]})) || return 130
+    printf '%s\n' "${candidates[$((index - 1))]}"
+    return 0
+  fi
+  printf '%s\n' "${candidates[0]}"
+}
+
+owned_destination() {
+  local path="$1"
+  [[ -f "$path/.offsite-backup-owned" ]] \
+    && grep -Eqx 'offsite-backup v(1|2)' "$path/.offsite-backup-owned" 2>/dev/null
+}
+
+owned_migration_pack() {
+  local path="$1"
+  [[ -f "$path/.migration-pack-owned" ]] \
+    && grep -Eqx 'migration-pack v(1|2)' "$path/.migration-pack-owned" 2>/dev/null
+}
+
+migration_is_v2() {
+  [[ -f "$MIGRATION_DIR/format.json" ]] \
+    && grep -Fqx '{"schema_version":2,"format":"maintenance-migration","payload_archive":"payload/home-config.tar.zst"}' \
+      "$MIGRATION_DIR/format.json" 2>/dev/null
+}
+
+migration_payload_archive() {
+  if migration_is_v2; then
+    printf '%s\n' "$MIGRATION_DIR/payload/home-config.tar.zst"
+  else
+    printf '%s\n' "$MIGRATION_DIR/pang-arch-configs.tar.gz"
+  fi
+}
+
+migration_payload_mode() {
+  if migration_is_v2; then
+    [[ -f "$MIGRATION_DIR/payload/mode" ]] || return 1
+    printf '%s\n' "$(< "$MIGRATION_DIR/payload/mode")"
+  else
+    printf 'full\n'
+  fi
+}
+
+migration_packages_file() {
+  case "$1" in
+    explicit)
+      if migration_is_v2; then printf '%s\n' "$MIGRATION_DIR/packages/pacman-explicit.txt";
+      else printf '%s\n' "$MIGRATION_DIR/pkglist-explicit.txt"; fi
+      ;;
+    foreign)
+      if migration_is_v2; then printf '%s\n' "$MIGRATION_DIR/packages/foreign.txt";
+      else printf '%s\n' "$MIGRATION_DIR/pkglist-foreign.txt"; fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+migration_services_file() {
+  case "$1" in
+    system)
+      if migration_is_v2; then printf '%s\n' "$MIGRATION_DIR/services/system-enabled.txt";
+      else printf '%s\n' "$MIGRATION_DIR/system-enabled-units.txt"; fi
+      ;;
+    user)
+      if migration_is_v2; then printf '%s\n' "$MIGRATION_DIR/services/user-enabled.txt";
+      else printf '%s\n' "$MIGRATION_DIR/user-enabled-units.txt"; fi
+      ;;
+    *) return 2 ;;
+  esac
+}
+
+resolve_source() {
+  local source_real base latest_name selected
+  local destinations=() sets=()
+
+  if [[ -z "$SOURCE" && -t 0 ]]; then
+    read -r -p "备份磁盘、备份目录或 set-* 路径: " SOURCE
+  fi
+  [[ -n "$SOURCE" ]] || { ui_err "未指定恢复源；请使用 --source PATH"; return 2; }
+  [[ -e "$SOURCE" ]] || { ui_err "恢复源不存在: %s" "$SOURCE"; return 1; }
+  source_real="$(realpath "$SOURCE")"
+  base="$(basename "$source_real")"
+
+  if owned_migration_pack "$source_real"; then
+    SOURCE_KIND="migration"
+    DEST="$source_real"
+    SET_DIR="$source_real"
+    MIGRATION_DIR="$source_real"
+    [[ -z "$REQUESTED_SET" ]] \
+      || { ui_err "独立迁移包不支持 --set；请直接指定迁移包目录"; return 2; }
+    return 0
+  fi
+
+  if [[ "$base" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]]; then
+    SET_DIR="$source_real"
+    DEST="$(dirname "$SET_DIR")"
+  elif owned_destination "$source_real"; then
+    DEST="$source_real"
+  else
+    while IFS= read -r selected; do
+      owned_destination "$selected" && destinations+=("$selected")
+    done < <(find "$source_real" -mindepth 1 -maxdepth 1 -type d \
+      -name 'maintenance-backup-*' -print 2>/dev/null | sort)
+    ((${#destinations[@]} > 0)) \
+      || { ui_err "没有找到本工具创建的 maintenance-backup-* 目录"; return 1; }
+    DEST="$(choose_candidate "选择备份主机" "${destinations[@]}")" || return $?
+  fi
+
+  owned_destination "$DEST" \
+    || { ui_err "恢复源缺少有效的 .offsite-backup-owned 标记"; return 1; }
+  if [[ -n "$SET_DIR" ]]; then
+    [[ -z "$REQUESTED_SET" || "$REQUESTED_SET" == "$(basename "$SET_DIR")" ]] \
+      || { ui_err "直接指定 set-* 路径时，--set 必须与该目录一致"; return 2; }
+    MIGRATION_DIR="$SET_DIR/migration"
+    return 0
+  fi
+
+  if [[ -n "$REQUESTED_SET" ]]; then
+    if [[ "$REQUESTED_SET" == "latest" ]]; then
+      [[ -L "$DEST/latest" ]] || { ui_err "恢复源没有有效的 latest 链接"; return 1; }
+      latest_name="$(readlink "$DEST/latest")"
+      [[ "$latest_name" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] \
+        || { ui_err "latest 链接目标非法: %s" "$latest_name"; return 1; }
+      SET_DIR="$DEST/$latest_name"
+    else
+      [[ "$REQUESTED_SET" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] \
+        || { ui_err "--set 必须是 set-* 名称或 latest"; return 2; }
+      SET_DIR="$DEST/$REQUESTED_SET"
+    fi
+  else
+    while IFS= read -r selected; do
+      [[ "$selected" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] && sets+=("$selected")
+    done \
+      < <(find "$DEST" -mindepth 1 -maxdepth 1 -type d \
+        -name 'set-*' -printf '%f\n' 2>/dev/null | sort -r)
+    ((${#sets[@]} > 0)) || { ui_err "恢复源中没有备份集合"; return 1; }
+    if [[ -t 0 && -t 1 ]]; then
+      selected="$(choose_candidate "选择恢复集合" "${sets[@]}")" || return $?
+      SET_DIR="$DEST/$selected"
+    elif [[ -L "$DEST/latest" ]]; then
+      latest_name="$(readlink "$DEST/latest")"
+      [[ "$latest_name" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] \
+        || { ui_err "latest 链接目标非法: %s" "$latest_name"; return 1; }
+      SET_DIR="$DEST/$latest_name"
+    else
+      SET_DIR="$DEST/${sets[0]}"
+    fi
+  fi
+  [[ -d "$SET_DIR" && "$(dirname "$SET_DIR")" == "$DEST" ]] \
+    || { ui_err "备份集合不存在或越界: %s" "$SET_DIR"; return 1; }
+  MIGRATION_DIR="$SET_DIR/migration"
+}
+
+verify_home_archive() {
+  local checksum entry normalized list_file unsafe_entry=""
+  [[ -s "$SET_DIR/home.tar.zst" && -s "$SET_DIR/home.tar.zst.sha256" ]] \
+    || { ui_err "备份集合缺少 HOME 归档或校验文件"; return 1; }
+  checksum="$(< "$SET_DIR/home.tar.zst.sha256")"
+  awk 'NF == 2 && length($1) == 64 && $1 ~ /^[0-9A-Fa-f]+$/ && $2 == "home.tar.zst" {ok++} END {exit !(NR == 1 && ok == 1)}' \
+    <<< "$checksum" || { ui_err "HOME 校验文件格式无效或引用了其它路径"; return 1; }
+  (cd "$SET_DIR" && sha256sum -c home.tar.zst.sha256) \
+    || { ui_err "HOME 归档 SHA256 校验失败"; return 1; }
+  tar --zstd -tf "$SET_DIR/home.tar.zst" >/dev/null \
+    || { ui_err "HOME 归档损坏，无法完整读取"; return 1; }
+
+  list_file="$(mktemp)"
+  if ! tar --zstd -tf "$SET_DIR/home.tar.zst" > "$list_file"; then
+    rm -f "$list_file"
+    ui_err "无法读取 HOME 归档清单"
+    return 1
+  fi
+  while IFS= read -r entry; do
+    normalized="${entry#./}"
+    [[ -z "$normalized" || "$normalized" == "." ]] && continue
+    if [[ "$entry" == /* || "$normalized" == ".." || "$normalized" == ../* \
+          || "$normalized" == */../* ]]; then
+      unsafe_entry="$entry"
+      break
+    fi
+  done < "$list_file"
+  rm -f "$list_file"
+  if [[ -n "$unsafe_entry" ]]; then
+    ui_err "HOME 归档包含越界路径: %s" "$unsafe_entry"
+    return 1
+  fi
+}
+
+verify_migration_archive_paths() {
+  local archive list_file entry normalized unsafe_entry=""
+  archive="$(migration_payload_archive)"
+  list_file="$(mktemp)"
+  if migration_is_v2; then
+    tar --zstd -tf "$archive" > "$list_file" || {
+      rm -f "$list_file"
+      ui_err "无法读取 v2 迁移包归档清单"
+      return 1
+    }
+  elif ! tar -tzf "$archive" > "$list_file"; then
+    rm -f "$list_file"
+    ui_err "无法读取迁移包归档清单"
+    return 1
+  fi
+  while IFS= read -r entry; do
+    normalized="${entry#./}"
+    [[ -z "$normalized" || "$normalized" == "." ]] && continue
+    if [[ "$entry" == /* || "$normalized" == ".." || "$normalized" == ../* \
+          || "$normalized" == */../* ]]; then
+      unsafe_entry="$entry"
+      break
+    fi
+  done < "$list_file"
+  rm -f "$list_file"
+  if [[ -n "$unsafe_entry" ]]; then
+    ui_err "迁移包归档包含越界路径: %s" "$unsafe_entry"
+    return 1
+  fi
+}
+
+prepare_stage() {
+  local stage_parent estimate_bytes free_kib required_kib archive
+  stage_parent="${MAINTENANCE_RESTORE_STAGING_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/maintenance-restore-staging}"
+  mkdir -p "$stage_parent"
+  if [[ "$SOURCE_KIND" == "offsite" ]]; then
+    archive="$SET_DIR/home.tar.zst"
+    estimate_bytes="$(LC_ALL=C tar --zstd --numeric-owner -tvf "$archive" \
+      | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
+  else
+    archive="$(migration_payload_archive)"
+    if [[ "$(migration_payload_mode)" == 'metadata-only' ]]; then
+      ui_err "该迁移包只含异盘备份元数据，不能单独恢复 HOME；请从对应 set-* 集合恢复"
+      return 1
+    fi
+    if migration_is_v2; then
+      estimate_bytes="$(LC_ALL=C tar --zstd --numeric-owner -tvf "$archive" \
+        | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
+    else
+      estimate_bytes="$(LC_ALL=C tar --numeric-owner -tzvf "$archive" \
+        | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
+    fi
+  fi
+  free_kib="$(df -Pk "$stage_parent" | awk 'NR == 2 {print $4}')"
+  [[ "$estimate_bytes" =~ ^[0-9]+$ && "$free_kib" =~ ^[0-9]+$ ]] \
+    || { ui_err "无法估算恢复暂存空间"; return 1; }
+  required_kib=$((estimate_bytes / 1024 + estimate_bytes / 10240 + 1024))
+  ((free_kib >= required_kib)) \
+    || { ui_err "恢复暂存空间不足：需要约 %s MiB，可用 %s MiB" \
+      "$((required_kib / 1024))" "$((free_kib / 1024))"; return 1; }
+  STAGE="$(mktemp -d "$stage_parent/set-restore.XXXXXX")"
+  if [[ "$SOURCE_KIND" == "offsite" ]]; then
+    tar --zstd --no-same-owner -xf "$archive" -C "$STAGE"
+  else
+    if migration_is_v2; then
+      tar --zstd --no-same-owner -xf "$archive" -C "$STAGE"
+    else
+      tar --no-same-owner -xzf "$archive" -C "$STAGE"
+      if [[ -f "$MIGRATION_DIR/secrets/secrets.fish" ]]; then
+        mkdir -p "$STAGE/.config/fish"
+        cp -- "$MIGRATION_DIR/secrets/secrets.fish" "$STAGE/.config/fish/secrets.fish"
+        chmod 600 "$STAGE/.config/fish/secrets.fish"
+      fi
+      if [[ -f "$MIGRATION_DIR/secrets/opencode.json" ]]; then
+        mkdir -p "$STAGE/.config/opencode"
+        cp -- "$MIGRATION_DIR/secrets/opencode.json" "$STAGE/.config/opencode/opencode.json"
+        chmod 600 "$STAGE/.config/opencode/opencode.json"
+      fi
+    fi
+  fi
+}
+
+write_package_plan() {
+  local current all_official tmp explicit_file foreign_file
+  explicit_file="$(migration_packages_file explicit)"
+  foreign_file="$(migration_packages_file foreign)"
+  current="$(mktemp)"
+  all_official="$(mktemp)"
+  tmp="$(mktemp)"
+  if ! pacman -Qq | sort -u > "$current"; then
+    rm -f "$current" "$all_official" "$tmp"
+    ui_err "无法查询当前已安装包，未生成恢复计划"
+    return 1
+  fi
+  sort -u "$explicit_file" > "$tmp"
+  if [[ -s "$foreign_file" ]]; then
+    comm -23 "$tmp" <(sort -u "$foreign_file") > "$all_official"
+    comm -23 <(sort -u "$foreign_file") "$current" \
+      > "$PLAN_DIR/packages-foreign.txt"
+  else
+    cp -- "$tmp" "$all_official"
+    : > "$PLAN_DIR/packages-foreign.txt"
+  fi
+  comm -23 "$all_official" "$current" > "$PLAN_DIR/packages-official.txt"
+  rm -f "$current" "$all_official" "$tmp"
+}
+
+enabled_units_from_file() {
+  awk '$2 == "enabled" && $1 ~ /\.(service|timer|socket|path|mount|automount)$/ {print $1}' "$1" | sort -u
+}
+
+write_service_plan() {
+  local current_system current_user system_file user_file
+  system_file="$(migration_services_file system)"
+  user_file="$(migration_services_file user)"
+  current_system="$(mktemp)"
+  current_user="$(mktemp)"
+  if ! systemctl list-unit-files --state=enabled --no-legend --plain 2>/dev/null \
+      | awk '{print $1}' | sort -u > "$current_system"; then
+    rm -f "$current_system" "$current_user"
+    ui_err "无法查询当前系统服务，未生成恢复计划"
+    return 1
+  fi
+  if ! systemctl --user list-unit-files --state=enabled --no-legend --plain 2>/dev/null \
+      | awk '{print $1}' | sort -u > "$current_user"; then
+    rm -f "$current_system" "$current_user"
+    ui_err "无法查询当前用户服务，未生成恢复计划"
+    return 1
+  fi
+  comm -23 <(enabled_units_from_file "$system_file") \
+    "$current_system" > "$PLAN_DIR/services-system.txt"
+  comm -23 <(enabled_units_from_file "$user_file") \
+    "$current_user" > "$PLAN_DIR/services-user.txt"
+  rm -f "$current_system" "$current_user"
+}
+
+write_home_plan() {
+  local path rel
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --no-owner --no-group --dry-run --itemize-changes \
+      --out-format='%i %n%L' -- "$STAGE/" "$HOME/" > "$PLAN_DIR/home-changes.txt"
+  else
+    {
+      printf '# 未安装 rsync：以下仅按路径区分已存在/新增，无法判断内容是否相同。\n'
+      while IFS= read -r -d '' path; do
+        rel="${path#"$STAGE/"}"
+        if [[ -e "$HOME/$rel" || -L "$HOME/$rel" ]]; then
+          printf 'existing %s\n' "$rel"
+        else
+          printf 'new      %s\n' "$rel"
+        fi
+      done < <(find "$STAGE" -mindepth 1 -print0)
+    } > "$PLAN_DIR/home-changes.txt"
+  fi
+}
+
+cleanup() {
+  [[ -z "${STAGE:-}" || ! -d "$STAGE" ]] || rm -rf -- "$STAGE"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+resolve_source
+ui_banner "备份恢复" "backup-restore · 校验 / 计划 / HOME 合并"
+ui_panel_open "恢复方式"
+ui_panel_line "默认只生成预览计划：列出待安装包、待启用服务和 HOME 文件变化。"
+ui_panel_line "只有选择「恢复 HOME」并再次确认才会合并文件；当前多出的文件不会被删除。"
+ui_panel_line "被覆盖的旧文件会放入 rollback 目录，但仍建议先审核计划并保留外盘原备份。"
+ui_panel_close
+ui_panel_open "恢复源"
+ui_panel_kv "备份目录" "$DEST"
+ui_panel_kv "来源类型" "$([[ "$SOURCE_KIND" == "offsite" ]] && printf '异盘备份集合' || printf '独立迁移包')"
+ui_panel_kv "备份集合" "$(basename "$SET_DIR")"
+ui_panel_kv "模式" "$([[ "$APPLY_HOME" -eq 1 ]] && printf '恢复 HOME' || printf '仅生成计划')"
+ui_panel_close
+
+ui_working "正在验证恢复源的结构与校验和"
+if [[ "$SOURCE_KIND" == "offsite" ]]; then
+  verify_home_archive
+fi
+"$SCRIPT_DIR/migration-pack" --verify "$MIGRATION_DIR"
+if [[ "$SOURCE_KIND" == "migration" ]]; then
+  verify_migration_archive_paths
+fi
+ui_ok "备份集合结构与校验和有效"
+
+prepare_stage
+if [[ -z "$PLAN_DIR" ]]; then
+  PLAN_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/maintenance/restore-plans/$(basename "$SET_DIR")-$(date '+%Y%m%d-%H%M%S')-$$"
+fi
+if [[ -e "$PLAN_DIR" && -n "$(find "$PLAN_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]]; then
+  ui_err "恢复计划目录非空，拒绝覆盖: %s" "$PLAN_DIR"
+  exit 1
+fi
+mkdir -p "$PLAN_DIR"
+ui_working "正在比较备份与当前已安装软件包"
+write_package_plan
+ui_working "正在比较备份与当前已启用服务"
+write_service_plan
+ui_working "正在生成 HOME 文件变更预览"
+write_home_plan
+
+cat > "$PLAN_DIR/README.txt" <<EOF
+备份集合: $SET_DIR
+来源类型: $SOURCE_KIND
+生成时间: $(date --iso-8601=seconds)
+
+packages-official.txt  待安装的官方仓库包
+packages-foreign.txt   待安装的 foreign/AUR 包
+services-system.txt    待人工确认启用的系统服务
+services-user.txt      待人工确认启用的用户服务
+home-changes.txt       HOME 合并预览（不会删除当前多出的文件）
+EOF
+
+ui_ok "恢复计划已生成: %s" "$PLAN_DIR"
+ui_info "脚本不会自动安装包或启用服务，请审核计划后人工处理。"
+
+if [[ "$APPLY_HOME" -ne 1 ]]; then
+  ui_info "当前为预览模式，HOME 没有被修改。"
+  exit 0
+fi
+command -v rsync >/dev/null 2>&1 \
+  || { ui_err "应用 HOME 恢复需要 rsync；请先安装 rsync 后重试"; exit 127; }
+if [[ "$ASSUME_YES" -ne 1 ]]; then
+  [[ -t 0 ]] || { ui_err "非交互恢复必须同时指定 --yes"; exit 2; }
+  ui_confirm_word "将恢复内容合并到 $HOME；不会删除额外文件" "restore home" \
+    || { ui_warn "已取消 HOME 恢复"; cancel_to_parent; }
+fi
+
+ui_maintenance_lock_acquire "恢复异盘 HOME" || exit $?
+ROLLBACK="${XDG_CACHE_HOME:-$HOME/.cache}/maintenance-restore-rollback/$(date '+%Y%m%d-%H%M%S')-$$"
+mkdir -p "$ROLLBACK"
+chmod 700 "$(dirname "$ROLLBACK")" "$ROLLBACK" 2>/dev/null || true
+ui_info "正在合并 HOME；被覆盖的旧文件将保存到回滚目录..."
+if ! rsync -a --no-owner --no-group --backup --backup-dir="$ROLLBACK" \
+    -- "$STAGE/" "$HOME/"; then
+  ui_err "HOME 合并失败；已覆盖文件的旧版本保存在: %s" "$ROLLBACK"
+  exit 1
+fi
+sync -f "$HOME" 2>/dev/null || sync
+ui_ok "HOME 恢复完成；没有删除当前系统额外文件。"
+ui_ok "覆盖前副本: %s" "$ROLLBACK"

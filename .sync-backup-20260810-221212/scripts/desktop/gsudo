@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# 描述：图形化 sudo，用 fuzzel 弹框输入密码后执行命令（sudo -A）。
+# Description: Graphical sudo wrapper; prompts for the password via fuzzel, then runs sudo -A.
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: gsudo [command [args...]]
+
+用 fuzzel 弹出密码框，把密码交给 sudo 执行命令。
+
+Options:
+  -h, --help    显示帮助并退出
+
+示例:
+  gsudo systemctl restart nginx
+  gsudo -- pacman -Syu
+
+不带命令时，等价于 sudo -Av：只弹框刷新 sudo 时间戳。
+EOF
+}
+
+require_deps() {
+  local missing=()
+  local cmd
+
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    printf '错误: 缺少依赖: %s\n' "${missing[*]}" >&2
+    exit 127
+  fi
+}
+
+# --- 参数解析 ---
+# 只拦截脱离命令的 -h/--help；-- 之后的内容原样交给 sudo。
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+if [[ "${1:-}" == "--" ]]; then
+  shift
+fi
+
+# --- 依赖检查 ---
+require_deps sudo fuzzel
+
+# askpass 助手与本脚本同目录。
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+ASKPASS="$SCRIPT_DIR/fuzzel-askpass"
+
+if [[ ! -x "$ASKPASS" ]]; then
+  printf '错误: 找不到可执行的 askpass 助手: %s\n' "$ASKPASS" >&2
+  exit 1
+fi
+
+# --- 主逻辑 ---
+export SUDO_ASKPASS="$ASKPASS"
+
+if (( $# == 0 )); then
+  # 无命令：仅刷新时间戳。
+  exec sudo -A -v
+fi
+
+exec sudo -A -- "$@"

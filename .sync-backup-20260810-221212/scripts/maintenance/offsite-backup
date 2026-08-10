@@ -1,0 +1,480 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SELF")"
+# shellcheck source=lib/ui.sh
+. "$SCRIPT_DIR/lib/ui.sh"
+# shellcheck source=lib/config.sh
+. "$SCRIPT_DIR/lib/config.sh"
+maintenance_config_load || exit 2
+
+TARGET="$(maintenance_config_get BACKUP_TARGET "" MAINTENANCE_BACKUP_TARGET)"
+KEEP="$(maintenance_config_get BACKUP_KEEP 3 MAINTENANCE_BACKUP_KEEP)"
+CHECK_ONLY=0
+VALIDATE_ONLY=0
+HOME_SNAPSHOT_CONFIG=""
+HOME_SNAPSHOT_ID=""
+HOME_SNAPSHOT_SOURCE=""
+SNAP_SEP=$'\037'
+SNAPSHOT_CLEANUP_FAILED=0
+RETENTION_FAILED=0
+SET_MARKER_NAME=".offsite-set-owned"
+SET_MARKER_TEXT="offsite-backup set v1"
+
+usage() {
+  cat <<'EOF'
+用法: offsite-backup --target <已挂载目录> [--keep N] [--check|--validate-target]
+
+  --target DIR   外置磁盘或远端文件系统上的备份目录
+  --keep N       保留最近 N 份 HOME 归档，默认 3
+  --check        只验证目标位置和最新备份，不创建新备份
+  --validate-target  只验证目标挂载和异盘属性，不读取或创建备份集合
+
+也可设置 MAINTENANCE_BACKUP_TARGET 和 MAINTENANCE_BACKUP_KEEP。
+同一物理磁盘上的目录会被拒绝，避免把同盘副本误称为异盘备份。
+创建备份时必须能通过 Snapper 为 HOME 所在 Btrfs 挂载点创建临时快照；
+脚本从该时间点归档，不会直接读取持续变化的活动 HOME。
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --target) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; TARGET="$2"; shift 2 ;;
+    --keep) [[ $# -ge 2 ]] || { usage >&2; exit 2; }; KEEP="$2"; shift 2 ;;
+    --check) CHECK_ONLY=1; shift ;;
+    --validate-target) VALIDATE_ONLY=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) ui_err "未知参数: %s" "$1"; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$CHECK_ONLY" -eq 1 && "$VALIDATE_ONLY" -eq 1 ]]; then
+  ui_err "--check 和 --validate-target 不能同时使用"
+  exit 2
+fi
+
+[[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { ui_err "--keep 必须是正整数"; exit 2; }
+if [[ -z "$TARGET" && -t 0 ]]; then
+  read -r -p "外置磁盘或远端挂载目录: " TARGET
+fi
+[[ -n "$TARGET" ]] || { ui_err "未配置异盘备份目标"; usage >&2; exit 2; }
+[[ -d "$TARGET" ]] || { ui_err "备份目标不存在或未挂载: %s" "$TARGET"; exit 1; }
+
+for cmd in findmnt lsblk tar zstd sha256sum realpath du df grep find readlink ln mv sync mktemp; do
+  command -v "$cmd" >/dev/null 2>&1 || { ui_err "缺少依赖: %s" "$cmd"; exit 127; }
+done
+
+backing_disk() {
+  local path="$1" source dev disk
+  source="$(findmnt -no SOURCE -T "$path" 2>/dev/null || true)"
+  [[ -n "$source" ]] || return 1
+  dev="${source%%\[*}"
+  if [[ "$dev" == /dev/* ]]; then
+    disk="$(lsblk -srno NAME,TYPE "$dev" 2>/dev/null | awk '$2 == "disk" {print $1; exit}')"
+    [[ -n "$disk" ]] && printf '/dev/%s\n' "$disk" || printf '%s\n' "$dev"
+  else
+    printf 'remote:%s\n' "$source"
+  fi
+}
+
+if ! ROOT_DISK="$(backing_disk /)"; then
+  ui_err "无法识别系统根目录所在磁盘。"
+  exit 1
+fi
+if ! TARGET_DISK="$(backing_disk "$TARGET")"; then
+  ui_err "无法识别备份目标所在磁盘或远端文件系统。"
+  exit 1
+fi
+TARGET_FSTYPE="$(findmnt -no FSTYPE -T "$TARGET" 2>/dev/null || true)"
+[[ -n "$TARGET_FSTYPE" ]] || { ui_err "无法识别备份目标文件系统。"; exit 1; }
+TARGET_REAL="$(realpath -m "$TARGET")"
+HOME_REAL="$(realpath "$HOME")"
+if [[ "$TARGET_REAL" == "$HOME_REAL" || "$TARGET_REAL" == "$HOME_REAL/"* ]]; then
+  ui_err "备份目标不能位于 HOME 内部，否则归档会递归包含自身。"
+  exit 1
+fi
+case "$TARGET_FSTYPE" in
+  tmpfs|ramfs|overlay)
+    ui_err "目标文件系统 %s 不具备持久备份语义，已拒绝。" "$TARGET_FSTYPE"
+    exit 1
+    ;;
+esac
+if [[ "$ROOT_DISK" == "$TARGET_DISK" ]]; then
+  ui_err "目标与系统位于同一物理磁盘（%s），拒绝作为异盘备份。" "$ROOT_DISK"
+  exit 1
+fi
+
+if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
+  ui_banner "异盘目标校验" "offsite-backup · 只读预检"
+  ui_panel_open "目标"
+  ui_panel_kv "系统磁盘" "$ROOT_DISK"
+  ui_panel_kv "目标磁盘" "$TARGET_DISK"
+  ui_panel_kv "文件系统" "$TARGET_FSTYPE"
+  ui_panel_kv "目录" "$TARGET_REAL"
+  ui_panel_close
+  ui_ok "异盘备份目标有效且当前已挂载。"
+  exit 0
+fi
+
+if command -v hostname >/dev/null 2>&1; then
+  HOST="$(hostname -s 2>/dev/null || hostname)"
+elif [[ -r /proc/sys/kernel/hostname ]]; then
+  HOST="$(< /proc/sys/kernel/hostname)"
+else
+  HOST="unknown-host"
+fi
+DEST="$TARGET/maintenance-backup-$HOST"
+MARKER="$DEST/.offsite-backup-owned"
+
+owned_destination() {
+  [[ -f "$MARKER" ]] && grep -Eqx 'offsite-backup v(1|2)' "$MARKER" 2>/dev/null
+}
+
+release_home_snapshot() {
+  local snapshot_id="${HOME_SNAPSHOT_ID:-}"
+  [[ -n "$snapshot_id" ]] || return 0
+  if snapper -c "$HOME_SNAPSHOT_CONFIG" delete "$snapshot_id" >/dev/null 2>&1; then
+    HOME_SNAPSHOT_ID=""
+    HOME_SNAPSHOT_SOURCE=""
+    return 0
+  fi
+  return 1
+}
+
+remove_stale_home_snapshots() {
+  local rows number userdata deleted=0 failed=0
+  rows="$(snapper --csvout --separator "$SNAP_SEP" -c "$HOME_SNAPSHOT_CONFIG" \
+    list --columns number,userdata 2>&1)" \
+    || { ui_err "无法检查遗留的异盘备份临时快照"; return 1; }
+  while IFS="$SNAP_SEP" read -r number userdata; do
+    [[ "$number" =~ ^[1-9][0-9]*$ ]] || continue
+    [[ ",$userdata," == *,maintenance_temporary=offsite-backup,* ]] || continue
+    if snapper -c "$HOME_SNAPSHOT_CONFIG" delete "$number" >/dev/null 2>&1; then
+      deleted=$((deleted + 1))
+    else
+      ui_warn "无法删除上次中断遗留的 HOME 临时快照: [%s] #%s" \
+        "$HOME_SNAPSHOT_CONFIG" "$number"
+      failed=1
+    fi
+  done <<< "$rows"
+  [[ "$deleted" -eq 0 ]] \
+    || ui_info "已回收 %s 个上次中断遗留的 HOME 临时快照。" "$deleted"
+  [[ "$failed" -eq 0 ]]
+}
+
+create_consistent_home_source() {
+  local home_mount home_fstype home_mount_real config_rows conf subvolume subvolume_real
+  local snapshot_root relative snapshot_id snapshot_stderr snapshot_warning create_rc=0
+  command -v snapper >/dev/null 2>&1 \
+    || { ui_err "缺少 snapper，无法创建一致时间点的 HOME 备份"; return 127; }
+  home_mount="$(findmnt -n -o TARGET -T "$HOME" 2>/dev/null)" \
+    || { ui_err "无法确定 HOME 所在挂载点"; return 1; }
+  home_fstype="$(findmnt -n -o FSTYPE -T "$HOME" 2>/dev/null)" \
+    || { ui_err "无法确定 HOME 文件系统类型"; return 1; }
+  [[ "$home_fstype" == "btrfs" ]] \
+    || { ui_err "HOME 位于 %s，无法创建一致的 Btrfs 快照备份" "$home_fstype"; return 1; }
+
+  config_rows="$(snapper --csvout --separator "$SNAP_SEP" list-configs 2>&1)" \
+    || { ui_err "无法查询 Snapper 配置，拒绝从活动 HOME 直接归档"; return 1; }
+  home_mount_real="$(realpath -m "$home_mount")"
+  while IFS="$SNAP_SEP" read -r conf subvolume; do
+    [[ "$conf" == "config" || -z "$conf" || -z "$subvolume" ]] && continue
+    subvolume_real="$(realpath -m "$subvolume")"
+    if [[ "$subvolume_real" == "$home_mount_real" ]]; then
+      HOME_SNAPSHOT_CONFIG="$conf"
+      break
+    fi
+  done <<< "$config_rows"
+  [[ -n "$HOME_SNAPSHOT_CONFIG" ]] \
+    || { ui_err "没有找到覆盖 HOME 挂载点 %s 的 Snapper 配置" "$home_mount_real"; return 1; }
+
+  remove_stale_home_snapshots \
+    || { ui_err "遗留临时快照未清理完成，拒绝继续创建新备份"; return 1; }
+
+  snapshot_stderr="$(mktemp "$STAGING/.snapper-create.XXXXXX")" \
+    || { ui_err "无法创建 Snapper 输出暂存文件"; return 1; }
+  snapshot_id="$(snapper -c "$HOME_SNAPSHOT_CONFIG" create --print-number \
+    --read-only --description "temporary-offsite-backup" \
+    --userdata "maintenance_temporary=offsite-backup" 2>"$snapshot_stderr")" \
+    || create_rc=$?
+  snapshot_warning="$(< "$snapshot_stderr")"
+  rm -f -- "$snapshot_stderr"
+  if [[ "$create_rc" -ne 0 ]]; then
+    ui_err "无法创建 HOME 临时快照（退出码 %s）" "$create_rc"
+    [[ -z "$snapshot_warning" ]] || printf '%s\n' "$snapshot_warning" >&2
+    return 1
+  fi
+  if [[ -n "$snapshot_warning" ]]; then
+    ui_warn "Snapper 创建临时快照时给出提示："
+    printf '%s\n' "$snapshot_warning" >&2
+  fi
+  [[ "$snapshot_id" =~ ^[1-9][0-9]*$ ]] \
+    || { ui_err "Snapper 返回了无效的临时快照 ID: %s" "$snapshot_id"; return 1; }
+  HOME_SNAPSHOT_ID="$snapshot_id"
+  snapshot_root="$home_mount_real/.snapshots/$snapshot_id/snapshot"
+  if [[ "$HOME_REAL" == "$home_mount_real" ]]; then
+    relative=""
+  elif [[ "$HOME_REAL" == "$home_mount_real/"* ]]; then
+    relative="${HOME_REAL#"$home_mount_real/"}"
+  else
+    ui_err "HOME 不在检测到的挂载点内: %s" "$home_mount_real"
+    return 1
+  fi
+  HOME_SNAPSHOT_SOURCE="$snapshot_root${relative:+/$relative}"
+  [[ -d "$HOME_SNAPSHOT_SOURCE" && -r "$HOME_SNAPSHOT_SOURCE" ]] \
+    || { ui_err "临时 HOME 快照不可读取: %s" "$HOME_SNAPSHOT_SOURCE"; return 1; }
+  ui_info "已创建一致时间点的 HOME 快照: [%s] #%s" \
+    "$HOME_SNAPSHOT_CONFIG" "$HOME_SNAPSHOT_ID"
+}
+
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+  [[ -d "$DEST" ]] || { ui_err "备份目录不存在: %s" "$DEST"; exit 1; }
+  owned_destination || { ui_err "目标目录不是本工具创建的目录: %s" "$DEST"; exit 1; }
+else
+  ui_maintenance_lock_acquire "异盘备份" || exit $?
+  # 目标挂载点存在不代表当前用户能在其中建立本机的备份目录。这里必须
+  # 主动处理 mkdir 失败；否则 set -e 会把内核的 Permission denied 直接
+  # 泄漏给用户，既没有说明失败阶段，也无法保持统一的错误展示。
+  if ! mkdir -p "$DEST" 2>/dev/null; then
+    ui_err "无法创建备份目录（请检查目标是否可写）: %s" "$DEST"
+    exit 1
+  fi
+  if [[ -n "$(find "$DEST" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]] \
+      && ! owned_destination; then
+    ui_err "目标目录非空且不是本工具创建的目录: %s" "$DEST"
+    exit 1
+  fi
+  marker_tmp="$DEST/.offsite-backup-owned.$$.tmp"
+  if ! { printf 'offsite-backup v2\n' > "$marker_tmp"; } 2>/dev/null; then
+    ui_err "无法写入备份目标标记: %s" "$MARKER"
+    exit 1
+  fi
+  if ! mv -Tf -- "$marker_tmp" "$MARKER"; then
+    rm -f -- "$marker_tmp"
+    ui_err "无法写入备份目标标记: %s" "$MARKER"
+    exit 1
+  fi
+fi
+
+verify_set() {
+  local set_dir="$1" checksum_line
+  [[ -d "$set_dir" ]] || { ui_err "备份集合不存在: %s" "$set_dir"; return 1; }
+  [[ -s "$set_dir/home.tar.zst" && -s "$set_dir/home.tar.zst.sha256" ]] \
+    || { ui_err "备份集合缺少 HOME 归档或校验文件"; return 1; }
+  checksum_line="$(< "$set_dir/home.tar.zst.sha256")"
+  if ! awk 'NF == 2 && length($1) == 64 && $1 ~ /^[0-9A-Fa-f]+$/ && $2 == "home.tar.zst" {ok++} END {exit !(NR == 1 && ok == 1)}' \
+      <<< "$checksum_line"; then
+    ui_err "HOME 校验文件格式无效或引用了其它路径"
+    return 1
+  fi
+  (cd "$set_dir" && sha256sum -c home.tar.zst.sha256)
+  tar --zstd -tf "$set_dir/home.tar.zst" >/dev/null
+  "$SCRIPT_DIR/migration-pack" --check "$set_dir/migration"
+}
+
+backup_set_is_newer() {
+  local candidate="$1" current="$2" candidate_stamp current_stamp candidate_pid current_pid
+  candidate_pid="${candidate##*-}"
+  current_pid="${current##*-}"
+  candidate_stamp="${candidate%-*}"
+  current_stamp="${current%-*}"
+  [[ "$candidate_stamp" > "$current_stamp" ]] && return 0
+  [[ "$candidate_stamp" == "$current_stamp" ]] \
+    && ((10#$candidate_pid > 10#$current_pid))
+}
+
+latest_set() {
+  local latest="" latest_name="" names="" name
+  if [[ -L "$DEST/latest" ]]; then
+    latest_name="$(readlink "$DEST/latest")"
+    if [[ ! "$latest_name" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]]; then
+      ui_err "latest 链接目标非法: %s" "$latest_name"
+      return 1
+    fi
+    latest="$DEST/$latest_name"
+    [[ -d "$latest" ]] || { ui_err "latest 指向的备份集合不存在: %s" "$latest"; return 1; }
+  elif [[ -e "$DEST/latest" ]]; then
+    ui_err "latest 不是符号链接: %s" "$DEST/latest"
+    return 1
+  else
+    names="$(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name 'set-*' -printf '%f\n')" \
+      || { ui_err "无法枚举备份集合"; return 1; }
+    while IFS= read -r name; do
+      [[ "$name" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || continue
+      if [[ -z "$latest_name" ]] || backup_set_is_newer "$name" "$latest_name"; then
+        latest_name="$name"
+      fi
+    done <<< "$names"
+    [[ -z "$latest_name" ]] || latest="$DEST/$latest_name"
+  fi
+  [[ -n "$latest" ]] && printf '%s\n' "$latest"
+}
+
+prune_owned_sets() {
+  local names name marker old_set i j newest swap failed=0
+  local -a owned_sets=()
+  names="$(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name 'set-*' -printf '%f\n')" \
+    || { ui_warn "无法枚举旧备份集合，已跳过自动轮换"; return 1; }
+  while IFS= read -r name; do
+    [[ "$name" =~ ^set-[0-9]{8}-[0-9]{6}-[0-9]+$ ]] || continue
+    marker="$DEST/$name/$SET_MARKER_NAME"
+    [[ -f "$marker" && ! -L "$marker" ]] || continue
+    grep -Fxq "$SET_MARKER_TEXT" "$marker" 2>/dev/null || continue
+    owned_sets+=("$name")
+  done <<< "$names"
+
+  # 集合名以时间戳开头，可直接按名称从新到旧做选择排序。
+  for ((i = 0; i < ${#owned_sets[@]}; i++)); do
+    newest=$i
+    for ((j = i + 1; j < ${#owned_sets[@]}; j++)); do
+      if backup_set_is_newer "${owned_sets[$j]}" "${owned_sets[$newest]}"; then
+        newest=$j
+      fi
+    done
+    if ((newest != i)); then
+      swap="${owned_sets[$i]}"
+      owned_sets[i]="${owned_sets[newest]}"
+      owned_sets[newest]="$swap"
+    fi
+  done
+  for ((i = KEEP; i < ${#owned_sets[@]}; i++)); do
+    old_set="$DEST/${owned_sets[i]}"
+    if ! rm -rf -- "${old_set:?}"; then
+      ui_warn "无法删除超出保留数量的旧备份: %s" "$old_set"
+      failed=1
+    fi
+  done
+  [[ "$failed" -eq 0 ]]
+}
+
+verify_latest() {
+  local set_dir
+  set_dir="$(latest_set)" || return 1
+  [[ -n "$set_dir" ]] || { ui_warn "目标中还没有完整备份集合"; return 1; }
+  verify_set "$set_dir"
+}
+
+ui_banner "异盘备份" "offsite-backup · HOME / 配置 / 包清单"
+ui_panel_open "这项功能做什么"
+ui_panel_line "异盘指另一块物理磁盘或远端挂载；同一 NVMe 的其它分区不算异盘。"
+ui_panel_line "每份集合包含 HOME 归档和迁移资料，并排除可重建缓存、回收站及旧迁移目录。"
+ui_panel_line "新集合完整校验后才更新 latest；失败时上一份可用备份保持不变。"
+ui_panel_close
+ui_panel_open "目标校验"
+ui_panel_kv "系统磁盘" "$ROOT_DISK"
+ui_panel_kv "备份目标" "$TARGET_DISK"
+ui_panel_kv "目录" "$DEST"
+ui_panel_close
+
+if [[ "$CHECK_ONLY" -eq 1 ]]; then
+  verify_latest
+  exit $?
+fi
+
+STAMP="$(date '+%Y%m%d-%H%M%S')"
+SET_NAME="set-$STAMP-$$"
+STAGING="$DEST/.$SET_NAME.tmp"
+PUBLISHED="$DEST/$SET_NAME"
+ARCHIVE="$STAGING/home.tar.zst"
+LATEST_TMP="$DEST/.latest.$$.tmp"
+COMMITTED=0
+mkdir -p "$STAGING"
+cleanup_staging() {
+  if ! release_home_snapshot; then
+    ui_warn "未能删除临时 HOME 快照: [%s] #%s" \
+      "${HOME_SNAPSHOT_CONFIG:-unknown}" "${HOME_SNAPSHOT_ID:-unknown}"
+  fi
+  if [[ -n "${STAGING:-}" && -d "${STAGING:-}" ]]; then
+    rm -rf -- "$STAGING" || ui_warn "未能删除临时备份目录: %s" "$STAGING"
+  fi
+  [[ ! -e "${LATEST_TMP:-}" && ! -L "${LATEST_TMP:-}" ]] \
+    || rm -f -- "$LATEST_TMP" \
+    || ui_warn "未能删除临时 latest 链接: %s" "$LATEST_TMP"
+  if [[ "${COMMITTED:-0}" -eq 0 && -n "${PUBLISHED:-}" && -d "${PUBLISHED:-}" ]]; then
+    rm -rf -- "$PUBLISHED" || ui_warn "未能回收未提交的备份集合: %s" "$PUBLISHED"
+  fi
+}
+trap cleanup_staging EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 131' QUIT
+
+create_consistent_home_source
+
+ui_working "正在估算 HOME 备份大小和目标可用空间"
+HOME_KIB="$(du -sk \
+  --exclude='.cache' \
+  --exclude='.local/share/Trash' \
+  --exclude='migration' \
+  --exclude='migration-backup' \
+  "$HOME_SNAPSHOT_SOURCE" 2>/dev/null | awk '{print $1}')"
+TARGET_FREE_KIB="$(df -Pk "$TARGET" | awk 'NR == 2 {print $4}')"
+if [[ ! "$HOME_KIB" =~ ^[0-9]+$ || ! "$TARGET_FREE_KIB" =~ ^[0-9]+$ ]]; then
+  ui_err "无法计算 HOME 大小或目标剩余空间。"
+  exit 1
+fi
+REQUIRED_KIB=$((HOME_KIB + HOME_KIB / 10))
+if (( TARGET_FREE_KIB < REQUIRED_KIB )); then
+  ui_err "目标空间不足：预计至少需要 %s GiB，当前可用 %s GiB。" \
+    "$((REQUIRED_KIB / 1048576))" "$((TARGET_FREE_KIB / 1048576))"
+  exit 1
+fi
+
+ui_working "正在生成迁移包元数据"
+"$SCRIPT_DIR/migration-pack" --pack "$STAGING/migration" --home-root "$HOME_SNAPSHOT_SOURCE" --metadata-only
+
+ui_working "正在归档 HOME 数据（排除可重建缓存和回收站）"
+tar --zstd -cf "$ARCHIVE" \
+  --one-file-system \
+  --exclude='./.cache' \
+  --exclude='./.local/share/Trash' \
+  --exclude='./migration' \
+  --exclude='./migration-backup' \
+  -C "$HOME_SNAPSHOT_SOURCE" .
+if ! release_home_snapshot; then
+  ui_warn "备份已归档，但临时 HOME 快照删除失败: [%s] #%s" \
+    "$HOME_SNAPSHOT_CONFIG" "$HOME_SNAPSHOT_ID"
+  SNAPSHOT_CLEANUP_FAILED=1
+fi
+printf '%s\n' "$SET_MARKER_TEXT" > "$STAGING/$SET_MARKER_NAME"
+ui_working "正在计算异盘 HOME 归档的 SHA256SUMS"
+(cd "$STAGING" && sha256sum home.tar.zst > home.tar.zst.sha256)
+ui_working "正在校验暂存备份集合"
+verify_set "$STAGING"
+
+mv -- "$STAGING" "$PUBLISHED"
+STAGING=""
+sync -f "$PUBLISHED" 2>/dev/null || sync
+verify_set "$PUBLISHED"
+ln -s -- "$SET_NAME" "$LATEST_TMP"
+# 捕获型信号不能落在“latest 已替换、提交状态仍为 0”的两条命令之间。
+trap '' INT TERM HUP QUIT
+latest_publish_rc=0
+mv -Tf -- "$LATEST_TMP" "$DEST/latest" || latest_publish_rc=$?
+if [[ "$latest_publish_rc" -eq 0 ]]; then
+  COMMITTED=1
+fi
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 131' QUIT
+if [[ "$latest_publish_rc" -ne 0 ]]; then
+  ui_err "无法原子更新 latest 链接"
+  exit "$latest_publish_rc"
+fi
+
+prune_owned_sets || RETENTION_FAILED=1
+
+sync -f "$DEST" 2>/dev/null || sync
+ui_ok "异盘备份完成: %s" "$DEST"
+if [[ "$SNAPSHOT_CLEANUP_FAILED" -ne 0 ]]; then
+  ui_warn "备份集合有效，但临时快照清理失败；请检查 Snapper。"
+  exit 1
+fi
+if [[ "$RETENTION_FAILED" -ne 0 ]]; then
+  ui_warn "新备份集合有效，但旧集合轮换未完成；请检查目标磁盘。"
+  exit 1
+fi
+trap - EXIT INT TERM HUP QUIT

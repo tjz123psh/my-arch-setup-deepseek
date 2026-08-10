@@ -1,0 +1,209 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SELF")"
+# shellcheck source=lib/ui.sh
+. "$SCRIPT_DIR/lib/ui.sh"
+
+STRICT=0
+GRUB_STATUS="unknown"
+QUERY_FAILED=0
+REBOOT_ADVISED=0
+SUDO_READ=()
+
+prepare_read_access() {
+  [[ "$EUID" -eq 0 ]] && return 0
+  if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
+    SUDO_READ=(sudo -n)
+    return 0
+  fi
+  [[ -t 0 && -t 1 ]] || return 0
+  command -v sudo >/dev/null 2>&1 \
+    || { ui_err "完整更新后检查需要 sudo，但当前没有 sudo 命令"; return 1; }
+  ui_info "将请求管理员密码，仅用于读取 pacnew 和 GRUB 状态，不会修改系统。"
+  sudo -v || { ui_err "管理员权限验证失败，已取消更新后检查"; return 1; }
+  SUDO_READ=(sudo -n)
+}
+
+grub_file_state() {
+  local path="$1"
+  if ((${#SUDO_READ[@]} > 0)); then
+    if "${SUDO_READ[@]}" test -s "$path" 2>/dev/null; then
+      return 0
+    fi
+    "${SUDO_READ[@]}" true >/dev/null 2>&1 || return 2
+    return 1
+  fi
+  [[ -s "$path" ]] && return 0
+  if [[ "$EUID" -ne 0 && ! -x "$(dirname "$path")" ]]; then
+    return 2
+  fi
+  return 1
+}
+
+usage() {
+  cat <<'EOF'
+用法: post-update-check [--strict] [--grub-status STATUS]
+
+  --strict              发现警告、缺失或查询失败时返回 1
+  --grub-status STATUS  success、failed、skipped 或 unknown
+
+只读检查 pacnew、failed units、运行内核、重启建议和 GRUB 配置。
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --strict) STRICT=1; shift ;;
+    --grub-status)
+      [[ $# -ge 2 ]] || { usage >&2; exit 2; }
+      GRUB_STATUS="$2"
+      shift 2
+      ;;
+    -h|--help) usage; exit 0 ;;
+    *) ui_err "未知参数: %s" "$1"; usage >&2; exit 2 ;;
+  esac
+done
+case "$GRUB_STATUS" in
+  success|failed|skipped|unknown) ;;
+  *) ui_err "--grub-status 必须是 success、failed、skipped 或 unknown"; exit 2 ;;
+esac
+
+ui_tally_reset
+ui_banner "更新后检查" "post-update-check · pacnew / 服务 / 内核 / GRUB"
+prepare_read_access || exit $?
+ui_panel_open "这项检查做什么"
+ui_panel_line "系统升级后只读复核配置残留、失败服务、运行内核和 GRUB 结果。"
+ui_panel_line "不会自动合并 pacnew、不会重启，也不会修改服务或引导配置。"
+ui_panel_line "出现注意项时先看具体内容；内核已更新但仍运行旧版本时再安排重启。"
+ui_panel_close
+
+ui_panel_open "pacnew / pacsave"
+if ! command -v pacdiff >/dev/null 2>&1; then
+  ui_panel_stat miss "缺少 pacdiff（pacman-contrib），无法检查配置残留"
+elif PACDIFF_OUTPUT="$("${SUDO_READ[@]}" pacdiff --output 2>&1)"; then
+  if [[ -z "$PACDIFF_OUTPUT" ]]; then
+    ui_panel_stat ok "未发现需要处理的 .pacnew / .pacsave"
+  else
+    ui_panel_stat warn "发现需要人工合并的配置文件"
+    printf '%s\n' "$PACDIFF_OUTPUT" | ui_panel_raw
+  fi
+else
+  PACDIFF_RC=$?
+  ui_panel_stat err "pacdiff 查询失败（退出码 $PACDIFF_RC）"
+  [[ -z "$PACDIFF_OUTPUT" ]] || printf '%s\n' "$PACDIFF_OUTPUT" | ui_panel_raw
+  QUERY_FAILED=1
+fi
+if ! command -v pacdiff >/dev/null 2>&1; then
+  QUERY_FAILED=1
+fi
+ui_panel_close
+
+check_failed_units() {
+  local scope="$1" label="$2" output="" status=0
+  local -a command=(systemctl --failed --no-legend --plain --no-pager)
+  [[ "$scope" == "user" ]] && command=(systemctl --user --failed --no-legend --plain --no-pager)
+  output="$("${command[@]}" 2>&1)" || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    ui_panel_stat err "$label 查询失败（退出码 $status）"
+    [[ -z "$output" ]] || printf '%s\n' "$output" | ui_panel_raw
+    QUERY_FAILED=1
+  elif [[ -z "$output" ]]; then
+    ui_panel_stat ok "$label 没有 failed unit"
+  else
+    ui_panel_stat warn "$label 存在 failed unit"
+    printf '%s\n' "$output" | ui_panel_raw
+  fi
+}
+
+ui_panel_open "systemd 服务"
+if command -v systemctl >/dev/null 2>&1; then
+  check_failed_units system "系统级"
+  check_failed_units user "用户级"
+else
+  ui_panel_stat miss "缺少 systemctl，无法检查 failed unit"
+  QUERY_FAILED=1
+fi
+ui_panel_close
+
+ui_panel_open "内核与重启"
+RUNNING_KERNEL="$(uname -r 2>/dev/null || true)"
+if [[ -z "$RUNNING_KERNEL" ]]; then
+  ui_panel_stat err "无法读取当前运行内核"
+  QUERY_FAILED=1
+else
+  ui_panel_kv "运行内核" "$RUNNING_KERNEL"
+MODULES_DIR="${POST_UPDATE_MODULES_DIR:-/usr/lib/modules}"
+if [[ -d "$MODULES_DIR/$RUNNING_KERNEL" ]]; then
+    ui_panel_stat ok "运行内核仍存在对应的已安装模块目录"
+  else
+    ui_panel_stat warn "运行内核已不在 $MODULES_DIR，内核已更新，建议重启"
+    REBOOT_ADVISED=1
+  fi
+fi
+if [[ -d "$MODULES_DIR" ]]; then
+  MODULE_DIRS="$(find "$MODULES_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' 2>&1 | sort -V)" \
+    || { ui_panel_stat err "已安装内核模块目录查询失败"; QUERY_FAILED=1; MODULE_DIRS=""; }
+  [[ -z "$MODULE_DIRS" ]] || ui_panel_kv "已安装模块" "$(paste -sd' ' <<< "$MODULE_DIRS")"
+else
+  ui_panel_stat err "$MODULES_DIR 不存在"
+  QUERY_FAILED=1
+fi
+if [[ -e /run/reboot-required ]]; then
+  ui_panel_stat warn "检测到 /run/reboot-required，建议重启"
+  REBOOT_ADVISED=1
+fi
+if [[ "$REBOOT_ADVISED" -eq 1 ]]; then
+  ui_panel_stat warn "本次更新后建议重启，再运行一次系统检查"
+else
+  ui_panel_stat ok "没有检测到明确的内核重启需求"
+fi
+ui_panel_close
+
+ui_panel_open "GRUB"
+case "$GRUB_STATUS" in
+  success) ui_panel_stat ok "sysup 报告 grub-mkconfig 成功" ;;
+  failed)
+    ui_panel_stat err "sysup 报告 grub-mkconfig 失败"
+    QUERY_FAILED=1
+    ;;
+  skipped) ui_panel_stat warn "sysup 未运行 grub-mkconfig" ;;
+  unknown) ui_panel_stat info "没有收到本次 grub-mkconfig 结果" ;;
+esac
+
+GRUB_CFG="${POST_UPDATE_GRUB_CFG:-/boot/grub/grub.cfg}"
+GRUB_FILE_STATE=0
+grub_file_state "$GRUB_CFG" || GRUB_FILE_STATE=$?
+if [[ "$GRUB_FILE_STATE" -eq 0 ]]; then
+  ui_panel_stat ok "$GRUB_CFG 存在且非空"
+  if command -v grub-script-check >/dev/null 2>&1; then
+    GRUB_CHECK=""
+    GRUB_CHECK_RC=0
+    GRUB_CHECK="$("${SUDO_READ[@]}" grub-script-check "$GRUB_CFG" 2>&1)" || GRUB_CHECK_RC=$?
+    if [[ "$GRUB_CHECK_RC" -eq 0 ]]; then
+      ui_panel_stat ok "grub-script-check 校验通过"
+    else
+      ui_panel_stat err "grub-script-check 校验失败（退出码 $GRUB_CHECK_RC）"
+      [[ -z "$GRUB_CHECK" ]] || printf '%s\n' "$GRUB_CHECK" | ui_panel_raw
+      QUERY_FAILED=1
+    fi
+  else
+    ui_panel_stat info "未安装 grub-script-check，已完成非空检查"
+  fi
+elif [[ "$GRUB_FILE_STATE" -eq 2 ]]; then
+  ui_panel_stat err "$GRUB_CFG 无法读取，GRUB 状态未完成验证"
+  QUERY_FAILED=1
+elif [[ "$GRUB_STATUS" == "skipped" || "$GRUB_STATUS" == "unknown" ]]; then
+  ui_panel_stat warn "$GRUB_CFG 不存在或为空"
+else
+  ui_panel_stat err "$GRUB_CFG 不存在、为空或无法验证"
+  QUERY_FAILED=1
+fi
+ui_panel_close
+
+ui_tally_summary
+if [[ "$QUERY_FAILED" -ne 0 ]]; then
+  exit 1
+fi
+ui_tally_status "$STRICT"

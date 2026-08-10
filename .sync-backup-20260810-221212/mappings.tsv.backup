@@ -127,6 +127,7 @@ physical-v1	wm-hyprland	config/home/scripts/desktop/hypr-keys	scripts/desktop/hy
 physical-v1	wm-hyprland	config/home/scripts/desktop/hypr-magnifier	scripts/desktop/hypr-magnifier	755
 physical-v1	wm-niri	config/home/scripts/desktop/niri-keys	scripts/desktop/niri-keys	755
 physical-v1	wm-niri	config/home/scripts/desktop/niri-quit	scripts/desktop/niri-quit	755
+physical-v1	personal-scripts	config/home/scripts/README.md	scripts/README.md	744
 physical-v1	personal-scripts	config/home/scripts/maintenance/.gitignore	scripts/maintenance/.gitignore	644
 physical-v1	personal-scripts	config/home/scripts/maintenance/HANDOFF-ui-refactor.md	scripts/maintenance/HANDOFF-ui-refactor.md	644
 physical-v1	personal-scripts	config/home/scripts/maintenance/README.md	scripts/maintenance/README.md	644
@@ -263,15 +264,3 @@ physical-v1	development-toolchain	config/home/.config/opencode/dcp.jsonc	.config
 physical-v1	development-toolchain	config/home/.config/opencode/deepseek-guard.json	.config/opencode/deepseek-guard.json	644
 physical-v1	development-toolchain	config/home/.config/opencode/package.json	.config/opencode/package.json	644
 physical-v1	personal-user-services	config/home/.local/bin/shorin-screenrec-menu	.local/bin/shorin-screenrec-menu	755
-physical-v1	maintenance	config/home/scripts/desktop/hypr-quit	scripts/desktop/hypr-quit	755
-physical-v1	maintenance	config/home/scripts/desktop/hypr-vmtest-gen	scripts/desktop/hypr-vmtest-gen	755
-physical-v1	maintenance	config/home/scripts/desktop/hypr-vmtest-toggle	scripts/desktop/hypr-vmtest-toggle	755
-physical-v1	maintenance	config/home/scripts/desktop/README.md	scripts/desktop/README.md	644
-physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/hugepages-toggle	scripts/kvm虚拟机内存大页/hugepages-toggle	755
-physical-v1	maintenance	config/home/scripts/kvm虚拟机内存大页/README.md	scripts/kvm虚拟机内存大页/README.md	644
-physical-v1	maintenance	config/home/scripts/media/README.md	scripts/media/README.md	644
-physical-v1	maintenance	config/home/scripts/package/README.md	scripts/package/README.md	644
-physical-v1	maintenance	config/home/scripts/share/README.md	scripts/share/README.md	644
-physical-v1	build-foundation	config/home/md/项目/FlClash自定义规则配置.md	md/项目/FlClash自定义规则配置.md	644
-physical-v1	developer-editor	config/home/md/linux/通知没声音-DMS修复记录.md	md/linux/通知没声音-DMS修复记录.md	644
-physical-v1	developer-editor	config/home/md/linux/物理机离线安装指南.md	md/linux/物理机离线安装指南.md	644

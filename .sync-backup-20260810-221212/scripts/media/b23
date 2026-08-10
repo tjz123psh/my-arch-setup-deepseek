@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: b23 [URL]
+
+从剪贴板读取 B 站 / b23.tv 链接并交给 mpv 播放；也可以直接传入链接。
+
+Examples:
+  b23
+  b23 'https://www.bilibili.com/video/BV...'
+  b23 'https://b23.tv/...'
+EOF
+}
+
+notify() {
+  local msg="$1"
+
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "b23" "$msg"
+  else
+    printf 'b23: %s\n' "$msg" >&2
+  fi
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
+missing=()
+for cmd in yt-dlp mpv; do
+  command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+done
+if [[ $# -eq 0 ]]; then
+  command -v wl-paste >/dev/null 2>&1 || missing+=("wl-paste")
+fi
+
+if (( ${#missing[@]} > 0 )); then
+  notify "缺少依赖: ${missing[*]}"
+  exit 127
+fi
+
+extract_url() {
+  local input="$1"
+
+  printf '%s\n' "$input" |
+    tr '[:space:]' '\n' |
+    awk '
+      {
+        gsub(/^[<("'\''[:space:]]+/, "")
+        gsub(/[>)"'\''[:space:][:punct:]]+$/, "")
+      }
+      /^https?:\/\/([^/]+\.)?(bilibili\.com|b23\.tv)(\/|$)/ { print; exit }
+      /^(www\.)?bilibili\.com\/(video|bangumi|medialist|space|watchlater)(\/|$)/ { print; exit }
+      /^space\.bilibili\.com\// { print; exit }
+      /^b23\.tv\// { print; exit }
+    '
+}
+
+sanitize_url() {
+  local input="$1"
+  local base="${input%%\?*}"
+  local query=""
+  local out sep param key
+
+  if [[ "$input" != *\?* ]]; then
+    printf '%s\n' "$input"
+    return
+  fi
+
+  query="${input#*\?}"
+
+  case "$base" in
+    *bilibili.com/video/*)
+      out="$base"
+      sep="?"
+      IFS='&' read -ra params <<< "$query"
+      for param in "${params[@]}"; do
+        key="${param%%=*}"
+        case "$key" in
+          p|page|t|start_progress|aid|bvid|cid)
+            out+="${sep}${param}"
+            sep="&"
+            ;;
+        esac
+      done
+      printf '%s\n' "$out"
+      ;;
+    *)
+      printf '%s\n' "$base"
+      ;;
+  esac
+}
+
+if [[ $# -gt 0 ]]; then
+  raw="$*"
+else
+  raw="$(wl-paste --no-newline 2>/dev/null || wl-paste 2>/dev/null || true)"
+fi
+
+url="$(extract_url "$raw")"
+if [[ -z "$url" ]]; then
+  notify "未找到 B 站可播放链接"
+  exit 1
+fi
+
+[[ "$url" =~ ^https?:// ]] || url="https://$url"
+url="$(sanitize_url "$url")"
+
+browser_cookie_source="${B23_COOKIES_FROM_BROWSER:-chrome}"
+playlist_limit=110
+ytdl_format="bestvideo[height<=1080][vcodec!=none]+bestaudio[acodec!=none]/best[height<=1080]/best"
+# 必须用 cookies-from-browser（流式），写 cookies=文件会丢失 session cookie 达不到高清
+ytdl_options="cookies-from-browser=$browser_cookie_source,impersonate=Chrome-131,format=$ytdl_format"
+
+play_with_mpv() {
+  mpv \
+    --profile=b23 \
+    --ytdl-raw-options="$ytdl_options" \
+    --no-terminal \
+    "$1" &
+  mpv_pid=$!
+}
+
+play_playlist_with_mpv() {
+  local playlist_file="$1"
+
+  (
+    mpv \
+      --profile=b23 \
+      --ytdl-raw-options="$ytdl_options" \
+      --no-terminal \
+      --playlist="$playlist_file"
+    rm -f -- "$playlist_file"
+  ) &
+  mpv_pid=$!
+}
+
+# 如果 URL 已指定具体分 P（?p=N 或 ?page=N），跳过探测直接播放
+if [[ "$url" =~ [\?\&]p= ]] || [[ "$url" =~ [\?\&]page= ]]; then
+  has_single_part=true
+else
+  has_single_part=false
+  # 探测合集条目（B 站多 P / 系列 / 合集），--print url 比 -j 快一倍
+  entries_file="$(mktemp /tmp/b23-XXXXXX.txt)"
+  yt-dlp --flat-playlist --yes-playlist --playlist-end "$playlist_limit" \
+    --cookies-from-browser "$browser_cookie_source" \
+    --print url "$url" 2>/dev/null > "$entries_file" || true
+fi
+
+if $has_single_part; then
+  # 指定分 P / 单视频，直接播放
+  play_with_mpv "$url"
+  notify "播放中"
+else
+  read -r first_line < "$entries_file" || first_line=""
+  if [[ "$first_line" == "NA" ]]; then
+    # 单视频（probe 确认非合集），直接播放
+    play_with_mpv "$url"
+    rm -f "$entries_file"
+    notify "播放中"
+  elif [[ -s "$entries_file" ]]; then
+    # 合集，用 playlist 文件
+    entry_count=$(wc -l < "$entries_file" 2>/dev/null || echo 0)
+    play_playlist_with_mpv "$entries_file"
+    notify "播放中 ($entry_count 集)"
+  else
+    # 探测失败，尝试直接播放
+    play_with_mpv "$url"
+    rm -f "$entries_file"
+    notify "播放中"
+  fi
+fi
+
+disown "$mpv_pid" 2>/dev/null || true

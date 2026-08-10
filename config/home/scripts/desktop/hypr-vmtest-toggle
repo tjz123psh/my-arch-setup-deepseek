@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# hypr-vmtest-toggle — 切换 Hyprland 正常 / VM 测试配置
+#
+# 背景：Hyprland 的 `hyprctl reload` 只能重载当前配置路径（没有 niri 那种
+# load-config-file --path），所以用符号链接原子切换两份配置：
+#   hyprland.lua -> hyprland.lua.normal（正常）  或   hyprland.lua.vmtest（测试）
+# 切换后 hyprctl reload 按路径重读，即加载新目标（reload 每次按路径 luaL_loadfile，
+# 配置路径在启动时确定且不做 realpath，符号链接目标变更会被正确跟随）。
+#
+# 用法：
+#   hypr-vmtest-toggle enter   进入测试模式（host 快捷键全关，只剩 Win+Shift+D）
+#   hypr-vmtest-toggle leave   退出测试模式，恢复正常快捷键
+#
+# 由 hyprland.lua.normal / hyprland.lua.vmtest 里的 Win+Shift+D 绑定调用。
+
+set -euo pipefail
+
+CONFIG_DIR="$HOME/.config/hypr"
+LIVE="$CONFIG_DIR/hyprland.lua"
+NORMAL="$CONFIG_DIR/hyprland.lua.normal"
+VM="$CONFIG_DIR/hyprland.lua.vmtest"
+
+usage() {
+  cat <<'EOF'
+用法: hypr-vmtest-toggle [enter|leave]
+
+  enter   进入 VM 测试模式：host 快捷键全关（除 Win+Shift+D），按键透传 VM
+  leave   退出 VM 测试模式：恢复正常快捷键
+
+由 hyprland.lua(.normal) 与 hyprland.lua.vmtest 里的 Win+Shift+D 绑定调用。
+EOF
+}
+
+require_deps() {
+  local missing=()
+  local cmd
+
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+
+  if (( ${#missing[@]} > 0 )); then
+    printf '错误: 缺少依赖: %s\n' "${missing[*]}" >&2
+    exit 127
+  fi
+}
+
+switch_to() {
+  local mode="$1" target="$2"
+
+  if [[ ! -f "$target" ]]; then
+    notify-send "VM 测试模式" "找不到${mode}配置: $target（先运行 hypr-vmtest-gen？）" 2>/dev/null || true
+    return 1
+  fi
+
+  # -n：目标本身是符号链接时替换链接本身，不跟随；同目录相对链接，
+  # 配置目录整体迁移（dotfiles 仓库 / 换 HOME）也不失效。
+  ln -sfn "$(basename "$target")" "$LIVE"
+
+  if ! hyprctl reload >/dev/null 2>&1; then
+    notify-send "VM 测试模式" "hyprctl reload 失败，配置未切换。" 2>/dev/null || true
+    return 1
+  fi
+
+  return 0
+}
+
+case "${1:-}" in
+  enter)
+    require_deps hyprctl
+    if ! switch_to "测试" "$VM"; then
+      exit 1
+    fi
+    notify-send "VM 测试模式" "已进入测试模式：host 快捷键已禁用（Win+Shift+D 恢复）" 2>/dev/null || true
+    ;;
+  leave)
+    require_deps hyprctl
+    if ! switch_to "正常" "$NORMAL"; then
+      exit 1
+    fi
+    notify-send "VM 测试模式" "已退出测试模式，恢复正常快捷键" 2>/dev/null || true
+    ;;
+  -h | --help)
+    usage
+    exit 0
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

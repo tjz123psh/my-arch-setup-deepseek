@@ -1,0 +1,422 @@
+#!/bin/bash
+# shellcheck disable=SC2031,SC2059,SC2329
+# 描述： 更新镜像源
+# Description: Update mirrorlist
+# ==============================================================================
+# Arch Linux Mirror Updater (Optimized & Standardized)
+#
+# Description:
+#   Automates the Arch Linux mirrorlist update process with input validation,
+#   smart regional fallback, and a global safety net.
+#   Backups are stored in ~/.cache/mirror-update/.
+#
+# 功能说明:
+#   自动化更新 Arch Linux 镜像源。具备输入有效性校验、智能区域扩展重试、
+#   以及全球极速兜底机制。备份文件保存在 ~/.cache/mirror-update/。
+#   新增：Trap 安全机制，意外中断或失败会自动恢复原配置。
+# ==============================================================================
+
+# 严格模式：脚本有完善的 trap 恢复与完整性校验，所有会失败的命令均已
+# 显式判断，可安全启用 -e。
+set -euo pipefail
+
+UI_LIB="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lib/ui.sh"
+# shellcheck source=lib/ui.sh
+. "$UI_LIB"
+# shellcheck source=lib/config.sh
+. "$(dirname "$UI_LIB")/config.sh"
+maintenance_config_load || exit 2
+
+# 内部命令一致性（日期、grep、排序）强制 C locale
+export LC_ALL=C
+
+# --- 配置 ---
+readonly MIRRORLIST="${MIRRORLIST_PATH:-/etc/pacman.d/mirrorlist}"
+readonly BACKUP_DIR="${MIRROR_BACKUP_DIR:-$HOME/.cache/mirror-update}"
+BACKUP_PATH=""
+BACKUP_KEEP="$(maintenance_config_get MIRROR_BACKUP_KEEP 5 MIRROR_BACKUP_KEEP)"
+readonly BACKUP_KEEP
+[[ "$BACKUP_KEEP" =~ ^[1-9][0-9]*$ ]] || ui_die "MIRROR_BACKUP_KEEP 必须是正整数"
+
+# 全局状态变量，用于 trap 判断脚本是否完整且成功地执行完毕
+SCRIPT_SUCCESS=false
+
+# reflector 基础参数：https 协议、按速率排序、详细输出
+readonly BASE_ARGS=("--protocol" "https" "--sort" "rate" "--verbose")
+
+# --- 文案（纯中文）---
+MSG_DESC="具备校验与回退功能的智能镜像更新器。"
+MSG_USAGE_TITLE="用法:"
+MSG_OPT_TITLE="选项:"
+MSG_EX_TITLE="示例:"
+MSG_USAGE_H="显示帮助信息"
+MSG_USAGE_C="手动指定国家/地区代码 (跳过检测)"
+MSG_EX_AUTO="# 自动检测"
+MSG_EX_FORCE="# 强制指定日本"
+MSG_REQ_SUDO="请求管理员权限..."
+MSG_DETECTING="正在通过时区检测所在地区..."
+MSG_TRY_API="时区无法确认，尝试通过 IP 定位..."
+MSG_DETECTED="检测到地区:"
+MSG_CONFIRM="确认使用该地区吗?"
+MSG_MANUAL_SET="已选择手动模式。目标地区:"
+MSG_BACKUP_DONE="备份已保存至:"
+MSG_INPUT_MANUAL="请手动输入国家名称或代码:"
+MSG_CANCEL="操作已取消。"
+MSG_RESTORED="已从备份恢复原始镜像源。"
+MSG_FAIL_RETRY="更新失败。正在扩展到周边区域重试..."
+MSG_FAIL_GLOBAL='区域更新失败。切换到“全球极速”模式...'
+MSG_FAIL_FINAL="所有尝试均失败。"
+MSG_ATTEMPT_1="[尝试 1/3] 目标:"
+MSG_ATTEMPT_2="[尝试 2/3] 区域:"
+MSG_ATTEMPT_3="[尝试 3/3] 全球模式"
+MSG_VALIDATING="正在校验国家有效性:"
+MSG_INVALID_CTRY="无效的国家名称/代码:"
+MSG_VALID_LIST="提示: 使用 reflector --list-countries 查看有效列表。"
+MSG_SWITCH_GLOBAL='无效的国家。切换到“全球极速”模式吗？'
+MSG_WARN_GLOBAL='无法检测位置。默认为“全球极速”模式。'
+MSG_WARN_NO_SET='未设置国家。正在启动“全球极速”模式...'
+MSG_FINAL_BACKUP="备份文件位置:"
+MSG_ERR_FILE_EMPTY="错误: 生成的镜像列表为空！"
+MSG_CMD_PREVIEW="正在执行:"
+MSG_TRAP_WARN="脚本被中断或运行失败，正在安全恢复..."
+
+# --- 依赖检查：reflector 必需；curl 缺失时 IP 定位会被跳过 ---
+if ! command -v reflector >/dev/null 2>&1; then
+    ui_die "缺少依赖 reflector，请先安装：sudo pacman -S reflector"
+fi
+HAVE_CURL=0
+if command -v curl >/dev/null 2>&1; then
+    HAVE_CURL=1
+fi
+
+# --- 日志函数（接入 ui.sh）---
+log()     { ui_info "%s" "$1"; }
+success() { ui_ok   "%s" "$1"; }
+warn()    { ui_warn "%s" "$1"; }
+error()   { ui_die  "%s" "$1"; }
+
+# === TRAP 恢复函数 ===
+cleanup() {
+    local exit_code=$?
+    # 注销 trap 防止循环调用
+    trap - EXIT INT TERM HUP QUIT
+
+    # 如果脚本未被标记为成功，或者镜像源文件为空（被中断），则触发恢复逻辑
+    if [[ "$SCRIPT_SUCCESS" != "true" ]] || [[ ! -s "$MIRRORLIST" ]]; then
+        if [[ -f "$BACKUP_PATH" ]]; then
+            printf "\n"
+            warn "$MSG_TRAP_WARN"
+            if sudo cp "$BACKUP_PATH" "$MIRRORLIST" 2>/dev/null; then
+                success "$MSG_RESTORED"
+            else
+                error "备份恢复失败！"
+            fi
+        fi
+    fi
+    exit "$exit_code"
+}
+
+prune_backups() {
+    local backups=() i
+    mapfile -t backups < <(find "$BACKUP_DIR" -maxdepth 1 -type f \
+      -regextype posix-extended -regex '.*/mirrorlist-[0-9]{8}-[0-9]{6}-[0-9]+\.bak' \
+      -printf '%T@ %p\n' 2>/dev/null | sort -nr | cut -d' ' -f2-)
+    for ((i = BACKUP_KEEP; i < ${#backups[@]}; i++)); do
+        rm -f -- "${backups[$i]}" 2>/dev/null || sudo rm -f -- "${backups[$i]}"
+    done
+}
+
+usage() {
+    cat <<EOF
+$MSG_USAGE_TITLE $(basename "$0") [options]
+
+$MSG_DESC
+
+$MSG_OPT_TITLE
+  -c, --country <name>   $MSG_USAGE_C
+  -h, --help             $MSG_USAGE_H
+
+$MSG_EX_TITLE
+  $(basename "$0")                  $MSG_EX_AUTO
+  $(basename "$0") -c Japan         $MSG_EX_FORCE
+  $(basename "$0") -c "United States"
+EOF
+}
+
+detect_country_by_timezone() {
+    local TZ
+    if command -v timedatectl >/dev/null 2>&1; then
+        TZ=$(timedatectl show -p Timezone --value)
+    else
+        TZ=$(cat /etc/timezone 2>/dev/null || echo "")
+    fi
+    case "$TZ" in
+        *"Shanghai"*|*"Chongqing"*|*"Urumqi"*|*"Harbin"*) echo "China" ;;
+        *"Hong_Kong"*) echo "Hong Kong" ;;
+        *"Taipei"*)    echo "Taiwan" ;;
+        *"Tokyo"*|*"Osaka"*) echo "Japan" ;;
+        *"Singapore"*) echo "Singapore" ;;
+        *"Seoul"*)     echo "South Korea" ;;
+        *"New_York"*|*"Los_Angeles"*|*"Chicago"*|*"Denver"*) echo "United States" ;;
+        *"London"*|*"Belfast"*) echo "United Kingdom" ;;
+        *"Berlin"*)    echo "Germany" ;;
+        *"Paris"*)     echo "France" ;;
+        *"Toronto"*|*"Vancouver"*) echo "Canada" ;;
+        *) echo "Unknown" ;;
+    esac
+}
+
+detect_country_by_api() {
+    # 无 curl 直接放弃 API 检测
+    [[ "$HAVE_CURL" == "1" ]] || return 1
+
+    local result
+    result="$(curl -fsS --max-time 3 https://ipapi.co/country_name 2>/dev/null || true)"
+    result="$(printf '%s' "$result" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+    # 只接受形似国家名的结果：纯字母和空格，长度合理；
+    # 过滤掉 API 返回的 JSON/HTML 错误页、限流提示等。
+    if [[ -n "$result" ]] \
+        && [[ "${#result}" -le 40 ]] \
+        && [[ "$result" =~ ^[A-Za-z][A-Za-z\ ]*$ ]]; then
+        printf '%s' "$result"
+        return 0
+    fi
+    return 1
+}
+
+get_fallback_region() {
+    local c="$1"
+    case "$c" in
+        *"China"*|*"Hong Kong"*|*"Taiwan"*) echo "China,Hong Kong,Taiwan,Japan,Singapore" ;;
+        *"Japan"*|*"Korea"*)               echo "Japan,South Korea,Taiwan,Hong Kong" ;;
+        *"Singapore"*|*"Malaysia"*)        echo "Singapore,Malaysia,Thailand,Indonesia,China" ;;
+        *"United States"*|*"Canada"*)      echo "United States,Canada" ;;
+        *"Germany"*|*"France"*|*"United Kingdom"*) echo "Germany,France,United Kingdom,Netherlands" ;;
+        *) echo "" ;;
+    esac
+}
+
+validate_country() {
+    local input="$1"
+    if [[ -z "${VALID_COUNTRIES:-}" ]]; then
+        VALID_COUNTRIES=$(reflector --list-countries 2>/dev/null || true)
+    fi
+
+    awk -v wanted="$input" '
+      BEGIN { wanted=tolower(wanted); found=0 }
+      NR > 2 && NF >= 3 {
+        code=tolower($(NF-1))
+        country=$1
+        for (i=2; i<=NF-2; i++) country=country " " $i
+        if (tolower(country)==wanted || code==wanted) found=1
+      }
+      END { exit !found }
+    ' <<< "$VALID_COUNTRIES"
+}
+
+# 执行一次 reflector：日志包进卡片，成功且列表非空才写入 mirrorlist。
+#   $1 卡片标题  $2 命令预览文本  其余 → reflector 参数
+#   reflector 只读抓取用普通权限，仅写 mirrorlist 需要 sudo。
+#   返回 0=已成功写入；非 0=失败（临时文件已清理，不动 mirrorlist）。
+_run_reflector() {
+    local title="$1" preview="$2"; shift 2
+    local tmp rc n
+    tmp="$(mktemp)" || { ui_err "无法创建临时文件"; return 1; }
+
+    ui_panel_open "$title" "$UI_ICON_INFO"
+    ui_panel_line "${UI_C_SUBTLE}${MSG_CMD_PREVIEW}${UI_RESET} ${UI_DIM}${preview}${UI_RESET}"
+    ui_panel_blank
+    # reflector --verbose 日志走 stderr；--save 把列表写入 tmp（stdout 为空）。
+    # 局部关掉 errexit，让失败的 reflector 不触发 set -e；随后立即用
+    # PIPESTATUS[0] 取 reflector 真实退出码（读取 PIPESTATUS 的赋值本身
+    # 会重置它，故必须紧跟管道、中间无其他命令）。
+    set +e
+    reflector "$@" --save "$tmp" 2>&1 | ui_panel_raw
+    rc=${PIPESTATUS[0]}
+    set -e
+    ui_panel_close
+
+    n=$(grep -c '^Server = https://' "$tmp" 2>/dev/null || true)
+    if [[ "$rc" -eq 0 && -s "$tmp" && "${n:-0}" -gt 0 ]]; then
+        if sudo cp "$tmp" "$MIRRORLIST"; then
+            ui_ok "已写入 %s 个镜像源" "${n:-0}"
+            rm -f "$tmp"
+            return 0
+        fi
+    fi
+    if [[ "$rc" -eq 0 && "${n:-0}" -eq 0 ]]; then
+        ui_err "生成结果没有有效的 HTTPS Server 行，拒绝写入 mirrorlist。"
+    fi
+    rm -f "$tmp"
+    return 1
+}
+
+run_reflector_with_retry() {
+    local target="$1"
+
+    ui_info "%s %s'%s'" "$MSG_VALIDATING" "${UI_C_SKY}" "${target}${UI_RESET}"
+    if validate_country "$target"; then
+        ui_ok "%s" "国家有效"
+    else
+        ui_err "%s %s" "$MSG_INVALID_CTRY" "$target"
+        ui_info "%s" "$MSG_VALID_LIST"
+        if ui_confirm "$MSG_SWITCH_GLOBAL" "y"; then return 1; else error "$MSG_CANCEL"; fi
+    fi
+
+    local fallback
+    fallback=$(get_fallback_region "$target")
+
+    # === Attempt 1: Target Country ===
+    if _run_reflector \
+        "$MSG_ATTEMPT_1 $target" \
+        "sudo reflector ${BASE_ARGS[*]} --age 12 --fastest 10 --country $target" \
+        "${BASE_ARGS[@]}" --age 12 --fastest 10 --country "$target"; then
+        return 0
+    fi
+
+    # === Attempt 2: Regional Fallback ===
+    if [[ -n "$fallback" ]]; then
+        warn "$MSG_FAIL_RETRY"
+        if _run_reflector \
+            "$MSG_ATTEMPT_2 $fallback" \
+            "sudo reflector ${BASE_ARGS[*]} --age 24 --fastest 10 --download-timeout 5 --country $fallback" \
+            "${BASE_ARGS[@]}" --age 24 --fastest 10 --download-timeout 5 --country "$fallback"; then
+            return 0
+        fi
+    fi
+
+    # === Attempt 3: Global (Returns 1 to trigger main loop fallback) ===
+    return 1
+}
+
+# --- Main Execution ---
+
+main() {
+MANUAL_COUNTRY=""
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help) usage; exit 0 ;;
+        -c|--country)
+            if [[ -n "${2:-}" ]]; then MANUAL_COUNTRY="$2"; shift 2
+            else error "--country 缺少参数"; fi ;;
+        *) printf "未知参数: %s\n" "$1"; usage; exit 1 ;;
+    esac
+done
+
+ui_banner "更新镜像源" "mirror-update · 刷新 pacman mirrorlist"
+
+# 1. Determine Target
+if [[ -n "$MANUAL_COUNTRY" ]]; then
+    TARGET_COUNTRY="$MANUAL_COUNTRY"
+    log "$MSG_MANUAL_SET ${UI_C_GREEN}$TARGET_COUNTRY${UI_RESET}"
+else
+    log "$MSG_DETECTING"
+    DETECTED=$(detect_country_by_timezone)
+    if [[ "$DETECTED" == "Unknown" ]]; then
+        warn "$MSG_TRY_API"
+        # detect_country_by_api 成功才返回国家名，失败/无 curl 返回非零
+        if API_RESULT=$(detect_country_by_api); then
+            DETECTED="$API_RESULT"
+        fi
+    fi
+
+    if [[ "$DETECTED" == "Unknown" ]] || [[ -z "$DETECTED" ]]; then
+        warn "$MSG_WARN_GLOBAL"
+        TARGET_COUNTRY=""
+    else
+        ui_info "%s %s%s%s" "$MSG_DETECTED" "${UI_C_SKY}" "$DETECTED" "${UI_RESET}"
+        if ui_confirm "$MSG_CONFIRM" "y"; then TARGET_COUNTRY="$DETECTED"
+        else
+            printf "${UI_C_YELLOW}%s${UI_RESET} " "$MSG_INPUT_MANUAL"
+            read -r TARGET_COUNTRY
+        fi
+    fi
+fi
+
+# 2. Prepare System & Backup
+ui_maintenance_lock_acquire "镜像源更新" || exit $?
+log "$MSG_REQ_SUDO"
+if ! sudo -v; then error "需要管理员权限。"; fi
+
+mkdir -p "$BACKUP_DIR"
+candidate_backup="$BACKUP_DIR/mirrorlist-$(date '+%Y%m%d-%H%M%S')-$$.bak"
+if grep -q '^Server = ' "$MIRRORLIST" 2>/dev/null; then
+  BACKUP_PATH="$candidate_backup"
+  if cp "$MIRRORLIST" "$BACKUP_PATH" 2>/dev/null; then
+      log "$MSG_BACKUP_DONE $BACKUP_PATH"
+  else
+      warn "在用户目录创建备份失败，尝试用 sudo..."
+      sudo cp "$MIRRORLIST" "$BACKUP_PATH"
+      log "$MSG_BACKUP_DONE $BACKUP_PATH (Root owned)"
+  fi
+  ln -sfn "$(basename "$BACKUP_PATH")" "$BACKUP_DIR/mirrorlist.latest.bak"
+  prune_backups
+else
+  BACKUP_PATH="$(find "$BACKUP_DIR" -maxdepth 1 -type f -regextype posix-extended \
+    -regex '.*/mirrorlist-[0-9]{8}-[0-9]{6}-[0-9]+\.bak' -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr | cut -d' ' -f2- | sed -n '1p')"
+  [[ -n "$BACKUP_PATH" ]] || BACKUP_PATH="$BACKUP_DIR/mirrorlist.bak"
+  if [[ ! -s "$BACKUP_PATH" ]]; then
+      error "当前 mirrorlist 无有效 Server 行，且没有可用的历史备份。"
+  fi
+  warn "当前 mirrorlist 无效，保留历史备份不覆盖：$BACKUP_PATH"
+fi
+
+# =========================================================
+# 注册 TRAP 机制：在成功建立备份后激活 trap 监听信号
+# =========================================================
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
+trap 'exit 131' QUIT
+
+# 3. Execute with Retry Logic
+SUCCESS=false
+
+if [[ -n "$TARGET_COUNTRY" ]]; then
+    if run_reflector_with_retry "$TARGET_COUNTRY"; then
+        SUCCESS=true
+    else
+        SUCCESS=false
+    fi
+fi
+
+# 4. Global Fallback
+if [[ "$SUCCESS" == "false" ]]; then
+    if [[ -z "$TARGET_COUNTRY" ]]; then warn "$MSG_WARN_NO_SET"; else warn "$MSG_FAIL_GLOBAL"; fi
+
+    if _run_reflector "$MSG_ATTEMPT_3" \
+        "sudo reflector ${BASE_ARGS[*]} --latest 50 --fastest 10 --download-timeout 5" \
+        "${BASE_ARGS[@]}" --latest 50 --fastest 10 --download-timeout 5; then
+        SUCCESS=true
+    fi
+fi
+
+# 5. Result Handling & Integrity Check
+if [[ "$SUCCESS" == "true" ]]; then
+    # CRITICAL CHECK: Verify file is not empty
+    if [[ ! -s "$MIRRORLIST" ]]; then
+        printf "\n"
+        error "$MSG_ERR_FILE_EMPTY" # 触发 error 会以 exit 1 退出，被 trap 捕获并恢复文件
+    else
+        printf "\n"
+        ui_info "%s %s" "$MSG_FINAL_BACKUP" "$BACKUP_PATH"
+
+        # 标记完全成功，此后触发 exit 0 退出时，trap 不会进行回滚恢复
+        SCRIPT_SUCCESS=true
+        exit 0
+    fi
+fi
+
+# Failure Fallback
+printf "\n"
+# 直接抛出错误，由于包含 exit 1，会自动触发上方的 trap 进行镜像源文件恢复
+error "$MSG_FAIL_FINAL"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

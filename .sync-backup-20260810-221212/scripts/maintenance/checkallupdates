@@ -1,0 +1,523 @@
+#!/usr/bin/env bash
+# 描述： 检查所有待更新软件
+# ==============================================================================
+# 终端下使用 fzf 显示所有待更新的软件包（Pacman, AUR, Flatpak）
+# 特性：
+#   1. 颜色高亮：区分软件源
+#   2. 缓存加速：优先读取缓存实现秒开
+#   3. 交互更新：Enter 更新当前 AUR/Flatpak 项；Pacman 更新全部仓库包
+#   4. 完整更新：Ctrl+U 调用 sysup
+#   5. 异步刷新：Ctrl+R 强制刷新时直接查询最新数据
+# ==============================================================================
+
+set -euo pipefail
+
+# === 获取脚本自身的绝对路径 (供 fzf reload 使用) ===
+SCRIPT_PATH=$(readlink -f "${BASH_SOURCE[0]}")
+SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)"
+
+# === 统一 UI 库（用于 fzf 配色/边框；C_* 标签色是喂给 --ansi 的数据流，另行保留）===
+# shellcheck source=lib/ui.sh
+. "$SCRIPT_DIR/lib/ui.sh"
+SYSUP_CMD="$SCRIPT_DIR/sysup"
+if [[ ! -x "$SYSUP_CMD" ]]; then
+    SYSUP_CMD="sysup"
+fi
+
+# === 解析内部参数 ===
+FORCE_REFRESH=0
+if (( $# > 1 )); then
+    printf '参数过多；用法: checkallupdates [--refresh]\n' >&2
+    exit 2
+fi
+case "${1:-}" in
+    --refresh) FORCE_REFRESH=1 ;;
+    -h|--help)
+        cat <<'EOF'
+用法: checkallupdates [--refresh]
+
+  无参数       打开 Pacman、AUR、Flatpak 待更新列表
+  --refresh    刷新缓存并输出机器字段列表（供 fzf reload）
+EOF
+        exit 0
+        ;;
+    "") ;;
+    *) printf '未知参数: %s\n' "$1" >&2; exit 2 ;;
+esac
+
+# === 配置区域 ===
+CACHE_DIR="$HOME/.cache/checkallupdates"
+CACHE_REPO="$CACHE_DIR/updates-repo.txt"
+CACHE_AUR="$CACHE_DIR/updates-aur.txt"
+CACHE_FLATPAK="$CACHE_DIR/updates-flatpak.txt"
+CACHE_STATUS="$CACHE_DIR/source-status.tsv"
+CACHE_STAMP="$CACHE_DIR/last-refresh"
+CACHE_MAX_AGE=3600
+
+# 确保缓存目录存在
+mkdir -p "$CACHE_DIR"
+
+# === 颜色定义 (Matugen 兼容) ===
+export C_TERTIARY=$'\x1b[1;35m'  # 洋红 - Flatpak
+export C_PRIMARY=$'\x1b[1;34m'   # 蓝色 - AUR
+export C_CYAN=$'\x1b[1;36m'      # 青色 - Pacman
+export C_GREEN=$'\x1b[1;32m'     # 绿色 - 无更新提示
+export C_RESET=$'\x1b[0m'        # 重置
+NO_UPDATES_TEXT="[None]    当前没有待更新项目"
+
+# === 工具函数 ===
+pause_for_result() {
+    # 从 term-menu 启动时由外层统一显示结果页脚；独立启动（包括 bash -lc
+    # 包装的快捷方式）则固定停留，不能再靠父进程名猜测窗口会不会关闭。
+    if [[ "${TERM_MENU_CHILD:-0}" == "1" ]]; then
+        return 0
+    fi
+
+    ui_wait_key "按任意键返回"
+}
+
+check_cmd() {
+    command -v "$1" &> /dev/null
+}
+
+cache_is_fresh() {
+    local file="$1"
+    local current_time file_time
+
+    [[ -f "$file" && -f "$CACHE_REPO" && -f "$CACHE_AUR" \
+        && -f "$CACHE_FLATPAK" && -f "$CACHE_STATUS" ]] || return 1
+    current_time=$(date +%s)
+    file_time=$(stat -c %Y "$file" 2>/dev/null || printf 0)
+    (( current_time - file_time < CACHE_MAX_AGE ))
+}
+
+aur_helper() {
+    if check_cmd paru; then
+        printf 'paru\n'
+    elif check_cmd yay; then
+        printf 'yay\n'
+    fi
+    return 0
+}
+
+print_tagged_cache() {
+    local file="$1"
+    local source="$2"
+    local label="$3"
+    local color="$4"
+    local line package
+
+    [[ -s "$file" ]] || return 0
+
+    # 前两列是不给用户看的机器字段；fzf 只展示第三列。这样 Enter 后可以
+    # 可靠取得来源和包名，不必从 ANSI 彩色文本或版本字符串中反向猜测。
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        read -r package _ <<< "$line"
+        [[ -n "$package" ]] || continue
+        printf '%s\t%s\t%s%s%s%s\n' "$source" "$package" "$color" "$label" "$C_RESET" "$line"
+    done < "$file"
+}
+
+refresh_update_cache() {
+    local tmp_repo tmp_aur tmp_flatpak tmp_status tmp_err helper rc message
+    local refresh_fd=""
+    local refresh_failed=0
+
+    if check_cmd flock; then
+        exec {refresh_fd}>"$CACHE_DIR/refresh.lock"
+        flock "$refresh_fd"
+    fi
+
+    tmp_repo=$(mktemp "$CACHE_DIR/repo.XXXXXX")
+    tmp_aur=$(mktemp "$CACHE_DIR/aur.XXXXXX")
+    tmp_flatpak=$(mktemp "$CACHE_DIR/flatpak.XXXXXX")
+    tmp_status=$(mktemp "$CACHE_DIR/status.XXXXXX")
+    tmp_err=$(mktemp "$CACHE_DIR/error.XXXXXX")
+
+    : > "$tmp_repo"
+    : > "$tmp_aur"
+    : > "$tmp_flatpak"
+    : > "$tmp_status"
+
+    if ! check_cmd checkupdates; then
+        refresh_failed=1
+        printf 'pacman\terror\t缺少 checkupdates（pacman-contrib），无法检查官方仓库\n' >> "$tmp_status"
+    elif ! check_cmd fakeroot; then
+        # pacman-contrib 把 fakeroot 列为可选依赖，但 checkupdates 实际会
+        # 依赖它创建临时同步数据库。预先指出缺什么，不能只把其英文 stderr
+        # 透传成一个难理解的“查询失败”。
+        refresh_failed=1
+        printf 'pacman\terror\t缺少 fakeroot（pacman-contrib 的 checkupdates 所需可选依赖）；请安装 fakeroot\n' >> "$tmp_status"
+    else
+        rc=0
+        checkupdates > "$tmp_repo" 2> "$tmp_err" || rc=$?
+        if (( rc == 0 || rc == 2 )); then
+            printf 'pacman\tok\t\n' >> "$tmp_status"
+        else
+            refresh_failed=1
+            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+            printf 'pacman\terror\t%s\n' "${message:-checkupdates 查询失败（退出码：$rc）}" >> "$tmp_status"
+            : > "$tmp_repo"
+        fi
+    fi
+
+    helper=$(aur_helper)
+    if [[ -n "$helper" ]]; then
+        : > "$tmp_err"
+        rc=0
+        "$helper" -Qua > "$tmp_aur" 2> "$tmp_err" || rc=$?
+        if (( rc == 0 )) || { (( rc == 1 )) && [[ ! -s "$tmp_aur" && ! -s "$tmp_err" ]]; }; then
+            printf 'aur\tok\t\n' >> "$tmp_status"
+        else
+            refresh_failed=1
+            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+            printf 'aur\terror\t%s\n' "${message:-$helper 查询失败（退出码：$rc）}" >> "$tmp_status"
+            : > "$tmp_aur"
+        fi
+    else
+        printf 'aur\tskipped\t未安装 paru 或 yay，AUR 未检查\n' >> "$tmp_status"
+    fi
+
+    if check_cmd flatpak; then
+        : > "$tmp_err"
+        rc=0
+        if [[ "${CHECKALLUPDATES_FLATPAK_CACHED:-0}" == "1" ]]; then
+            flatpak remote-ls --updates --cached --columns=application,version > "$tmp_flatpak" 2> "$tmp_err" || rc=$?
+        else
+            flatpak remote-ls --updates --columns=application,version > "$tmp_flatpak" 2> "$tmp_err" || rc=$?
+        fi
+        if (( rc == 0 )); then
+            printf 'flatpak\tok\t\n' >> "$tmp_status"
+        else
+            refresh_failed=1
+            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
+            printf 'flatpak\terror\t%s\n' "${message:-Flatpak 查询失败（退出码：$rc）}" >> "$tmp_status"
+            : > "$tmp_flatpak"
+        fi
+    else
+        printf 'flatpak\tskipped\t未安装 Flatpak，Flatpak 来源未检查\n' >> "$tmp_status"
+    fi
+
+    mv -- "$tmp_repo" "$CACHE_REPO"
+    mv -- "$tmp_aur" "$CACHE_AUR"
+    mv -- "$tmp_flatpak" "$CACHE_FLATPAK"
+    mv -- "$tmp_status" "$CACHE_STATUS"
+    rm -f -- "$tmp_err"
+    if (( refresh_failed == 0 )); then
+        touch "$CACHE_STAMP"
+    else
+        rm -f -- "$CACHE_STAMP"
+    fi
+
+    if [[ -n "$refresh_fd" ]]; then
+        flock -u "$refresh_fd"
+        exec {refresh_fd}>&-
+    fi
+    return "$refresh_failed"
+}
+
+print_cached_updates() {
+    print_tagged_cache "$CACHE_REPO" "pacman" "[Pacman]  " "$C_CYAN"
+    print_tagged_cache "$CACHE_AUR" "aur" "[AUR]     " "$C_PRIMARY"
+    print_tagged_cache "$CACHE_FLATPAK" "flatpak" "[Flatpak] " "$C_TERTIARY"
+}
+
+print_cached_source_statuses() {
+    local source state message label
+
+    [[ -f "$CACHE_STATUS" ]] || {
+        printf 'status\tcache\t%s[状态异常]  缺少来源状态缓存，请按 Ctrl+R 重试%s\n' "$C_CYAN" "$C_RESET"
+        return 0
+    }
+
+    while IFS=$'\t' read -r source state message; do
+        [[ "$state" == "ok" ]] && continue
+        case "$source" in
+            pacman) label="Pacman" ;;
+            aur) label="AUR" ;;
+            flatpak) label="Flatpak" ;;
+            *) label="$source" ;;
+        esac
+        if [[ "$state" == "error" ]]; then
+            printf 'status\t%s\t%s[查询失败]  %s: %s%s\n' "$source" "$C_TERTIARY" "$label" "$message" "$C_RESET"
+        else
+            printf 'status\t%s\t%s[未检查]    %s: %s%s\n' "$source" "$C_CYAN" "$label" "$message" "$C_RESET"
+        fi
+    done < "$CACHE_STATUS"
+}
+
+print_cached_updates_or_empty() {
+    local output
+
+    output="$(print_cached_updates; print_cached_source_statuses)"
+    if [[ -n "$output" ]]; then
+        printf '%s\n' "$output"
+    else
+        printf 'none\t-\t%s%s%s\n' "$C_GREEN" "$NO_UPDATES_TEXT" "$C_RESET"
+    fi
+}
+
+pause_before_list() {
+    ui_wait_key "按任意键返回待更新列表"
+}
+
+run_full_update() {
+    local update_status=0
+
+    clear
+    ui_info "正在启动完整系统更新..."
+    printf '\n'
+
+    if "$SYSUP_CMD"; then
+        ui_ok "完整系统更新流程已完成"
+    else
+        update_status=$?
+        ui_warn "完整系统更新未成功完成（退出码：%s），请查看上方消息。" "$update_status"
+    fi
+
+    pause_before_list
+    return "$update_status"
+}
+
+update_all_pacman() {
+    local package="$1"
+    local update_count update_status=0
+
+    update_count="$(awk 'NF { count++ } END { print count + 0 }' "$CACHE_REPO" 2>/dev/null || printf '0')"
+
+    clear
+    ui_banner "更新 Pacman 软件包" "checkallupdates · 安全完整升级"
+    ui_panel_open "即将更新" "$UI_ICON_INFO"
+    ui_panel_kv "触发软件包" "$package"
+    ui_panel_kv "升级范围" "全部 Pacman 仓库包（当前检测到 $update_count 项）"
+    ui_panel_stat info "将执行 sudo pacman -Syu，避免 Arch 部分升级。"
+    ui_panel_line "本操作不更新 AUR 或 Flatpak；如需完整维护流程，请按 Ctrl+U。"
+    ui_panel_close
+
+    if ! ui_confirm "更新所有 Pacman 仓库包？" "n"; then
+        ui_warn "已取消 Pacman 更新。"
+        pause_before_list
+        return 0
+    fi
+
+    if ui_maintenance_lock_acquire "Pacman 更新"; then
+        :
+    else
+        update_status=$?
+        pause_before_list
+        return "$update_status"
+    fi
+    printf '\n'
+    if sudo pacman -Syu; then
+        ui_ok "全部 Pacman 仓库包更新完成。"
+    else
+        update_status=$?
+        ui_warn "Pacman 更新未成功完成（退出码：%s），请查看上方消息。" "$update_status"
+    fi
+    ui_maintenance_lock_release
+
+    ui_info "正在刷新待更新列表..."
+    refresh_update_cache || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
+    pause_before_list
+    return "$update_status"
+}
+
+update_selected() {
+    local source="$1"
+    local package="$2"
+    local helper="" source_name="" update_status=0
+
+    case "$source" in
+        pacman)
+            update_all_pacman "$package"
+            return $?
+            ;;
+        aur)
+            helper="$(aur_helper)"
+            if [[ -z "$helper" ]]; then
+                clear
+                ui_err "未找到 AUR 助手（paru 或 yay），无法更新 %s。" "$package"
+                pause_before_list
+                return 1
+            fi
+            source_name="AUR"
+            ;;
+        flatpak)
+            if ! check_cmd flatpak; then
+                clear
+                ui_err "未找到 flatpak，无法更新 %s。" "$package"
+                pause_before_list
+                return 1
+            fi
+            source_name="Flatpak"
+            ;;
+        *)
+            clear
+            ui_err "无法识别待更新项来源：%s" "$source"
+            pause_before_list
+            return 1
+            ;;
+    esac
+
+    clear
+    ui_banner "更新当前项目" "checkallupdates · 单项更新"
+    ui_panel_open "即将更新" "$UI_ICON_INFO"
+    ui_panel_kv "来源" "$source_name"
+    ui_panel_kv "软件包" "$package"
+    ui_panel_close
+
+    if ! ui_confirm "只更新当前项目 $package？" "n"; then
+        ui_warn "已取消更新。"
+        pause_before_list
+        return 0
+    fi
+
+    if ui_maintenance_lock_acquire "$source_name 更新"; then
+        :
+    else
+        update_status=$?
+        pause_before_list
+        return "$update_status"
+    fi
+    printf '\n'
+    if [[ "$source" == "aur" ]]; then
+        if "$helper" -S -- "$package"; then
+            ui_ok "AUR 软件包 %s 更新完成。" "$package"
+        else
+            update_status=$?
+            ui_warn "AUR 软件包 %s 未成功更新（退出码：%s）。" "$package" "$update_status"
+        fi
+    else
+        if flatpak update "$package"; then
+            ui_ok "Flatpak 应用 %s 更新完成。" "$package"
+        else
+            update_status=$?
+            ui_warn "Flatpak 应用 %s 未成功更新（退出码：%s）。" "$package" "$update_status"
+        fi
+    fi
+    ui_maintenance_lock_release
+
+    ui_info "正在刷新待更新列表..."
+    refresh_update_cache || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
+    pause_before_list
+    return "$update_status"
+}
+
+# === 主控制逻辑 ===
+main() {
+    local refresh_status=0
+# ---------------------------------------------------------
+    # 分支 1：Ctrl+R 触发的重载刷新进程
+    # ---------------------------------------------------------
+    if [[ $FORCE_REFRESH == 1 ]]; then
+        refresh_update_cache || refresh_status=$?
+        print_cached_updates_or_empty
+        return "$refresh_status"
+    fi
+
+    # ---------------------------------------------------------
+    # 分支 2：主进程逻辑，启动 fzf UI 界面
+    # ---------------------------------------------------------
+    if ! check_cmd fzf; then
+        echo "错误: 系统未安装 fzf。请先安装。" >&2
+        sleep 3
+        exit 1
+    fi
+
+    # fzf 是全屏交互界面。没有终端时它会输出“inappropriate ioctl for
+    # device”，旧逻辑又把该失败当成用户取消并返回 0，自动化会误以为检查
+    # 成功。明确拒绝，并指出专供 reload/自动化使用的机器可读入口。
+    if [[ "${CHECKALLUPDATES_ALLOW_NONINTERACTIVE_UI:-0}" != "1" ]] \
+        && { [[ ! -t 0 ]] || [[ ! -t 1 ]]; }; then
+        printf '错误: 待更新列表需要交互终端；自动化请使用 checkallupdates --refresh。\n' >&2
+        return 2
+    fi
+
+    if ! cache_is_fresh "$CACHE_STAMP"; then
+        ui_working "正在查询 Pacman、AUR 和 Flatpak 更新"
+        refresh_update_cache || true
+    fi
+
+    local footer fzf_output fzf_status key selection source package display
+
+    while true; do
+        footer="$(ui_status_line)"
+        # fzf 用 130 表示 Esc/中断。由 term-menu 启动时把这个状态传给
+        # 父菜单，使它能直接返回上一级，而不是再显示一次结果暂停页。
+        set +e
+        fzf_output="$(
+            print_cached_updates_or_empty | fzf \
+            --ansi \
+            --height=100% \
+            --layout=reverse \
+            --style=full \
+            --border=rounded \
+            --border-label="╢  待更新项目 ╟" \
+            --border-label-pos=3 \
+            --list-border=rounded \
+            --list-label=' 待更新列表 ' \
+            --list-label-pos=3 \
+            --input-border=rounded \
+            --input-label=' 筛选 ' \
+            --input-label-pos=3 \
+            --header-border=rounded \
+            --header-label=' 操作 ' \
+            --header-first \
+            --footer-border=rounded \
+            --footer-label='   系统状态 ' \
+            --footer="$footer" \
+            --prompt='  ' \
+            --pointer='▶' \
+            --marker='✓' \
+            --highlight-line \
+            --cycle \
+            --info=inline-right \
+            --delimiter=$'\t' \
+            --with-nth=3.. \
+            --expect=enter,ctrl-u \
+            --header='  ↑↓ 循环选择     Enter 按来源更新     Ctrl+U 完整系统更新     Ctrl+R 强制刷新     Esc 返回' \
+            --color="$(ui_fzf_colors)" \
+            --bind="ctrl-r:change-prompt(⏳ 正在拉取最新数据... > )+reload('${SCRIPT_PATH}' --refresh)+change-prompt(  )"
+        )"
+        fzf_status=$?
+        set -e
+
+        if (( fzf_status != 0 )); then
+            if (( fzf_status == 130 )) && [[ "${TERM_MENU_CHILD:-0}" == "1" ]]; then
+                return 130
+            fi
+            return 0
+        fi
+
+        key="${fzf_output%%$'\n'*}"
+        selection="${fzf_output#*$'\n'}"
+
+        if [[ "$key" == "ctrl-u" ]]; then
+            run_full_update || true
+            refresh_update_cache || true
+            continue
+        fi
+
+        IFS=$'\t' read -r source package display <<< "$selection"
+        if [[ "$source" == "status" ]]; then
+            clear
+            ui_warn "%b" "$display"
+            ui_info "按 Ctrl+R 可立即重新查询所有来源。"
+            pause_for_result
+            continue
+        fi
+        if [[ "$source" == "none" || "$display" == *"$NO_UPDATES_TEXT"* ]]; then
+            clear
+            ui_ok "当前没有待更新项目。"
+            pause_for_result
+            return 0
+        fi
+
+        update_selected "$source" "$package" || true
+    done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main "$@"
+fi

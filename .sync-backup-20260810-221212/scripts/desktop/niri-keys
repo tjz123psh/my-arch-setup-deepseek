@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+# niri 快捷键速查，默认用 kitty + fzf 交互搜索。
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: niri-keys [options]
+
+Options:
+  -p, --print    直接打印解析后的快捷键列表，不进入 fzf
+  -h, --help     显示帮助并退出
+
+默认行为:
+  如果不在 kitty 中运行，会自动打开一个 kitty 窗口，再用 fzf 搜索快捷键。
+EOF
+}
+
+PRINT_ONLY=false
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -p|--print)
+      PRINT_ONLY=true
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      printf 'niri-keys: unknown option: %s\n' "$1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+FILE="$HOME/.config/niri/dms/keybinds.kdl"
+
+if [[ ! -f "$FILE" ]]; then
+  printf '找不到 %s\n' "$FILE" >&2
+  [[ -t 0 ]] && read -r -p "按回车关闭"
+  exit 1
+fi
+
+if [[ "$PRINT_ONLY" == false && -z "${KITTY_WINDOW_ID:-}" ]]; then
+  if command -v kitty >/dev/null 2>&1; then
+    exec kitty --class=niri-keys --override initial_window_width=700 --override initial_window_height=500 "$0" "$@"
+  fi
+fi
+
+if [[ "$PRINT_ONLY" == false ]] && ! command -v fzf >/dev/null 2>&1; then
+  printf '缺少依赖: fzf\n' >&2
+  exit 127
+fi
+
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+LB=$'\033[94m'
+CY=$'\033[36m'
+RESET=$'\033[0m'
+
+if [[ ! -t 1 || "$PRINT_ONLY" == true ]]; then
+  BOLD=""; DIM=""; LB=""; CY=""; RESET=""
+fi
+
+fix_key() {
+  local k="$1"
+
+  k="${k//Mod/Super}"
+  k="${k//Comma/,}"
+  k="${k//Minus/-}"
+  k="${k//BracketLeft/[}"
+  k="${k//BracketRight/]}"
+  k="${k//Return/Enter}"
+  k="${k//Delete/Del}"
+  k="${k//Space/空格}"
+  k="${k//Equal/=}"
+  k="${k//Period/.}"
+  k="${k//Slash/\/}"
+  k="${k//Page_Up/PgUp}"
+  k="${k//Page_Down/PgDn}"
+  k="${k//WheelScrollDown/滚轮↓}"
+  k="${k//WheelScrollUp/滚轮↑}"
+  k="${k//WheelScrollLeft/滚轮←}"
+  k="${k//WheelScrollRight/滚轮→}"
+  k="${k//XF86AudioLowerVolume/音量↓}"
+  k="${k//XF86AudioRaiseVolume/音量↑}"
+  k="${k//XF86AudioMicMute/麦静音}"
+  k="${k//XF86AudioMute/静音}"
+  k="${k//XF86AudioNext/下一曲}"
+  k="${k//XF86AudioPrev/上一曲}"
+  k="${k//XF86AudioPause/暂停}"
+  k="${k//XF86AudioPlay/播放}"
+  k="${k//XF86MonBrightnessDown/亮度↓}"
+  k="${k//XF86MonBrightnessUp/亮度↑}"
+  printf '%s\n' "$k"
+}
+
+parse_keybinds() {
+  awk '
+    BEGIN { sec=""; cmt="" }
+    /\/\/ ===== / {
+      gsub(/.*===== /, "")
+      gsub(/ =====.*/, "")
+      sec=$0
+      cmt=""
+      next
+    }
+    /\/\// && !/====/ && !/---/ && !/-键说明|此文件由|已取代|按键说明/ {
+      gsub(/^[[:space:]]*\/\/[[:space:]]*/, "")
+      sub(/^[^:]+:[[:space:]]+/, "", $0)
+      gsub(/[[:space:]]*[（(].*[）)][[:space:]]*/, "", $0)
+      cmt=$0
+      next
+    }
+    /hotkey-overlay-title=/ {
+      key=$0
+      gsub(/^[[:space:]]*/, "", key)
+      gsub(/[[:space:]]+hotkey-overlay-title.*/, "", key)
+      gsub(/[[:space:]]*\{.*/, "", key)
+      title=$0
+      gsub(/.*hotkey-overlay-title="/, "", title)
+      gsub(/".*/, "", title)
+      if (sec != "") print sec "\t" key "\t" title
+      cmt=""
+      next
+    }
+    cmt != "" && /\{[^}]*;/ && !/hotkey-overlay-title/ && /^[[:space:]]*[A-Za-z]/ {
+      key=$0
+      gsub(/^[[:space:]]*/, "", key)
+      gsub(/[[:space:]]+(allow-when-locked|allow-inhibiting|repeat|cooldown-ms).*/, "", key)
+      gsub(/[[:space:]]*\{.*/, "", key)
+      if (key !~ /\+/ || key ~ /\+[0-9]+$/) {
+        cmt=""
+        next
+      }
+      # 不清空 cmt：让同一条注释应用到其下连续的多个绑定，
+      # 直到遇到下一条注释、空行或段落标题（===== ）时自然断开。
+      if (sec != "") print sec "\t" key "\t" cmt
+      next
+    }
+    !/\/\// { cmt="" }
+  ' "$FILE"
+}
+
+rawdata="$(parse_keybinds)"
+if [[ -z "$rawdata" ]]; then
+  printf '没有找到快捷键数据\n' >&2
+  [[ -t 0 ]] && read -r -p "按回车关闭"
+  exit 1
+fi
+
+build_lines() {
+  local lastcat="" cat key desc pretty_key
+
+  while IFS=$'\t' read -r cat key desc; do
+    if [[ "$lastcat" != "$cat" ]]; then
+      printf '\n%s%s── %s %s\n' "$BOLD" "$CY" "$cat" "$RESET"
+      lastcat="$cat"
+    fi
+    pretty_key="$(fix_key "$key")"
+    printf '  %s%-30s%s %s\n' "$LB" "$pretty_key" "$RESET" "$desc"
+  done <<< "$rawdata"
+}
+
+fzf_input="$(build_lines)"
+
+if [[ "$PRINT_ONLY" == true ]]; then
+  printf '%s\n' "$fzf_input"
+  exit 0
+fi
+
+printf '\033[?25l'
+trap 'printf "\033[?25h"; stty echo 2>/dev/null || true' EXIT
+
+selected="$(printf '%s\n' "$fzf_input" | fzf --ansi --reverse \
+  --prompt='搜索快捷键: ' \
+  --info=inline \
+  --border=none \
+  --bind 'esc:abort,ctrl-c:abort')" || selected=""
+
+if [[ -n "$selected" ]]; then
+  printf '%s按回车关闭%s\n' "$DIM" "$RESET"
+  read -r
+fi
