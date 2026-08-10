@@ -263,3 +263,4 @@ physical-v1	development-toolchain	config/home/.config/opencode/scripts/check-ski
 physical-v1	development-toolchain	config/home/.config/opencode/dcp.jsonc	.config/opencode/dcp.jsonc	644
 physical-v1	development-toolchain	config/home/.config/opencode/deepseek-guard.json	.config/opencode/deepseek-guard.json	644
 physical-v1	development-toolchain	config/home/.config/opencode/package.json	.config/opencode/package.json	644
+physical-v1	personal-user-services	config/home/.local/bin/shorin-screenrec-menu	.local/bin/shorin-screenrec-menu	755

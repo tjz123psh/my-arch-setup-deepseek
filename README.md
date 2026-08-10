@@ -119,6 +119,7 @@ sudo bash strap.sh
 - `third_party/aur/`：15 棵固定 AUR recipe 树（14 个目标 + vmware-keymaps 构建依赖，含审查记录）
 - `fetch-aur-sources.sh`：在有海外网络的机器上生成 AUR 离线缓存（→ `~/Downloads/aur-sources/`）
 - `sync-scripts.sh`：同步本机 `~/scripts` 到 `config/home/scripts/` 并自动补映射
+- `sync-config-mappings.sh`：为 `config/home` 新增文件自动生成 `config-mappings.tsv` 行（module 继承、幂等、按执行位定 mode；`config/etc` 不走映射）
 - `check-extend.sh`：提交前一键总检（增改门禁：bash 语法/shellcheck/清单一致性/配置内容语法（含 QML 结构配平）/recipe 双向引用/secret scan/README 数字/行为测试套件 + 宿主部署漂移提示；默认按改动范围自动选快慢——只改数据/文档快速 8 节，改脚本/测试全量 13 节，`--fast`/`--full` 强制，`--deploy` 闸门通过后同步到宿主；任一失败节禁止提交）
 - `tests/`：数据完整性、FlClash 迁移契约、安装器行为测试（模块矩阵/进度绑定/symlink 安全/失败传播）、配置语法校验（validate-config-syntax.sh）与错误注入自证（check-extend-test.sh）
 

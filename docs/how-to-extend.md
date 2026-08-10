@@ -102,6 +102,24 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 3. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
 4. commit + push（git-push 约定见 AGENTS/仓库惯例）。
 
+## 七、宿主 → 仓库 差异同步（本机改好了，把状态收进仓库）
+
+宿主重装/折腾后，把"本机已有但仓库没有"的配置和包补进仓库。**给审计子 agent 的 prompt 必须带上仓库契约**，否则它会推荐"测试明确禁止入库"的东西（2026-08-10 实例：配置审计推荐了 nvim 的 DMS 主题，实际被 `nvim-config-test.sh` 明确排除）。
+
+**审计 prompt 必须包含的契约提示**：
+1. `tests/nvim-config-test.sh` 断言排除的 DMS nvim 集成（`colors/dms.lua`、`lua/lualine/themes/dms.lua`）——**不得入库**
+2. `scripts/03-packages.sh` 的 flclash-bin 迁移契约——旧 AUR 包不补，走 archlinuxcn `flclash`
+3. 凭据红线（AGENTS）：`gh/hosts.yml`、`pulse/cookie`、fish 明文 key、任何 token/密码**严禁入库**；API key 只允许 `{file:...}`/`{env:...}` 引用
+4. `libvirt` 配置视为宿主资产（AGENTS 绝对指令二），**不得同步**
+5. 运行时/生成物不入库：浏览器 profile、QQ 数据、缓存、DMS/matugen 生成物（`dms/*.lua`、`colors.ini`、`dank-theme.conf`）、`*.bak`、vmtest 副本、`fish_variables`、`node_modules`
+6. 包审计注意：宿主若经离线 `pacman -U` 恢复，**所有包可能都标为显式**（`pacman -Qe` 语义失效）——按依赖关系分类，别按 install reason 判断
+
+**主 agent 整合必做**：
+1. 复制文件进 `config/home/` → `./sync-config-mappings.sh --module <默认模块>` 自动补映射（新目录没有可继承 module 时用 `--module`；`config/etc` 不走映射，脚本直接部署）
+2. 更新 how-to-extend/README 的包数字（`check-extend` 的 numbers 节会拦错的）
+3. `./check-extend.sh --full` 全量验证（含 reconciliation/nvim 契约/行为套件）
+4. 判定准则：a 该入库 / b 运行时不入库 / c 不确定——**宁可少加**，c 类列在报告里给用户定
+
 ## 增改的「穿插成本」到底多大
 
 - **加官方包 / 加配置 / 加脚本**：5 分钟级别，纯数据操作，风险极低（有测试兜底）。
@@ -130,6 +148,7 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 | `scripts/09-settings.sh` | 系统设置 + snapper + 录屏引擎 |
 | `fetch-aur-sources.sh` | 生成 AUR 离线缓存（增 AUR 后必跑） |
 | `sync-scripts.sh` | 同步本机 ~/scripts 进仓库 |
+| `sync-config-mappings.sh` | 为 config/home 新增文件自动生成 config-mappings.tsv 行（module 继承/幂等/按执行位定 mode） |
 | `tests/` | 数据一致性测试 |
 | `check-extend.sh` | 提交前一键总检（增改门禁；默认按改动范围自动选快慢——只改数据/文档→快速 8 节，改脚本/测试→全量 13 节；`--fast`/`--full` 强制；`--deploy` 闸门通过后同步到宿主；`--only=`/`--skip=` 局部调试） |
 | `tests/validate-config-syntax.sh` | 配置内容语法校验（按类型分流；含 QML 结构配平；缺工具 SKIP 并列出人工清单） |
