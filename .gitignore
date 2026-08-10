@@ -36,3 +36,6 @@ docs/archive/download-mode-lab-20260808/**/__pycache__/
 
 # sync-scripts.sh 的 rollback 备份（2026-08-10 起忽略，防误提交）
 .sync-backup-*/
+
+# Grok 本地上下文配置（不进仓库，留在磁盘供工具使用）
+.ai/
