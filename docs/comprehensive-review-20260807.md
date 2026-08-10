@@ -186,6 +186,14 @@ flclash  pacman  archlinuxcn  pacman  personal-autostart  config-backed  install
 4. 检查 staged diff 和 secret scan；
 5. 将最终 payload hash 写入新的 VM `TEST_ID`，不能复用迁移前 artifact。
 
+**2.3 收尾状态（2026-08-10）**：
+
+1. ✅ 已重跑 reconciliation，当前为 install=190 / verify=12 / deferred=8（总 210）、mappings=231、recipes=15——上文 191、177/14 为迁移前旧值，已过时；
+2. ✅ 已对 `third_party/aur/` 全部 15 棵 recipe 树运行 `makepkg --printsrcinfo`，15/15 通过；
+3. ⏳ `.aur-sources` 重新生成/清理由用户自测（须确认不含旧 FlClash AUR 输入），测完后再核销；
+4. ✅ 例行已满足：每次提交均做 staged diff + secret scan；
+5. ⏳ 待新 VM 验收时写入最终 payload `TEST_ID`，不复用迁移前 artifact。
+
 ---
 
 ## 3. FlClash 从 AUR 到 archlinuxcn 的迁移审查

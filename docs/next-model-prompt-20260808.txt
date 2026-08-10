@@ -1,5 +1,10 @@
 你是 `/home/pang/Projects/my-arch-setup-deepseek` 这个项目的后续执行模型，不是另一个项目的 agent，也不是只做口头建议的审查者。请接着当前工作树继续工作；不要重建、覆盖或猜测项目状态。
 
+> **历史文档安全/状态提示（2026-08-10）**：本文件是 2026-08-08 的模型交接提示词，
+> 钉在旧 HEAD `f44066d2`；其中包统计（total=211/install=191/verify=12/deferred=8、
+> pacman=177 + AUR=14）、清单与基线均已过时，不作为当前状态来源。
+> 当前状态以 `README.md`、`docs/project-vision.md`、`docs/comprehensive-review-20260807.md` 为准。
+
 【必读文件】
 1. 先读项目级 `AGENTS.md`；它优先于本提示词。
 2. 再读 `docs/comprehensive-review-20260807.md`，把它当作当前审查和验收合同。
