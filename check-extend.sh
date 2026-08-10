@@ -1,41 +1,44 @@
 #!/usr/bin/env bash
 # check-extend.sh — 提交前一键总检（增改安全网 L1 闸门）。
 #
-# 聚合所有"加东西必须过"的静态/快速检查；任一环节失败即退出非零，禁止提交。
+# 聚合所有"加东西必须过"的检查；任一环节失败即退出非零，禁止提交。
 # 模型/操作者每次增改后、commit 前运行：
-#   ./check-extend.sh            # 快速闸门（默认 8 节）
-#   ./check-extend.sh --full     # 追加慢速套件（session-lifecycle/pacman-order/flclash/nvim-config）
+#   ./check-extend.sh            # 默认全量（13 节，含慢速行为套件 + 宿主部署漂移提示）
+#   ./check-extend.sh --fast     # 快速闸门（8 节核心，跳过慢速套件）
 #   ./check-extend.sh --only=syntax,secret   # 只跑指定节（调试用）
 #   ./check-extend.sh --skip=behavior        # 跳过指定节
 #
 # 节：
 #   bash-n     所有 shell 脚本 bash -n
-#   shellcheck 核心脚本 shellcheck -S error
+#   SC-check  对核心脚本跑 shellcheck -S error（注释行不能以 shellcheck 开头，会被当作指令）
 #   reconcile  tests/workstation-package-reconciliation-test.sh（清单一致性）
-#   syntax     tests/validate-config-syntax.sh（配置内容语法）
+#   syntax     tests/validate-config-syntax.sh（配置内容语法，含 QML 结构配平）
 #   refs       recipe 目录 <-> aur-recipes.tsv 双向引用 + PKGBUILD 存在性
 #   secret     config/ 载荷 + staged diff 高置信凭据模式
 #   numbers    README 过期数字字面量 + 打印权威数字
 #   behavior   tests/installer-behavior-test.sh（快速行为套件）
+#   session-lifecycle / pacman-order / flclash / nvim-config：慢速行为套件（默认跑，--fast 跳过）
+#   deploy-sync 宿主副本 vs 仓库 diff（信息性：提示"改动没部署到宿主"，不阻断提交）
 set -Eeuo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$root"
 
-full=0
+fast=0
 only=""
 skip=""
-declare -a SECTIONS=(bash-n shellcheck reconcile syntax refs secret numbers behavior)
-declare -a FULL_EXTRA=(session-lifecycle pacman-order flclash nvim-config)
+declare -a SECTIONS=(bash-n shellcheck reconcile syntax refs secret numbers behavior session-lifecycle pacman-order flclash nvim-config deploy-sync)
+declare -a CORE=(bash-n shellcheck reconcile syntax refs secret numbers behavior)
 
 usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
 while (( $# > 0 )); do
   case "$1" in
-    --full)      full=1 ;;
+    --fast)      fast=1 ;;
+    --full)      fast=0 ;;  # 兼容旧语义：全量本来就是默认
     --only=*)    only="${1#--only=}" ;;
     --skip=*)    skip="${1#--skip=}" ;;
     -h|--help)   usage ;;
@@ -160,12 +163,42 @@ pacman-order()      { bash tests/pacman-sync-order-test.sh; }
 flclash()           { bash tests/flclash-migration-test.sh; }
 nvim-config()       { bash tests/nvim-config-test.sh; }
 
+# deploy-sync：宿主部署副本 vs 仓库 diff（信息性——提示"改动没部署到宿主"，不阻断提交）。
+# 只比对部署态文件（脚本/插件 QML），不比运行时状态（engine/codec_wf/enc_params_wf 是用户可改的）。
+deploy-sync() {
+  local -a pairs=(
+    "$HOME/.local/bin/shorin-screenrec-menu:config/home/.local/bin/shorin-screenrec-menu"
+    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml"
+    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml"
+    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml"
+    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json"
+  )
+  local pair host repo synced=0 drifted=0
+  for pair in "${pairs[@]}"; do
+    host="${pair%%:*}"; repo="${pair#*:}"
+    if [[ ! -f "$host" ]]; then
+      echo "  提示: 宿主无 $host（非本机/未部署，跳过）"
+      continue
+    fi
+    if cmp -s "$host" "$repo"; then
+      synced=$((synced + 1))
+    else
+      echo "  ⚠ 宿主 $host 与仓库不一致（改动未部署到宿主？）"
+      drifted=$((drifted + 1))
+    fi
+  done
+  echo "  部署同步: $synced 一致 / $drifted 漂移（信息性，不阻断提交）"
+  return 0
+}
+
 # ---------- 执行 ----------
 
-for s in "${SECTIONS[@]}"; do run "$s"; done
-if (( full )); then
-  for s in "${FULL_EXTRA[@]}"; do run "$s"; done
-fi
+for s in "${SECTIONS[@]}"; do
+  if (( fast )); then
+    [[ " ${CORE[*]} " == *" $s "* ]] || continue
+  fi
+  run "$s"
+done
 
 echo "======================"
 if (( status == 0 )); then

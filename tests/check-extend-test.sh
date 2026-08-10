@@ -38,7 +38,7 @@ expect_fail() { # expect_fail <描述> <副本> <only 节>
 
 echo "== 0. 正向对照：干净副本通过快速闸门 =="
 d="$tmp/s0"; clone_repo "$d"
-if "$d/check-extend.sh" >/dev/null 2>&1; then
+if "$d/check-extend.sh" --fast >/dev/null 2>&1; then
   check_ok "干净副本通过快速闸门"
 else
   check_bad "干净副本未通过快速闸门"

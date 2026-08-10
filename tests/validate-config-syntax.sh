@@ -18,6 +18,7 @@
 #   desktop   -> desktop-file-validate
 #   service/timer/socket/path -> systemd-analyze verify
 #   kdl       -> niri validate -c
+#   qml       -> qmllint（无则 python 结构配平：括号/引号/注释）
 #   ini       -> python3 configparser（strict=False）
 #   .gitconfig-> git config --file --list
 #   无扩展名   -> 按 shebang 分派 sh/python，否则 MANUAL
@@ -61,6 +62,7 @@ type_of() {
     desktop)  echo desktop; return ;;
     service|timer|socket|path) echo systemd; return ;;
     kdl)      echo kdl; return ;;
+    qml)      echo qml; return ;;
     ini)      echo ini; return ;;
   esac
   # 有扩展名但类型未知 -> 手工
@@ -134,6 +136,51 @@ validate_type() {
       if have niri; then
         if ! niri validate -c "$f" >/dev/null 2>&1; then rc=1; fi
       else note_skip "$f (kdl: niri 缺失)"; return; fi
+      ;;
+    qml)
+      if have qmllint; then
+        if ! qmllint "$f" >/dev/null 2>&1; then rc=1; fi
+      elif have python3; then
+        # 结构配平：括号/方括号/花括号成对、字符串与注释闭合。
+        # 能抓 DMS 插件这类"改坏括号/漏引号"的常见错误；语义错误仍需真机实测。
+        if ! python3 -c '
+import sys
+src = open(sys.argv[1], encoding="utf-8").read()
+stack, pairs = [], {")": "(", "]": "[", "}": "{"}
+i, n, line, pc = 0, len(src), 1, ""
+in_str = in_line = in_block = None
+while i < n:
+    c = src[i]
+    if in_line:
+        if c == "\n": in_line = False; line += 1
+        i += 1; continue
+    if in_block:
+        if c == "*" and i + 1 < n and src[i+1] == "/": in_block = False; i += 2
+        else: i += 1
+        continue
+    if in_str:
+        if c == "\\": i += 2; continue
+        if c == in_str: in_str = None
+        i += 1; continue
+    if c == "\n": line += 1; i += 1; continue
+    # 注释判定：前一字符是反斜杠时不当作注释（正则里的转义斜杠 \/\/ 会伪造 // 与 /*）
+    if pc != "\\" and c == "/" and i + 1 < n and src[i+1] == "/": in_line = True; i += 2; continue
+    if pc != "\\" and c == "/" and i + 1 < n and src[i+1] == "*": in_block = True; i += 2; continue
+    if c in "\x27\"`": in_str = c; i += 1; continue
+    if c in "([{": stack.append((c, line)); i += 1; continue
+    if c in ")]}":
+        if not stack or stack[-1][0] != pairs[c]:
+            print(f"QML 结构: line {line} 的 {c!r} 不匹配", file=sys.stderr); sys.exit(1)
+        stack.pop(); i += 1; continue
+    pc = c
+    i += 1
+if in_str:  print("QML 结构: 未闭合字符串", file=sys.stderr); sys.exit(1)
+if in_block: print("QML 结构: 未闭合块注释", file=sys.stderr); sys.exit(1)
+if stack:
+    c, l = stack[-1]
+    print(f"QML 结构: 未闭合 {c!r}（开于 line {l}）", file=sys.stderr); sys.exit(1)
+' "$f" >/dev/null 2>&1; then rc=1; fi
+      else note_skip "$f (qml: qmllint/python3 缺失)"; return; fi
       ;;
     ini)
       if have python3; then
