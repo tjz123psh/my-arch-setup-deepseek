@@ -42,6 +42,7 @@ CONFIG_DIR="$XDG_CACHE_HOME/shorin-screenrec"
 CFG_ENGINE="$CONFIG_DIR/engine"
 CFG_CODEC_WL="$CONFIG_DIR/codec_wl"
 CFG_CODEC_WF="$CONFIG_DIR/codec_wf"
+CFG_PARAMS_WF="$CONFIG_DIR/enc_params_wf"
 CFG_FPS="$CONFIG_DIR/framerate"
 CFG_AUDIO="$CONFIG_DIR/audio"
 CFG_AUDIO_DEVICE="$CONFIG_DIR/audio_device"
@@ -64,6 +65,7 @@ IS_GIF_MODE="false"
 _DEFAULT_ENGINE="wl-screenrec"
 _DEFAULT_CODEC_WL="auto"
 _DEFAULT_CODEC_WF="libx264"
+_DEFAULT_ENC_PARAMS_WF="crf=18:preset=veryfast"
 _DEFAULT_FRAMERATE=""
 _DEFAULT_AUDIO="on"
 _DEFAULT_SAVE_EXT="auto"
@@ -76,6 +78,7 @@ GIF_STATS_MODE="diff"
 engine_from_file=$(cat "$CFG_ENGINE" 2>/dev/null || true)
 codec_wl_from_file=$(cat "$CFG_CODEC_WL" 2>/dev/null || true)
 codec_wf_from_file=$(cat "$CFG_CODEC_WF" 2>/dev/null || true)
+enc_params_wf_from_file=$(cat "$CFG_PARAMS_WF" 2>/dev/null || true)
 fps_from_file=$(cat "$CFG_FPS" 2>/dev/null || true)
 audio_from_file=$(cat "$CFG_AUDIO" 2>/dev/null || true)
 audio_dev_from_file=$(cat "$CFG_AUDIO_DEVICE" 2>/dev/null || true)
@@ -85,6 +88,7 @@ ext_from_file=$(cat "$CFG_EXT" 2>/dev/null || true)
 ENGINE="${ENGINE:-${engine_from_file:-$_DEFAULT_ENGINE}}"
 CODEC_WL="${CODEC_WL:-${codec_wl_from_file:-$_DEFAULT_CODEC_WL}}"
 CODEC_WF="${CODEC_WF:-${codec_wf_from_file:-$_DEFAULT_CODEC_WF}}"
+ENC_PARAMS_WF="${ENC_PARAMS_WF:-${enc_params_wf_from_file:-$_DEFAULT_ENC_PARAMS_WF}}"
 FRAMERATE="${FRAMERATE:-${fps_from_file:-$_DEFAULT_FRAMERATE}}"
 AUDIO="${AUDIO:-${audio_from_file:-$_DEFAULT_AUDIO}}"
 AUDIO_DEVICE="${AUDIO_DEVICE:-${audio_dev_from_file:-}}"
@@ -646,6 +650,13 @@ start_rec() {
       [[ -n "$output" ]] && args+=( -o "$output" )
       [[ -n "$GEOM" ]]   && args+=( -g "$GEOM" )
       args+=( --file "$SAVE_PATH" -c "$CODEC_WF" )
+      # 编码质量参数：libx264 默认 CRF 23 对屏幕录制偏糊，固定 crf=18 + preset=veryfast
+      # （屏幕录制常用配置；enc_params_wf 内容按冒号拆分为多个 -p key=value）
+      if [[ -n "$ENC_PARAMS_WF" ]]; then
+        local -a wf_params=()
+        IFS=':' read -r -a wf_params <<< "$ENC_PARAMS_WF"
+        for p in "${wf_params[@]}"; do [[ -n "$p" ]] && args+=( -p "$p" ); done
+      fi
       [[ -n "$dev" ]] && args+=( -d "$dev" )
       if [[ "$AUDIO" == "on" ]]; then 
         local ad="$AUDIO_DEVICE"
@@ -720,7 +731,7 @@ stop_rec() {
         mkdir -p "$gif_dir"
         local filename=$(basename "$save_path")
         local gif_out="$gif_dir/${filename%.*}.gif"
-        local filters="fps=$GIF_FPS,scale=$GIF_WIDTH:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=$GIF_STATS_MODE[p];[s1][p]paletteuse=dither=$GIF_DITHER_MODE"
+        local filters="fps=$GIF_FPS,scale=$GIF_WIDTH:-1:flags=lanczos,split[s0][s1];[s0]palettegen=stats_mode=${GIF_STATS_MODE}[p];[s1][p]paletteuse=dither=$GIF_DITHER_MODE"
         
         if ffmpeg -y -v error -i "$save_path" -vf "$filters" "$gif_out"; then
              rm "$save_path"

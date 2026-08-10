@@ -126,6 +126,10 @@ fi
 log "Presetting screen recording engine for ${MACHINE_TYPE}..."
 mkdir -p "${TARGET_HOME}/.cache/shorin-screenrec"
 printf 'wf-recorder\n' > "${TARGET_HOME}/.cache/shorin-screenrec/engine"
+# 编码质量参数：libx264 默认 CRF 23 对屏幕录制偏糊（2026-08-10 用户反馈），
+# 固定 crf=18 + preset=veryfast；shorin-screenrec-menu 按冒号拆分后作为
+# wf-recorder 的 -p 参数传入。
+printf 'crf=18:preset=veryfast\n' > "${TARGET_HOME}/.cache/shorin-screenrec/enc_params_wf"
 # root/strap path: mkdir -p creates root-owned dirs; chown the whole chain
 # (including the ~/.cache parent itself) so the first desktop session can
 # write its caches. Chowning only the leaves leaves ~/.cache root-owned and
@@ -138,7 +142,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
     chown "${TARGET_USER}:${TARGET_USER}" "${d}" 2>/dev/null || true
   done
 fi
-log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine")"
+log "Recording engine: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/engine") params: $(cat "${TARGET_HOME}/.cache/shorin-screenrec/enc_params_wf")"
 success "dms plugin dependencies ready"
 
 # --- snapper snapshot configs (align the host snapshot: root + home) ---
