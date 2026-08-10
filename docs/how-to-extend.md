@@ -123,8 +123,12 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 ## 增改的「穿插成本」到底多大
 
 - **加官方包 / 加配置 / 加脚本**：5 分钟级别，纯数据操作，风险极低（有测试兜底）。
-- **加 AUR 包**：30 分钟级别，因为要生成离线缓存 + 可能要调 PKGBUILD；
-  当前 AUR 目标数随清单变化（见 `./check-extend.sh` reconcile 输出；另有 vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、离线缓存脚本（fetch-aur-sources.sh）和 manifest。
+- **加 AUR 包**：5 分钟（在线模式：清单加一行，paru 自动拉最新版）到 30 分钟
+  （离线模式：还需生成离线缓存 + 可能要调 PKGBUILD）。06-aur 是双模式：无
+  `.aur-sources/` 缓存 → paru 装最新；有缓存 → makepkg 构建固定 recipe。
+  当前 AUR 目标数随清单变化（见 `./check-extend.sh` reconcile 输出；另有
+  vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、
+  离线缓存脚本（fetch-aur-sources.sh）和 manifest。
 - **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
 - **红线（伤筋动骨，必须 VM 重验 + 换新 TEST_ID）**：改 manifests schema（表格列含义）、
   改 config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑、改安装器核心脚本主流程

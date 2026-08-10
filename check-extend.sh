@@ -137,9 +137,22 @@ refs() {
       rc=1
     fi
   done
-  # fetch-aur-sources.sh 中 `# recipe名` 精确注释头必须是有效 recipe：
-  # 删包时漏删离线缓存条目（如 leaf-markdown-viewer-bin）会在这里被抓到。
-  # 只匹配精确注释头（不匹配 vmware 长注释 / linuxqq 带后缀注释），避免误报。
+  # fetch-aur-sources.sh <-> aur-recipes.tsv 双向：
+  # 1) 反向：每个"注释头型" recipe 必须在 fetch 中有 `# <name>` 注释头（允许带
+  #    后缀说明，如 `# linuxqq-appimage (CN CDN)`），防止新增 recipe 忘加缓存条目。
+  #    豁免 git-source 型：fuzzel-ime-git（缓存条目为 `gitm fuzzel`）与
+  #    greetd-dms-greeter-git（`gitm dank-greeter` + go-mod 缓存），它们的
+  #    PKGBUILD source 是 `git+...` 仓库而非 URL，无 `# <name>` 注释头。
+  # 2) 正向：fetch 中 `# <name>` 精确 recipe 名注释头必须是有效 recipe，
+  #    删包时漏删离线缓存条目（如 leaf-markdown-viewer-bin）会在这里被抓到。
+  local -A exempt_git_recipe=( [fuzzel-ime-git]=1 [greetd-dms-greeter-git]=1 )
+  while IFS= read -r name; do
+    [[ -n "${exempt_git_recipe[${name}]:-}" ]] && continue
+    if ! grep -qE "^# ${name}( |\$)" fetch-aur-sources.sh; then
+      echo "  FAIL recipe 在 fetch-aur-sources.sh 无缓存注释头：${name}"
+      rc=1
+    fi
+  done < <(grep -vE '^#|^$' manifests/aur-recipes.tsv)
   while IFS= read -r name; do
     if ! grep -qx "$name" manifests/aur-recipes.tsv; then
       echo "  FAIL fetch-aur-sources.sh 孤儿缓存条目（不在 aur-recipes.tsv）：$name"

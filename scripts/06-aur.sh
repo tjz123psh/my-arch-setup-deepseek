@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# 06-aur.sh - build and install the 13 reviewed AUR target recipes.
-# Recipes are pinned in third_party/aur/ (reused asset); built with makepkg
-# in a clean per-recipe dir. Uses paru if available, else builds paru first.
+# 06-aur.sh - build and install AUR packages; dual mode:
+#   offline (default when .aur-sources/ cache is present): makepkg builds the
+#   pinned recipes from third_party/aur/ with SRCDEST pointing at the cache,
+#   never touching the network (physical machine with no overseas access).
+#   online (git clone install without cache): paru pulls the LATEST versions
+#   from the AUR (fresh versions, requires network).
+# In both modes the target list comes from the package manifest
+# (channel=aur, policy=install); offline pins recipes, online follows AUR HEAD.
 set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=00-utils.sh
@@ -16,7 +21,8 @@ mkdir -p "${BUILD_BASE}"
 # and is therefore built only on physical; -t vm never builds the host stack.
 # vmware-keymaps is a pure AUR->AUR build dependency of vmware-workstation
 # (installed before makepkg -s can resolve it), NOT an install target, so it
-# is deliberately absent from this list and bootstrapped separately below.
+# is deliberately absent from this list and bootstrapped separately below
+# (offline mode) or resolved automatically by paru (online mode).
 RECIPES=()
 while IFS=$'\t' read -r pkg channel _repo _acq module _restore pol _origin _purpose; do
   [[ -z "${pkg}" || "${pkg}" == "#"* ]] && continue
@@ -24,37 +30,17 @@ while IFS=$'\t' read -r pkg channel _repo _acq module _restore pol _origin _purp
   module_selected "${pkg}" "${module}" || continue
   RECIPES+=("${pkg}")
 done < "${PROJECT_DIR}/manifests/workstation-packages.tsv"
-# paru is the AUR helper used elsewhere; build it first when missing (below).
-# Keep it first in the batch so a bare system gets the helper early.
+# paru is the AUR helper used in online mode and an install target in offline
+# mode; keep it first in the batch so a bare system gets the helper early.
 
 section "Building and installing AUR target packages (${#RECIPES[@]})"
-
-# Optional offline AUR source cache: if sources were pre-placed in
-# .aur-sources/ (makepkg SRCDEST layout - git bare mirrors + downloaded
-# files), makepkg uses them and never touches the network. This is how a
-# physical machine with no overseas access still builds every AUR recipe.
-if [[ -d "${PROJECT_DIR}/.aur-sources" ]] && \
-   find "${PROJECT_DIR}/.aur-sources" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
-  log "Using local AUR source cache: ${PROJECT_DIR}/.aur-sources (offline mode)"
-  export SRCDEST="${PROJECT_DIR}/.aur-sources"
-  # Build-dependency caches for the Go (greetd-dms-greeter) and Rust (paru)
-  # recipes; without them `go build` / `cargo build` hit the network even
-  # though the PKGBUILD sources are cached.
-  if [[ -d "${PROJECT_DIR}/.aur-sources/go-mod" ]]; then
-    export GOMODCACHE="${PROJECT_DIR}/.aur-sources/go-mod"
-  fi
-  if [[ -d "${PROJECT_DIR}/.aur-sources/cargo" ]]; then
-    export CARGO_HOME="${PROJECT_DIR}/.aur-sources/cargo"
-  fi
-else
-  warn "AUR source cache NOT found at ${PROJECT_DIR}/.aur-sources - AUR recipes will download from the network (and paru/greetd builds need crates.io/proxy.golang.org). If this machine has no overseas access, extract aur-sources.tar.gz into the repo directory first (tar -xzf aur-sources.tar.gz -C ${PROJECT_DIR}/)."
-fi
 
 # makepkg's stock DLAGENTS curl has NO timeout: a stalled source host (e.g.
 # codeberg for fuzzel-ime-git) hangs the build forever, exactly like the
 # pacman libcurl issue fixed in 01-mirror. Add connect/max timeouts so a
 # dead host fails the fetch and the recipe retry/failover kicks in instead.
 # -sS silences the per-file progress spam while keeping error output.
+# Applies to BOTH modes: paru also builds AUR packages via makepkg.
 if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
   log "Adding timeouts to makepkg download agents..."
   run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - -sS --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3|g' /etc/makepkg.conf"
@@ -157,96 +143,222 @@ ensure_rust() {
   fi
 }
 
-# build paru first if needed (it is the AUR helper for the rest)
-if [[ "${HAVE_PARU}" == "false" ]] && [[ -d "${RECIPES_DIR}/paru" ]]; then
-  log "paru not installed; building paru first..."
-  ensure_rust
-  if install_recipe paru; then
-    HAVE_PARU=true
-  fi
-fi
+# ---- dual-mode cache probe ----
+# .aur-sources/ present AND non-empty -> offline (pinned recipes); absent or
+# empty/unreadable -> online (paru latest). Shared by the dispatch below and
+# offline_mode so the two checks cannot drift apart.
+has_aur_sources() {
+  [[ -d "${PROJECT_DIR}/.aur-sources" ]] || return 1
+  find "${PROJECT_DIR}/.aur-sources" -mindepth 1 -maxdepth 1 -print -quit | grep -q . || return 1
+}
 
-# AUR->AUR dependency bootstrap: vmware-workstation's `makepkg -s` requires
-# vmware-keymaps to already be installed (its PKGBUILD does
-# `depends+=(vmware-keymaps)`). The old build-all-then-install-all model
-# cannot satisfy that, so vmware-keymaps gets its own build + dedicated
-# install before the main batch (review 5.5). Only relevant when the host
-# stack is actually selected (physical); a vm guest never builds it.
-if [[ "${RECIPES[*]}" == *"vmware-workstation"* ]] && [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
-  log "Bootstrapping vmware-keymaps (AUR dependency of vmware-workstation)..."
-  if install_recipe vmware-keymaps; then
-    mapfile -t km_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'vmware-keymaps*.pkg.tar.*')
-    if (( ${#km_pkgs[@]} > 0 )); then
-      run pacman -U --noconfirm "${km_pkgs[@]}" || {
-        error "could not install bootstrapped vmware-keymaps"
+# ---- offline mode: pinned recipes built with makepkg from the source cache ----
+offline_mode() {
+  # Optional offline AUR source cache: if sources were pre-placed in
+  # .aur-sources/ (makepkg SRCDEST layout - git bare mirrors + downloaded
+  # files), makepkg uses them and never touches the network. This is how a
+  # physical machine with no overseas access still builds every AUR recipe.
+  if has_aur_sources; then
+    log "Using local AUR source cache: ${PROJECT_DIR}/.aur-sources (offline mode)"
+    export SRCDEST="${PROJECT_DIR}/.aur-sources"
+    # Build-dependency caches for the Go (greetd-dms-greeter) and Rust (paru)
+    # recipes; without them `go build` / `cargo build` hit the network even
+    # though the PKGBUILD sources are cached.
+    if [[ -d "${PROJECT_DIR}/.aur-sources/go-mod" ]]; then
+      export GOMODCACHE="${PROJECT_DIR}/.aur-sources/go-mod"
+    fi
+    if [[ -d "${PROJECT_DIR}/.aur-sources/cargo" ]]; then
+      export CARGO_HOME="${PROJECT_DIR}/.aur-sources/cargo"
+    fi
+  fi
+
+  # build paru first if needed (it is the AUR helper for the rest)
+  if [[ "${HAVE_PARU}" == "false" ]] && [[ -d "${RECIPES_DIR}/paru" ]]; then
+    log "paru not installed; building paru first..."
+    ensure_rust
+    if install_recipe paru; then
+      HAVE_PARU=true
+    fi
+  fi
+
+  # AUR->AUR dependency bootstrap: vmware-workstation's `makepkg -s` requires
+  # vmware-keymaps to already be installed (its PKGBUILD does
+  # `depends+=(vmware-keymaps)`). The old build-all-then-install-all model
+  # cannot satisfy that, so vmware-keymaps gets its own build + dedicated
+  # install before the main batch (review 5.5). Only relevant when the host
+  # stack is actually selected (physical); a vm guest never builds it.
+  if [[ "${RECIPES[*]}" == *"vmware-workstation"* ]] && [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
+    log "Bootstrapping vmware-keymaps (AUR dependency of vmware-workstation)..."
+    if install_recipe vmware-keymaps; then
+      mapfile -t km_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'vmware-keymaps*.pkg.tar.*')
+      if (( ${#km_pkgs[@]} > 0 )); then
+        run pacman -U --noconfirm "${km_pkgs[@]}" || {
+          error "could not install bootstrapped vmware-keymaps"
+          exit 1
+        }
+        rm -f "${km_pkgs[@]}"
+        log "Installed vmware-keymaps"
+      else
+        error "vmware-keymaps built no artifact; cannot proceed to vmware-workstation"
         exit 1
-      }
-      rm -f "${km_pkgs[@]}"
-      log "Installed vmware-keymaps"
+      fi
     else
-      error "vmware-keymaps built no artifact; cannot proceed to vmware-workstation"
+      error "vmware-keymaps bootstrap build failed; vmware-workstation cannot resolve its AUR dependency"
       exit 1
     fi
+  fi
+
+  local failed=0 recipe
+  for recipe in "${RECIPES[@]}"; do
+    [[ "${recipe}" == "paru" ]] && [[ "${HAVE_PARU}" == "true" ]] && continue
+    if ! install_recipe "${recipe}"; then
+      # makepkg -s dependency resolution occasionally fails transiently
+      # (e.g. fuzzel-ime-git's fcft/tllist); one retry usually succeeds
+      warn "Retrying failed recipe once: ${recipe}"
+      if ! install_recipe "${recipe}"; then
+        warn "Skipped failed: ${recipe}"
+        failed=$((failed + 1))
+      fi
+    fi
+  done
+
+  # install all built artifacts with a single sudo invocation (one password
+  # prompt instead of one per package; sudo cache alone is insufficient because
+  # long AUR builds outlive the default 5-minute timestamp)
+  mapfile -t pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name '*.pkg.tar.*' | sort)
+  if (( ${#pkgs[@]} > 0 )); then
+    log "Installing ${#pkgs[@]} built AUR packages (single sudo)..."
+    if ! run pacman -U --noconfirm "${pkgs[@]}"; then
+      # C-03: a failed final install must FAIL the step, not warn-and-continue;
+      # keep the artifacts so the failure is diagnosable.
+      error "bulk AUR install failed; artifacts preserved at ${BUILD_BASE}/ for manual diagnosis"
+      exit 1
+    fi
+    # verify every built artifact is actually installed (C-03): pacman -U is
+    # transactional, but a failed hook or interrupted transaction can still
+    # leave a gap; check each package by name from its own metadata.
+    # NOTE: `pacman -Qp <file>` prints "name version" (one line, no label),
+    # unlike `pacman -Qi`. The previous awk '/^Name/' matched nothing and made
+    # every package report name=unknown (observed 2026-08-08, all 14 AUR
+    # targets "not verifiably installed" after a successful pacman -U).
+    local missing=0 p name
+    for p in "${pkgs[@]}"; do
+      name=
+      name="$(LC_ALL=C pacman -Qp "${p}" 2>/dev/null | awk '{print $1}' || true)"
+      if [[ -z "${name}" ]] || ! pacman -Q "${name}" >/dev/null 2>&1; then
+        error "AUR package not verifiably installed: ${p} (name=${name:-unknown})"
+        missing=$((missing + 1))
+      fi
+    done
+    if (( missing > 0 )); then
+      error "${missing} AUR package(s) failed to install; artifacts preserved at ${BUILD_BASE}/"
+      exit 1
+    fi
+    rm -f "${pkgs[@]}"
+    success "Installed ${#pkgs[@]} AUR packages"
   else
-    error "vmware-keymaps bootstrap build failed; vmware-workstation cannot resolve its AUR dependency"
+    warn "no AUR artifacts to install"
+  fi
+
+  if (( failed > 0 )); then
+    error "${failed} AUR package(s) failed to build; rerun install.sh to resume (06 will be retried)"
     exit 1
   fi
-fi
+  success "AUR stage complete (offline mode)"
+}
 
-failed=0
-for recipe in "${RECIPES[@]}"; do
-  [[ "${recipe}" == "paru" ]] && [[ "${HAVE_PARU}" == "true" ]] && continue
-  if ! install_recipe "${recipe}"; then
-    # makepkg -s dependency resolution occasionally fails transiently
-    # (e.g. fuzzel-ime-git's fcft/tllist); one retry usually succeeds
-    warn "Retrying failed recipe once: ${recipe}"
-    if ! install_recipe "${recipe}"; then
-      warn "Skipped failed: ${recipe}"
-      failed=$((failed + 1))
+# ---- online mode: git clone install with network; paru pulls latest AUR ----
+online_mode() {
+  log "Online mode: no .aur-sources cache; installing LATEST AUR packages via paru"
+  # Bootstrap paru: archlinuxcn pacman package first (03 already configured
+  # the repo); fall back to building the pinned recipe with makepkg.
+  if ! command -v paru >/dev/null 2>&1; then
+    if ! run pacman -S --needed --noconfirm paru; then
+      log "archlinuxcn paru unavailable; building pinned paru recipe..."
+      ensure_rust
+      install_recipe paru || {
+        error "paru bootstrap build failed; cannot install AUR packages in online mode"
+        exit 1
+      }
+      mapfile -t paru_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'paru*.pkg.tar.*')
+      if (( ${#paru_pkgs[@]} > 0 )); then
+        run pacman -U --noconfirm "${paru_pkgs[@]}" || {
+          error "paru bootstrap install failed"
+          exit 1
+        }
+        rm -f "${paru_pkgs[@]}"
+      fi
     fi
   fi
-done
-
-# install all built artifacts with a single sudo invocation (one password
-# prompt instead of one per package; sudo cache alone is insufficient because
-# long AUR builds outlive the default 5-minute timestamp)
-mapfile -t pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name '*.pkg.tar.*' | sort)
-if (( ${#pkgs[@]} > 0 )); then
-  log "Installing ${#pkgs[@]} built AUR packages (single sudo)..."
-  if ! run pacman -U --noconfirm "${pkgs[@]}"; then
-    # C-03: a failed final install must FAIL the step, not warn-and-continue;
-    # keep the artifacts so the failure is diagnosable.
-    error "bulk AUR install failed; artifacts preserved at ${BUILD_BASE}/ for manual diagnosis"
+  command -v paru >/dev/null 2>&1 || {
+    error "paru unavailable; cannot install AUR packages in online mode"
     exit 1
+  }
+
+  # Targets: manifest AUR install rows, minus paru itself (just bootstrapped).
+  # vmware-keymaps is NOT in RECIPES and paru resolves it automatically as an
+  # AUR dependency of vmware-workstation.
+  local -a targets=()
+  local recipe
+  for recipe in "${RECIPES[@]}"; do
+    [[ "${recipe}" == "paru" ]] && continue
+    targets+=("${recipe}")
+  done
+
+  if (( ${#targets[@]} == 0 )); then
+    warn "no AUR targets selected (manifest empty or all filtered); skipping online AUR stage"
+    success "AUR stage complete (online mode, no targets)"
+    exit 0
   fi
-  # verify every built artifact is actually installed (C-03): pacman -U is
-  # transactional, but a failed hook or interrupted transaction can still
-  # leave a gap; check each package by name from its own metadata.
-  # NOTE: `pacman -Qp <file>` prints "name version" (one line, no label),
-  # unlike `pacman -Qi`. The previous awk '/^Name/' matched nothing and made
-  # every package report name=unknown (observed 2026-08-08, all 14 AUR
-  # targets "not verifiably installed" after a successful pacman -U).
-  missing=0
-  for p in "${pkgs[@]}"; do
-    name=
-    name="$(LC_ALL=C pacman -Qp "${p}" 2>/dev/null | awk '{print $1}')"
-    if [[ -z "${name}" ]] || ! pacman -Q "${name}" >/dev/null 2>&1; then
-      error "AUR package not verifiably installed: ${p} (name=${name:-unknown})"
+
+  log "paru -S latest: ${targets[*]}"
+  # --noconfirm skips prompts, --skipreview skips the PKGBUILD review prompt.
+  # paru builds as the invoking user and uses sudo for pacman steps (covered
+  # by the scoped NOPASSWD drop-in configured earlier).
+  local q=""
+  local t
+  for t in "${targets[@]}"; do
+    q+="$(printf '%q ' "${t}")"
+  done
+  if [[ "$(id -u)" -eq 0 ]]; then
+    runuser -u "${TARGET_USER}" -- bash -lc "paru -S --noconfirm --skipreview ${q}" || {
+      error "paru install failed (online mode); rerun install.sh to retry"
+      exit 1
+    }
+  else
+    paru -S --noconfirm --skipreview "${targets[@]}" || {
+      error "paru install failed (online mode); rerun install.sh to retry"
+      exit 1
+    }
+  fi
+
+  # Acceptance (same exact-name discipline as C-03): every target must be
+  # installed; paru follows AUR HEAD so a renamed upstream package fails here
+  # (fail-closed) instead of silently passing.
+  local installed missing=0 t
+  installed="$(pacman -Qq)" || {
+    error "could not query the installed package database; refusing online acceptance"
+    exit 1
+  }
+  for t in "${targets[@]}"; do
+    if ! grep -Fx "${t}" >/dev/null <<<"${installed}"; then
+      error "AUR package not installed after online stage: ${t}"
       missing=$((missing + 1))
     fi
   done
   if (( missing > 0 )); then
-    error "${missing} AUR package(s) failed to install; artifacts preserved at ${BUILD_BASE}/"
+    error "${missing} AUR package(s) missing after online paru install"
     exit 1
   fi
-  rm -f "${pkgs[@]}"
-  success "Installed ${#pkgs[@]} AUR packages"
-else
-  warn "no AUR artifacts to install"
-fi
+  success "Installed ${#targets[@]} latest AUR packages via paru (online mode)"
+}
 
-if (( failed > 0 )); then
-  error "${failed} AUR package(s) failed to build; rerun install.sh to resume (06 will be retried)"
-  exit 1
+# ---- mode dispatch: source cache present -> offline makepkg; else online paru ----
+if has_aur_sources; then
+  offline_mode
+else
+  if [[ -d "${PROJECT_DIR}/.aur-sources" ]]; then
+    warn ".aur-sources/ 目录存在但为空或不可读——走在线模式（paru 拉最新）；若机器无海外网络请检查缓存是否解压完整"
+  fi
+  online_mode
 fi
-success "AUR stage complete"

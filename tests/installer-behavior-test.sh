@@ -137,12 +137,28 @@ rm -rf "$tmp_home" "$outside" "$minmap"
 echo "== failure propagation contracts =="
 # 06-aur: a failing final `pacman -U` must exit nonzero (C-03). We stub run()
 # to fail and source the install block by extracting it would be fragile, so
-# verify the *contract*: grep the step for the required exit path.
-if grep -q 'error "bulk AUR install failed' "$root/scripts/06-aur.sh" \
-   && grep -q 'exit 1' "$root/scripts/06-aur.sh"; then
-  pass=$((pass + 1)); echo "  ok   AUR bulk install failure exits nonzero"
+# verify the *contract*: the bulk-install error must be followed by an exit 1
+# within the same block. A bare `grep -q 'exit 1'` anywhere in the file is too
+# weak (06-aur has ~15 exit-1 sites; a regression to `exit 0` would pass), so
+# use line adjacency like the cp/chown assertion below.
+bulk_line=$(grep -n 'error "bulk AUR install failed' "$root/scripts/06-aur.sh" | head -1 | cut -d: -f1)
+if [[ -n "$bulk_line" ]] \
+   && sed -n "$((bulk_line + 1)),$((bulk_line + 6))p" "$root/scripts/06-aur.sh" | grep -q 'exit 1'; then
+  pass=$((pass + 1)); echo "  ok   AUR bulk install failure exits nonzero (adjacent exit)"
 else
   fail=$((fail + 1)); echo "  FAIL AUR bulk install failure not propagated"
+fi
+# 06-aur dual mode: online (paru latest) and offline (pinned makepkg) must
+# both exist, dispatch on the .aur-sources cache, and targets must come from
+# the manifest (not a hardcoded list). Without these, deleting online_mode
+# entirely would still leave the gate green (swarm audit 2026-08-11).
+if grep -q 'online_mode()' "$root/scripts/06-aur.sh" \
+   && grep -q 'paru -S --noconfirm --skipreview' "$root/scripts/06-aur.sh" \
+   && grep -q 'has_aur_sources' "$root/scripts/06-aur.sh" \
+   && grep -q 'manifests/workstation-packages.tsv' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur dual mode (online paru / offline makepkg) wired"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur dual-mode wiring missing (online paru or cache dispatch)"
 fi
 # 04-drivers: required driver failure must exit nonzero (C-04)
 if grep -q 'required driver package(s) failed; aborting' "$root/scripts/04-drivers.sh" \
@@ -212,9 +228,13 @@ fi
 # ownership/mode to DEST, so a pre-copy chown is overwritten and makepkg dies
 # with "no write permission to $BUILDDIR" (found 2026-08-10 fresh VM install;
 # the non-root path was unaffected). Structural check: in install_recipe the
-# chown line must appear after the cp -a line.
-cp_line=$(grep -n 'cp -a "\${dir}/\."' "$root/scripts/06-aur.sh" | head -1 | cut -d: -f1)
-chown_line=$(grep -n 'chown -R "\${TARGET_USER}' "$root/scripts/06-aur.sh" | head -1 | cut -d: -f1)
+# chown line must appear after the cp -a line. Both lines are located INSIDE
+# the install_recipe() function block (swarm audit 2026-08-11: a bare file-wide
+# `head -1` would compare the wrong pair if a matching line ever appeared
+# before the function).
+func_block=$(sed -n '/^install_recipe() {/,/^}/p' "$root/scripts/06-aur.sh")
+cp_line=$(printf '%s\n' "$func_block" | grep -n 'cp -a "${dir}/\.' | head -1 | cut -d: -f1)
+chown_line=$(printf '%s\n' "$func_block" | grep -n 'chown -R "${TARGET_USER}' | head -1 | cut -d: -f1)
 if [[ -n "$cp_line" && -n "$chown_line" && "$chown_line" -gt "$cp_line" ]]; then
   pass=$((pass + 1)); echo "  ok   06-aur chowns build dir after cp -a (lines $cp_line < $chown_line)"
 else
@@ -253,9 +273,13 @@ if grep -q 'TARGET_HOME}/.cache" \\' "$root/scripts/09-settings.sh"; then
 else
   fail=$((fail + 1)); echo "  FAIL 09-settings ~/.cache chain chown missing"
 fi
-# 06-aur: DLAGENT patch must be verified after sed
-if grep -q 'could not patch makepkg DLAGENTS' "$root/scripts/06-aur.sh"; then
-  pass=$((pass + 1)); echo "  ok   06-aur verifies DLAGENT timeout patch"
+# 06-aur: DLAGENT patch must be verified after sed (warn string) AND the
+# timeout replacement must actually be in the sed command (swarm audit
+# 2026-08-11: asserting only the warn string lets the sed pattern drift
+# silently - the runtime verify catches it, but only on a real install).
+if grep -q 'could not patch makepkg DLAGENTS' "$root/scripts/06-aur.sh" \
+   && grep -q -- '--connect-timeout 15 --max-time 600' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur verifies DLAGENT timeout patch (warn + replacement present)"
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur DLAGENT patch not verified"
 fi

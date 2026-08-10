@@ -21,6 +21,10 @@
 - 网页下载：仓库页面 Code → **Download ZIP**（永远是当前最新）
 - 或命令行：`git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
 
+> **AUR 安装双模式**（06 步）：无 `.aur-sources/` 缓存（git clone / ZIP 直接装）
+> → **在线模式**，安装器用 paru 从 AUR 装**最新版**（需网络，版本随上游漂移）；
+> 解压了离线缓存 → **离线模式**，makepkg 构建**固定 recipe**（版本可复现、全离线）。
+
 **AUR 离线缓存**（可选，仅无海外网络时用，约 1G）：存放在仓库的
 [GitHub Releases](https://github.com/tjz123psh/my-arch-setup-deepseek/releases)
 （`aur-cache-*` 标签），**不在 git clone 里**，需要时单独下载：
@@ -67,7 +71,7 @@ sudo bash strap.sh
 | 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（安装项 = pacman（含 archlinuxcn）+ AUR，数量随清单变化、以 `./check-extend.sh` reconcile 输出为准；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin / clash-verge-rev-bin） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制，required 失败即中止；VM 跳过） |
 |  05-niri/hyprland | 桌面环境（Niri 或 Niri+Hyprland 双会话，驱动之后） |
-| 06-aur | 构建安装固定 AUR recipe（目标数与 recipe 树数随清单变化、以 `./check-extend.sh` reconcile 输出为准；VM 不构建 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
+| 06-aur | AUR 安装双模式：**在线**（无 `.aur-sources/` 缓存，git clone 场景）用 paru 从 AUR 装**最新版**（`--noconfirm --skipreview` 全自动，装后按清单精确验收）；**离线**（解压了缓存）用 makepkg 构建固定 recipe（`SRCDEST` 指向缓存全离线，bulk `pacman -U` 单 sudo 安装；vmware-keymaps 依赖仅 physical 时先 bootstrap）。目标数与 recipe 树数随清单变化、以 `./check-extend.sh` reconcile 输出为准；含 paru/greetd-dms-greeter/vmware-workstation；最终安装失败保留产物并中止） |
 | 07-config | 部署个人配置映射（映射数随清单变化、以 `./check-extend.sh` reconcile 输出为准；先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
 | 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 用系统 stock 入口 `hyprland.desktop`（`start-hyprland`，R5 对齐物理机；uwsm/`hyprland-uwsm.desktop` 已从安装清单移除），cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
 | 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（两机型统一 wf-recorder：默认轻档 preset=fast/crf=18；**物理机安装时 VAAPI 探测通过则自动预置 h264_vaapi**（GPU 编码，qp=18 恒定质量、零 CPU、144Hz 不掉帧），VM/仿物理保持 libx264；libx264 时画质菜单可切 3 档；wl-screenrec-git 已自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容）+ nomacs/PNG MIME 验收 |
@@ -145,6 +149,10 @@ sudo bash strap.sh
 DKMS 的 vmmon/vmnet）。clash-verge-rev 只安装不启服务（配置私有，手动配置）。
 
 ## 验证背景
+
+> 双模式注意：**在线模式**（paru 装最新版）安装结果随上游漂移、**不可复现**；
+> TEST_ID/clean-baseline 的"同一最终 payload"验收语义仅在**离线模式**（固定 recipe）
+> 下成立。VM 验收请以离线模式为准；在线模式只验证"能装通"，不产生可复现 PASS。
 
 软件包清单、配置映射与 AUR recipe 均基于真实 ASUS 机器检录；静态清单、配置
 映射、Niri 语法和 Hyprland fragments 已复核，目标行为测试也已运行。仓库的
