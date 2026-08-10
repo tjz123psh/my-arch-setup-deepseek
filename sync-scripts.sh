@@ -78,6 +78,9 @@ echo "  same=${#same[@]} changed=${#changed[@]} new=${#newfiles[@]} stale=${#del
 for rel in "${changed[@]}"; do printf '  [changed] %s\n' "$rel"; done
 for rel in "${newfiles[@]}"; do printf '  [new]     %s\n' "$rel"; done
 for rel in "${deleted[@]}"; do printf '  [stale]   %s (in repo, missing from %s)\n' "$rel" "$SRC"; done
+if (( ${#deleted[@]} > 0 )); then
+  echo "  注：--apply 时会同步清理这些 stale 文件的映射行"
+fi
 
 # ---------------------------------------------------------------------------
 # secret gate: scan every file that would be written (fail closed)
@@ -191,6 +194,18 @@ echo "  backup written to: ${backup}"
 # switch: delete only inside the live tree is NOT used; rsync --delete from
 # the staging copy removes stale files, which is exactly what we reviewed.
 rsync -a --delete "${staging}/" "${DEST}/"
+
+# stale 文件的映射行同步清理（2026-08-10：只加不删会留孤儿映射，reconcile 报错）
+removed_map=0
+for rel in "${deleted[@]}"; do
+  src_row="config/home/scripts/${rel}"
+  if grep -qF "${src_row}" "${MAPPINGS}"; then
+    grep -vF "${src_row}" "${MAPPINGS}" > "${MAPPINGS}.tmp" && mv "${MAPPINGS}.tmp" "${MAPPINGS}"
+    echo "  [mapping removed] ${rel}"
+    removed_map=$((removed_map + 1))
+  fi
+done
+[[ ${removed_map} -gt 0 ]] && echo "  已清理 ${removed_map} 条孤儿映射行"
 
 # append mapping rows (validated above; no duplicates possible)
 added=0

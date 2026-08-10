@@ -161,6 +161,11 @@ numbers() {
   out=$(bash tests/workstation-package-reconciliation-test.sh 2>&1 | tail -1)
   echo "  $out"
   echo "  config 文件数: $(find config -type f | wc -l)"
+  # reconcile 失败时给明确提示（2026-08-10：之前只显示"应为 install="空值，让人猜）
+  if [[ "$out" != *"Workstation package checks passed"* ]]; then
+    echo "  FAIL reconcile 未通过（numbers 依赖其输出，先修 reconcile 节）"
+    return 1
+  fi
   # 动态比对（2026-08-10）：README 中任何 install=N / total=N 字面量必须与当前实际一致。
   # 旧版用固定"过期字面量"清单，数字一变清单自己就过期，会把当前值误报成漂移。
   actual_install=$(sed -n 's/.*install=\([0-9]*\).*/\1/p' <<<"$out")
