@@ -67,6 +67,9 @@
 | 3 | strap.sh（root）路径不创建 scoped pacman NOPASSWD drop-in | `makepkg -s` 装缺失依赖时 `sudo` 无 tty 无密码 → 4 个配方（fcft/tllist/ttf-liberation/fuse2 依赖）失败 | `b99e271`（root 路径同样创建） |
 | 4 | `07-config` 只 chown 文件不 chown 中间目录（root 路径） | `niri-vmtest-gen` 写 `config.kdl.vmtest` 权限拒绝；`systemctl --user enable dms.service` 无法创建 `.wants` → 08-services required 失败 | `57b3bcb` |
 | 5 | Hyprland/aquamarine 在 VMware guest 无法导入 mesa/vmwgfx dma-buf（上游 `hyprwm/Hyprland#7658`，未修复） | 所有 GL 客户端 `wl_surface.attach: invalid arguments`（kitty 打不开、软件不显示）；**不是 3D 关闭**（dmesg 3D caps 齐全，`SVGA3D;LLVM` 是正常硬件渲染串） | `62d73b0`（VMware guest 写 `LIBGL_ALWAYS_SOFTWARE=1`） |
+| 6 | 蜂群审计（2026-08-10，两条路径对称性 + 边界/前置/清理）：`~/.cache` 属主链、07-config `..` 路径逃逸与备份失败静默、08-services 用户管理器引导 + NetworkManager 吞错、06-aur DLAGENT 补丁无验证、LIBGL 幂等 `=` vs `=1`、XDG_CONFIG_HOME 冲突 | 详见 `aea4fbe` 提交说明；普通用户路径的 `09-settings` 曾以 `Permission denied` 中止（LIBGL 直写 /etc/environment） | `aea4fbe` |
+
+**普通用户路径确认（2026-08-10）**：root/strap 两轮验收之外，操作员本人在原 VM 上以 `./install.sh -t vm -d both`（pang 用户）重跑并自行验收通过（`aea4fbe` 之后）。至此三条安装路径（strap root、物理仿真实测、普通用户 `./install.sh`）均有真实运行记录。
 
 基础安装对齐（README 已更新）：
 - **内核**：03-packages 硬性前置要求 `linux-zen` 与 `linux` 并存；archinstall 默认
