@@ -3,8 +3,10 @@
 #
 # 聚合所有"加东西必须过"的检查；任一环节失败即退出非零，禁止提交。
 # 模型/操作者每次增改后、commit 前运行：
-#   ./check-extend.sh            # 默认全量（13 节，含慢速行为套件 + 宿主部署漂移提示）
-#   ./check-extend.sh --fast     # 快速闸门（8 节核心，跳过慢速套件）
+#   ./check-extend.sh            # 默认：按改动范围自动选快慢（只改数据/文档→快速8节；改脚本/测试→全量13节；干净树→全量）
+#   ./check-extend.sh --fast     # 强制快速闸门（8 节核心）
+#   ./check-extend.sh --full     # 强制全量（13 节）
+#   ./check-extend.sh --deploy   # 闸门通过后把脚本/插件同步到宿主（~/.local/bin 等）
 #   ./check-extend.sh --only=syntax,secret   # 只跑指定节（调试用）
 #   ./check-extend.sh --skip=behavior        # 跳过指定节
 #
@@ -25,20 +27,23 @@ root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 cd "$root"
 
 fast=0
+auto=1
+deploy=0
 only=""
 skip=""
 declare -a SECTIONS=(bash-n shellcheck reconcile syntax refs secret numbers behavior session-lifecycle pacman-order flclash nvim-config deploy-sync)
 declare -a CORE=(bash-n shellcheck reconcile syntax refs secret numbers behavior)
 
 usage() {
-  sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 }
 
 while (( $# > 0 )); do
   case "$1" in
-    --fast)      fast=1 ;;
-    --full)      fast=0 ;;  # 兼容旧语义：全量本来就是默认
+    --fast)      fast=1; auto=0 ;;
+    --full)      fast=0; auto=0 ;;
+    --deploy)    deploy=1 ;;
     --only=*)    only="${1#--only=}" ;;
     --skip=*)    skip="${1#--skip=}" ;;
     -h|--help)   usage ;;
@@ -46,6 +51,15 @@ while (( $# > 0 )); do
   esac
   shift
 done
+
+# 自动选快慢：按 git diff 范围判定。改脚本/测试/闸门自身 → 全量；只改数据/文档 → 快速。
+if (( auto )); then
+  changed=$(git diff --name-only HEAD 2>/dev/null || true)
+  if [[ -n "$changed" ]] && ! grep -qE '^(scripts/|tests/|install\.sh$|strap\.sh$|fetch-aur-sources\.sh$|sync-scripts\.sh$|check-extend\.sh$)' <<<"$changed"; then
+    fast=1
+    echo "（改动仅涉及数据/文档 → 自动快速模式 8 节；改脚本/测试会自动全量，--full 可强制）"
+  fi
+fi
 
 status=0
 section_count=0
@@ -163,19 +177,21 @@ pacman-order()      { bash tests/pacman-sync-order-test.sh; }
 flclash()           { bash tests/flclash-migration-test.sh; }
 nvim-config()       { bash tests/nvim-config-test.sh; }
 
+# 部署对：host|repo|mode（deploy-sync 比对用；--deploy 安装用）。
+# 只覆盖部署态文件（脚本/插件 QML），不覆盖运行时状态（engine/codec_wf/enc_params_wf 是用户可改的）。
+declare -a DEPLOY_PAIRS=(
+  "$HOME/.local/bin/shorin-screenrec-menu|config/home/.local/bin/shorin-screenrec-menu|755"
+  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml|644"
+  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml|644"
+  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml|644"
+  "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json|config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json|644"
+)
+
 # deploy-sync：宿主部署副本 vs 仓库 diff（信息性——提示"改动没部署到宿主"，不阻断提交）。
-# 只比对部署态文件（脚本/插件 QML），不比运行时状态（engine/codec_wf/enc_params_wf 是用户可改的）。
 deploy-sync() {
-  local -a pairs=(
-    "$HOME/.local/bin/shorin-screenrec-menu:config/home/.local/bin/shorin-screenrec-menu"
-    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecWidget.qml"
-    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/ShorinScreenrecSettings.qml"
-    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/StartupCheck.qml"
-    "$HOME/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json:config/home/.config/DankMaterialShell/plugins/ShorinScreenrec/plugin.json"
-  )
   local pair host repo synced=0 drifted=0
-  for pair in "${pairs[@]}"; do
-    host="${pair%%:*}"; repo="${pair#*:}"
+  for pair in "${DEPLOY_PAIRS[@]}"; do
+    host="${pair%%|*}"; rest="${pair#*|}"; repo="${rest%%|*}"
     if [[ ! -f "$host" ]]; then
       echo "  提示: 宿主无 $host（非本机/未部署，跳过）"
       continue
@@ -183,12 +199,33 @@ deploy-sync() {
     if cmp -s "$host" "$repo"; then
       synced=$((synced + 1))
     else
-      echo "  ⚠ 宿主 $host 与仓库不一致（改动未部署到宿主？）"
+      echo "  ⚠ 宿主 $host 与仓库不一致（可用 --deploy 同步）"
       drifted=$((drifted + 1))
     fi
   done
   echo "  部署同步: $synced 一致 / $drifted 漂移（信息性，不阻断提交）"
   return 0
+}
+
+# deploy_host：把仓库的脚本/插件部署到宿主（--deploy 触发；仅闸门全绿时执行）。
+deploy_host() {
+  local pair host repo mode
+  echo "== deploy =="
+  for pair in "${DEPLOY_PAIRS[@]}"; do
+    host="${pair%%|*}"; rest="${pair#*|}"; repo="${rest%%|*}"; mode="${rest##*|}"
+    if [[ ! -f "$repo" ]]; then echo "  SKIP $repo（仓库无此文件）"; continue; fi
+    mkdir -p "$(dirname "$host")"
+    if install -m "$mode" "$repo" "$host"; then echo "  → $host"; fi
+  done
+  # /usr/local/bin（DMS 插件启动检查用）需要 root：尝试 gsudo，失败给出提示
+  if [[ -x "$HOME/scripts/desktop/gsudo" ]]; then
+    if timeout 15 "$HOME/scripts/desktop/gsudo" -- install -m 755 config/home/.local/bin/shorin-screenrec-menu /usr/local/bin/shorin-screenrec-menu 2>/dev/null; then
+      echo "  → /usr/local/bin/shorin-screenrec-menu（root）"
+    else
+      echo "  ⚠ /usr/local/bin 同步需密码，跳过（可手动: sudo install -m 755 ~/Projects/my-arch-setup-deepseek/config/home/.local/bin/shorin-screenrec-menu /usr/local/bin/shorin-screenrec-menu）"
+    fi
+  fi
+  echo "  部署完成，可重跑 --only=deploy-sync 确认 0 漂移"
 }
 
 # ---------- 执行 ----------
@@ -203,7 +240,8 @@ done
 echo "======================"
 if (( status == 0 )); then
   echo "check-extend: ${section_count} 节全部通过 ✅"
+  if (( deploy )); then deploy_host; fi
 else
-  echo "check-extend: 有失败，修复后重跑（红=禁止提交）❌"
+  echo "check-extend: 有失败，修复后重跑（红=禁止提交，不部署）❌"
 fi
 exit $status

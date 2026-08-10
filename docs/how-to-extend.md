@@ -131,6 +131,6 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 | `fetch-aur-sources.sh` | 生成 AUR 离线缓存（增 AUR 后必跑） |
 | `sync-scripts.sh` | 同步本机 ~/scripts 进仓库 |
 | `tests/` | 数据一致性测试 |
-| `check-extend.sh` | 提交前一键总检（增改门禁；默认全量 13 节含慢速套件与宿主部署漂移提示，`--fast` 快速 8 节，`--only=`/`--skip=` 局部调试） |
+| `check-extend.sh` | 提交前一键总检（增改门禁；默认按改动范围自动选快慢——只改数据/文档→快速 8 节，改脚本/测试→全量 13 节；`--fast`/`--full` 强制；`--deploy` 闸门通过后同步到宿主；`--only=`/`--skip=` 局部调试） |
 | `tests/validate-config-syntax.sh` | 配置内容语法校验（按类型分流；含 QML 结构配平；缺工具 SKIP 并列出人工清单） |
 | `tests/check-extend-test.sh` | 错误注入自证（坏配置/重复包/数字漂移/secret/孤儿 recipe 必须被抓住） |
