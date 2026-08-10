@@ -124,6 +124,25 @@ if [[ " ${OFFICIAL[*]} " == *" flclash "* ]]; then
   fi
 fi
 
+# clash-verge migration: same conflict shape as flclash above. The old AUR
+# clash-verge-rev-bin conflicts with the archlinuxcn clash-verge-rev package
+# (both claim `clash-verge`), and --noconfirm answers the conflict prompt with
+# the default (abort). Remove only the old package before the official batch,
+# then verify the exact target after installation (see acceptance below).
+if [[ " ${OFFICIAL[*]} " == *" clash-verge-rev "* ]]; then
+  installed_packages="$(pacman -Qq)" || {
+    error "could not query the installed package database; refusing clash-verge migration"
+    exit 1
+  }
+  if grep -Fx clash-verge-rev-bin >/dev/null <<<"${installed_packages}"; then
+    log "Migrating clash-verge-rev-bin (AUR) -> clash-verge-rev (archlinuxcn)..."
+    if ! run pacman -R --noconfirm clash-verge-rev-bin; then
+      error "could not remove conflicting clash-verge-rev-bin; clash-verge migration is required"
+      exit 1
+    fi
+  fi
+fi
+
 # install official packages
 # rustup conflicts with the rust/cargo packages but provides them too.
 # Install it first so any package depending on cargo/rust (e.g. cargo-audit)
@@ -199,6 +218,40 @@ if [[ " ${OFFICIAL[*]} " == *" flclash "* ]]; then
     exit 1
   fi
   log "Verified flclash package migration: flclash present, flclash-bin absent, binaries + desktop entry OK"
+fi
+
+# Clash Verge acceptance (same pattern as FlClash C.3): verify the target
+# package ships the expected binary and a real desktop entry (queried from
+# the installed package, not assumed).
+if [[ " ${OFFICIAL[*]} " == *" clash-verge-rev "* ]]; then
+  installed_packages="$(pacman -Qq)" || {
+    error "could not query the installed package database; refusing clash-verge acceptance"
+    exit 1
+  }
+  if ! grep -Fx clash-verge-rev >/dev/null <<<"${installed_packages}"; then
+    error "clash-verge-rev (archlinuxcn) is not installed after the official package stage"
+    exit 1
+  fi
+  if grep -Fx clash-verge-rev-bin >/dev/null <<<"${installed_packages}"; then
+    error "legacy clash-verge-rev-bin remains installed; refusing to mark package stage done"
+    exit 1
+  fi
+  clash_verge_missing=0
+  for f in /usr/bin/clash-verge; do
+    if [[ ! -x "${f}" ]]; then
+      error "clash-verge-rev package missing expected file: ${f}"
+      clash_verge_missing=$((clash_verge_missing + 1))
+    fi
+  done
+  if ! pacman -Ql clash-verge-rev 2>/dev/null | grep -q '[^ ]\.desktop$'; then
+    error "clash-verge-rev package ships no desktop entry (pacman -Ql clash-verge-rev)"
+    clash_verge_missing=$((clash_verge_missing + 1))
+  fi
+  if (( clash_verge_missing > 0 )); then
+    error "clash-verge-rev acceptance failed (${clash_verge_missing} missing file(s))"
+    exit 1
+  fi
+  log "Verified clash-verge-rev package migration: clash-verge-rev present, clash-verge-rev-bin absent, binary + desktop entry OK"
 fi
 
 success "Package install complete (${#OFFICIAL[@]} official + ${#AUR_PKGS[@]} AUR pending step 06)"

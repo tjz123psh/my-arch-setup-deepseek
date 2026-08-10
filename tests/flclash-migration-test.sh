@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# flclash-migration-test.sh - static contract for the flclash-bin ->
-# archlinuxcn/flclash migration. It does not install or remove packages.
+# flclash-migration-test.sh - static contract for the AUR -> archlinuxcn
+# proxy-client migrations (flclash-bin -> flclash, clash-verge-rev-bin ->
+# clash-verge-rev). It does not install or remove packages.
 set -Eeuo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -49,6 +50,28 @@ if "flclash-bin" in recipe_names:
 if (root / "third_party/aur/flclash-bin").exists():
     raise SystemExit("legacy flclash-bin recipe tree still exists")
 
+clash_rows = [row for row in rows if row[0] == "clash-verge-rev"]
+if clash_rows != [
+    [
+        "clash-verge-rev",
+        "pacman",
+        "archlinuxcn",
+        "pacman",
+        "daily-apps",
+        "package-only",
+        "install",
+        "current-explicit",
+        "Continuation of Clash Verge | A Clash Meta GUI based on Tauri (archlinuxcn)",
+    ]
+]:
+    raise SystemExit(f"unexpected clash-verge-rev manifest row: {clash_rows!r}")
+if any(row[0] == "clash-verge-rev-bin" for row in rows):
+    raise SystemExit("legacy clash-verge-rev-bin remains an active package row")
+if "clash-verge-rev-bin" in recipe_names:
+    raise SystemExit("legacy clash-verge-rev-bin remains in the AUR recipe manifest")
+if (root / "third_party/aur/clash-verge-rev-bin").exists():
+    raise SystemExit("legacy clash-verge-rev-bin recipe tree still exists")
+
 for relative in (
     "scripts/06-aur.sh",
     "fetch-aur-sources.sh",
@@ -56,6 +79,8 @@ for relative in (
     text = (root / relative).read_text()
     if "flclash-bin" in text:
         raise SystemExit(f"legacy AUR reference remains in active file: {relative}")
+    if "clash-verge-rev-bin" in text:
+        raise SystemExit(f"legacy clash-verge-rev-bin reference remains in active file: {relative}")
 
 if "Exec=flclash\n" not in (root / "config/home/.config/autostart/FlClash.desktop").read_text():
     raise SystemExit("autostart desktop entry does not use the pacman-provided launcher")
@@ -66,11 +91,18 @@ packages_script = (root / "scripts/03-packages.sh").read_text()
 for required in (
     'installed_packages="$(pacman -Qq)"',
     "pacman -R --noconfirm flclash-bin",
-    "grep -Fx flclash",
+    "grep -Fx flclash >",
     "legacy flclash-bin remains installed",
 ):
     if required not in packages_script:
         raise SystemExit(f"flclash migration guard missing: {required}")
+for required in (
+    "pacman -R --noconfirm clash-verge-rev-bin",
+    "grep -Fx clash-verge-rev >",
+    "legacy clash-verge-rev-bin remains installed",
+):
+    if required not in packages_script:
+        raise SystemExit(f"clash-verge migration guard missing: {required}")
 
-print("flclash migration checks passed: archlinuxcn pacman target + explicit legacy replacement")
+print("proxy migration checks passed: flclash + clash-verge-rev archlinuxcn targets, legacy AUR replaced")
 PY

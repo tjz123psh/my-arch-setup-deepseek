@@ -64,14 +64,6 @@ dl dsearch-x86_64-0.3.2.gz "https://github.com/AvengeMedia/danksearch/releases/d
 dl Fluent-fcitx5-399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz "https://github.com/Reverier-Xu/Fluent-fcitx5/archive/399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz"
 # google-chrome
 dl google-chrome-stable_151.0.7922.71-1_amd64.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_151.0.7922.71-1_amd64.deb"
-# leaf-markdown-viewer-bin
-dl leaf-1.26.2-x86_64.bin "https://github.com/RivoLink/leaf/releases/download/1.26.2/leaf-linux-x86_64"
-dl LICENSE-MIT.txt       "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/LICENSE"
-dl CHANGELOG-1.26.2.md    "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/CHANGELOG.md"
-dl CONTRIBUTING-1.26.2.md "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/CONTRIBUTING.md"
-dl README-1.26.2.md       "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/README.md"
-dl SECURITY-1.26.2.md     "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/SECURITY.md"
-dl TESTING-1.26.2.md      "https://raw.githubusercontent.com/RivoLink/leaf/0c037dba12e2396f798878654b11b668f3b07929/TESTING.md"
 # linuxqq-appimage (CN CDN)
 dl Linuxqq-3.2.32_20260730-x86_64.AppImage "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/c97651b2/QQ_3.2.32_260730_x86_64_01.AppImage"
 # obsidian-bin
@@ -84,8 +76,6 @@ dl paru-2.1.0.tar.gz "https://github.com/Morganamilo/paru/archive/v2.1.0.tar.gz"
 dl WechatLinux-1783692407-x86_64.AppImage "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage"
 # wooz-git
 dl wooz-24e2856bf2cc13810f00971ae143973840555321.tar.gz "https://github.com/negrel/wooz/archive/24e2856bf2cc13810f00971ae143973840555321.tar.gz"
-# clash-verge-rev-bin
-dl clash-verge-rev-2.5.2-x86_64.deb "https://github.com/clash-verge-rev/clash-verge-rev/releases/download/v2.5.2/Clash.Verge_2.5.2_amd64.deb"
 
 echo
 echo "== VMware sources (vmware-workstation bundle + tools ISOs) =="

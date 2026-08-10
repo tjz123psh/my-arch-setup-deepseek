@@ -23,7 +23,7 @@
 | 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
 
-> 数字会漂移：`README.md` 里的包数（当前 install=197 / verify=12 / deferred=8，总 217）、映射数（231）、recipe 树（15）、config 文件数
+> 数字会漂移：包数（install/total）、映射数、recipe 树数、config 文件数等清单计数**以 `./check-extend.sh` 的 reconcile 输出为准**（运行后看 numbers 节打印的权威块）；README 已不再写死这些数字。
 > （330）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
 > `find config -type f | wc -l`、`awk` 统计清单行数核对），并重新打包
 > `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`）。
@@ -124,7 +124,7 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 
 - **加官方包 / 加配置 / 加脚本**：5 分钟级别，纯数据操作，风险极低（有测试兜底）。
 - **加 AUR 包**：30 分钟级别，因为要生成离线缓存 + 可能要调 PKGBUILD；
-  当前有 14 个 AUR 目标（另有 vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、离线缓存脚本和 manifest。
+  当前 AUR 目标数随清单变化（见 `./check-extend.sh` reconcile 输出；另有 vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、离线缓存脚本（fetch-aur-sources.sh）和 manifest。
 - **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
 - **红线（伤筋动骨，必须 VM 重验 + 换新 TEST_ID）**：改 manifests schema（表格列含义）、
   改 config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑、改安装器核心脚本主流程

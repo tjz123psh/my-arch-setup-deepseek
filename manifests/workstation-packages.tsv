@@ -28,7 +28,7 @@ cc-switch	pacman	archlinuxcn	pacman	development-toolchain	package-only	install	c
 ccache	pacman	extra	pacman	build-foundation	package-only	install	current-explicit	Compiler cache that speeds up recompilation by caching previous compilations
 cinnamon-translations	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Translations for Cinnamon and Nemo
 clang	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	C language family frontend for LLVM
-clash-verge-rev-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Graphical Clash-compatible proxy client
+clash-verge-rev	pacman	archlinuxcn	pacman	daily-apps	package-only	install	current-explicit	Continuation of Clash Verge | A Clash Meta GUI based on Tauri (archlinuxcn)
 coreutils	pacman	core	verify-only	base-preconditions	manual-precondition	verify	confirmed-desired	The basic file, shell and text manipulation utilities of the GNU operating system
 cups-pk-helper	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	A helper that makes system-config-printer use PolicyKit
 devtools	pacman	extra	pacman	build-foundation	package-only	install	confirmed-desired	Official Arch clean-chroot tooling for isolated fixed AUR package builds
@@ -88,7 +88,6 @@ jq	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-l
 khal	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	CLI calendar application built around CalDAV
 kimageformats	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Image format plugins for Qt 6
 kitty	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A modern, hackable, featureful, OpenGL-based terminal emulator
-leaf-markdown-viewer-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Markdown document viewer application
 lib32-nvidia-utils	pacman	multilib	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA drivers utilities (32-bit)
 libnotify	pacman	extra	pacman	desktop-shared	package-only	install	confirmed-desired	Library for sending desktop notifications
 libpulse	pacman	extra	pacman	audio	package-only	install	current-explicit	A featureful, general-purpose sound server (client library)

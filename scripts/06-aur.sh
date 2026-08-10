@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 06-aur.sh - build and install the 14 reviewed AUR target recipes.
+# 06-aur.sh - build and install the 13 reviewed AUR target recipes.
 # Recipes are pinned in third_party/aur/ (reused asset); built with makepkg
 # in a clean per-recipe dir. Uses paru if available, else builds paru first.
 set -Eeuo pipefail

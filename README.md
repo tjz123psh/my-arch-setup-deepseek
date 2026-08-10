@@ -64,11 +64,11 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（8 个国内镜像：阿里/中科大/清华/腾讯/华为/网易/兰大/浙大）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（192 安装 = 178 pacman（含 archlinuxcn）+ 14 AUR；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin） |
+| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（安装项 = pacman（含 archlinuxcn）+ AUR，数量随清单变化、以 `./check-extend.sh` reconcile 输出为准；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin / clash-verge-rev-bin） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制，required 失败即中止；VM 跳过） |
 |  05-niri/hyprland | 桌面环境（Niri 或 Niri+Hyprland 双会话，驱动之后） |
-| 06-aur | 构建安装固定 AUR recipe（物理机 14 个目标 / VM 13 个，不含 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap，共 15 棵 recipe 树；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
-| 07-config | 部署个人配置映射（230 映射，先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
+| 06-aur | 构建安装固定 AUR recipe（目标数与 recipe 树数随清单变化、以 `./check-extend.sh` reconcile 输出为准；VM 不构建 vmware-workstation/keymaps；vmware-keymaps 依赖仅 physical 时先 bootstrap；含 paru/greetd-dms-greeter/vmware-workstation；有 `.aur-sources/` 离线缓存时全离线构建；最终安装失败保留产物并中止） |
+| 07-config | 部署个人配置映射（映射数随清单变化、以 `./check-extend.sh` reconcile 输出为准；先备份；拒绝跟随 symlink 写入 HOME 外；与包同一模块过滤） |
 | 08-services | 启用服务：greetd 登录（`--command niri` 只选择渲染登录界面的 greeter compositor，**不决定用户默认会话**；目标会话由会话菜单与 remembered session 决定，Hyprland 用系统 stock 入口 `hyprland.desktop`（`start-hyprland`，R5 对齐物理机；uwsm/`hyprland-uwsm.desktop` 已从安装清单移除），cleanup 后按 target XDG_DATA_HOME/XDG_DATA_DIRS 校验实际解析的 `hyprland.desktop`，用户/local override 存在则 fail-closed）+ 用户服务（dms/dsearch；`DESKTOP_ENV=none` 时跳过桌面链并收敛 disable greetd/dms/dsearch，含 postcondition 校验）+ 旧 Round-2/3 残留迁移清理（逐级 lstat 路径安全、仅精确哈希项目文件备份删除——唯一备份、root/strap 下递归 chown 中间目录、任何 ownership 失败不删原文件；R2 watcher/drop-in 检测警告）+ 蓝牙/电源/Docker + **VMware host 服务（物理机）/ open-vm-tools（VM）** + GRUB 主题 + paru.conf |
 | 09-settings | 系统设置：locale（zh_CN）/时区（上海）/主机名/zram + fish 登录 shell + snapper 快照配置 + 录屏引擎（两机型统一 wf-recorder：默认轻档 preset=fast/crf=18；**物理机安装时 VAAPI 探测通过则自动预置 h264_vaapi**（GPU 编码，qp=18 恒定质量、零 CPU、144Hz 不掉帧），VM/仿物理保持 libx264；libx264 时画质菜单可切 3 档；wl-screenrec-git 已自 archlinuxcn 下架且 ffmpeg9 ABI 不兼容）+ nomacs/PNG MIME 验收 |
 | 99-cleanup | 清理缓存与构建目录，恢复 sudo 默认权限 |
@@ -92,8 +92,8 @@ sudo bash strap.sh
 
 **完全一致的部分**（不做任何区分）：
 
-- 包清单主体（192 安装项中除上表 2–5 的虚拟化/硬件模块外）
-- 配置映射（同一 `physical-v1` 全量 230 映射；VM 不部署的仅上表第 6 项）
+- 包清单主体（除上表 2–5 的虚拟化/硬件模块外）
+- 配置映射（同一 `physical-v1` 全量映射；VM 不部署的仅上表第 6 项）
 - 镜像源配置（01-mirror：同一 CN 8 镜像列表，清华首位，前 3 探活任一可达即写；反射/离线回退逻辑两机型一致）
 - 服务与定时器：bluetooth / power-profiles / docker / NetworkManager / grub-btrfsd / timesyncd、paccache / snapper-cleanup / snapper-timeline / btrfs-scrub
 - greetd 登录（dms-greeter 默认 niri；both 模式会话菜单可切 Hyprland）
@@ -114,9 +114,9 @@ sudo bash strap.sh
 - `strap.sh`：一键入口（root，自动克隆仓库）
 - `install.sh`：主安装器（选择 + 分步执行；支持 `--test-profile physical-sim-vmware`）
 - `scripts/`：分步脚本（00-utils 公共函数 + 01~09 步骤 + 99 清理）
-- `config/`：审阅过的个人配置（330 个文件：.config 映射 + md 知识库 + Pictures + scripts + 字体 + /etc 配置）
+- `config/`：审阅过的个人配置（.config 映射 + md 知识库 + Pictures + scripts + 字体 + /etc 配置；文件数随同步变化、以 `./check-extend.sh` 输出为准）
 - `manifests/`：数据清单（包策略、配置映射、AUR recipe）
-- `third_party/aur/`：15 棵固定 AUR recipe 树（14 个目标 + vmware-keymaps 构建依赖，含审查记录）
+- `third_party/aur/`：固定 AUR recipe 树（数量随清单变化、以 `./check-extend.sh` reconcile 输出为准；vmware-keymaps 是 vmware-workstation 的构建依赖，含审查记录）
 - `fetch-aur-sources.sh`：在有海外网络的机器上生成 AUR 离线缓存（→ `~/Downloads/aur-sources/`）
 - `sync-scripts.sh`：同步本机 `~/scripts` 到 `config/home/scripts/` 并自动补映射
 - `sync-config-mappings.sh`：为 `config/home` 新增文件自动生成 `config-mappings.tsv` 行（module 继承、幂等、按执行位定 mode；`config/etc` 不走映射）
@@ -137,12 +137,12 @@ sudo bash strap.sh
    [`docs/physical-offline-install.md`](docs/physical-offline-install.md)）
 3. `cd my-arch-setup-deepseek && ./install.sh`
 4. 选"物理机"，安装器自动：驱动（AMD+NVIDIA+ASUS 控制，先于桌面）→ 桌面
-   → 14 个 AUR 目标（含 VMware Workstation；vmware-keymaps 依赖先行构建）→ 配置 → 服务 → 系统设置
+   → AUR 目标（含 VMware Workstation；vmware-keymaps 依赖先行构建）→ 配置 → 服务 → 系统设置
 5. 装完重启，登录 greetd（dms-greeter）进入 niri
 
 部署后验收：显卡切换（`supergfxctl -m Hybrid` 重启生效）、蓝牙、音频、
 挂起唤醒、ASUS 控制中心、VMware Workstation（`vmrun list`/`vmware-networks` 服务、
-DKMS 的 vmmon/vmnet）。clash-verge 只安装不启服务（配置私有，手动配置）。
+DKMS 的 vmmon/vmnet）。clash-verge-rev 只安装不启服务（配置私有，手动配置）。
 
 ## 验证背景
 
