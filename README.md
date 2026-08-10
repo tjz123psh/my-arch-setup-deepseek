@@ -94,6 +94,7 @@ sudo bash strap.sh
 
 - 包清单主体（192 安装项中除上表 2–5 的虚拟化/硬件模块外）
 - 配置映射（同一 `physical-v1` 全量 230 映射；VM 不部署的仅上表第 6 项）
+- 镜像源配置（01-mirror：同一 CN 8 镜像列表，清华首位，前 3 探活任一可达即写；反射/离线回退逻辑两机型一致）
 - 服务与定时器：bluetooth / power-profiles / docker / NetworkManager / grub-btrfsd / timesyncd、paccache / snapper-cleanup / snapper-timeline / btrfs-scrub
 - greetd 登录（dms-greeter 默认 niri；both 模式会话菜单可切 Hyprland）
 - snapper root+home 快照初始化、fish 登录 shell、GRUB 主题、locale/时区/zram、nomacs PNG MIME 验收
