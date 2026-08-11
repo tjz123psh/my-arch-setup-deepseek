@@ -8,12 +8,12 @@
 | 文件 | 说明 |
 |---|---|
 | `my-arch-setup.tar` | 仓库代码（含安装器 + AUR 离线缓存支持） |
-| `aur-sources.tar.gz` | AUR 离线源码缓存（清单中的 AUR 目标（数量随清单变化，以 `./check-extend.sh` reconcile 输出为准）+ vmware-keymaps 构建依赖 + Go/cargo 依赖，约 1GB） |
+| `aur-sources-physical.tar.gz` | AUR 离线源码缓存（物理机版：清单中的 AUR 目标 + vmware-workstation/keymaps + Go/cargo，约 1.6G） |
 
 获取方式：
 - 代码：GitHub clone 或本机 `tar --exclude='.git' -czf my-arch-setup.tar my-arch-setup-deepseek`
-- 缓存：在能联网的机器上跑仓库里的 `fetch-aur-sources.sh`（生成 `~/Downloads/aur-sources/`），再
-  `cd ~/Downloads && tar -czf aur-sources.tar.gz --transform 's/^aur-sources/.aur-sources/' aur-sources`
+- 缓存：在能联网的机器上跑仓库里的 `./fetch-aur-sources.sh physical`（物理机版，生成 `~/Downloads/aur-sources-physical/`），再
+  `cd ~/Downloads && tar -czf aur-sources-physical.tar.gz --transform 's/^aur-sources-physical/.aur-sources/' aur-sources-physical`
 
 ## 重装后的操作（tty）
 
@@ -28,7 +28,7 @@ mount /dev/sdb1 /mnt
 
 ```bash
 tar -xf /mnt/my-arch-setup.tar -C ~                 # 得到 ~/my-arch-setup-deepseek/
-tar -xzf /mnt/aur-sources.tar.gz -C ~/my-arch-setup-deepseek/   # 得到 .aur-sources/
+tar -xzf /mnt/aur-sources-physical.tar.gz -C ~/my-arch-setup-deepseek/   # 得到 .aur-sources/
 ```
 
 ### 3. 联网（只连国内，AUR 不依赖网络）

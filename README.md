@@ -23,12 +23,16 @@
 从 AUR 装**最新版**（需网络，版本随上游漂移）；解压了离线缓存 → **离线**，makepkg
 构建**固定 recipe**（版本可复现、全离线）。
 
-**AUR 离线缓存**（可选，仅无海外网络时用，约 1G）：存放在 GitHub Releases
-（`aur-cache-*` 标签），**不在 git clone 里**，需要时单独下载：
+**AUR 离线缓存**（可选，仅无海外网络时用）：按机器类型选对应包，存放在 GitHub
+Releases（`aur-cache-*` 标签），**不在 git clone 里**：
+- `aur-sources-physical.tar.gz`（物理机，含 vmware-workstation，约 1.6G）
+- `aur-sources-vm.tar.gz`（虚拟机，无 vmware，约 900M）
 
 ```bash
-gh release download --pattern 'aur-sources.tar.gz'   # 或在网页点 Releases 下载
-tar -xzf aur-sources.tar.gz -C my-arch-setup-deepseek/
+# 按机器类型下载对应包（或在网页 Releases 点对应资产）：
+gh release download --pattern 'aur-sources-physical.tar.gz'   # 物理机
+tar -xzf aur-sources-physical.tar.gz -C my-arch-setup-deepseek/
+# 虚拟机把包名换成 aur-sources-vm.tar.gz 即可
 ```
 
 **离线安装完整流程**（物理机无海外网络）：见
