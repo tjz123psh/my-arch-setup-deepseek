@@ -35,6 +35,11 @@ cd ~/my-arch-setup-deepseek && ./install.sh
 完整步骤与注意事项（挂载/验证要点/常见坑）：
 [`docs/physical-offline-install.md`](docs/physical-offline-install.md)。
 
+## 安装后清理（可选）
+
+进桌面检查无误后，运行 `./cleanup-after-install.sh` 清理安装残留（pacman/cargo/go
+构建缓存、离线源缓存，可释放数 GB）；脚本会先列出清单并确认，删除后不可恢复。
+
 ## 其他
 
 - 增改包/配置/脚本：走 `manifests/` 清单 + `./check-extend.sh` 门禁，
