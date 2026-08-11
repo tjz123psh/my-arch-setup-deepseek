@@ -28,7 +28,8 @@ and it is not an audited/reproducible engineering system.
 2. **Drivers before desktop.** A dedicated driver step (04-drivers) installs
    AMD/NVIDIA/ASUS-control packages *before* the desktop step, to avoid
    rendering bugs. This was an explicit operator requirement.
-3. **AUR is fully automatic.** 14 AUR targets build from their real
+3. **AUR is fully automatic.** The manifest's AUR targets (count follows
+   the manifest; see `./check-extend.sh` reconcile output) build from their real
    upstream sources via makepkg, pinned under `third_party/aur/` (15 recipe
    trees: 14 targets + `vmware-keymaps`, which is a build-time dependency of
    `vmware-workstation` and is bootstrapped+installed first by 06-aur because
