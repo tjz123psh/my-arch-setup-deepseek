@@ -6,6 +6,7 @@
 # Installer runtime state (resume markers, build dirs).
 .install_progress
 .aur-build*/
+.install_logs/
 
 # Offline AUR source cache (1GB): never part of git clone, distributed via
 # GitHub Releases; extract into the repo dir on the target machine only.

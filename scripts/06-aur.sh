@@ -152,6 +152,26 @@ has_aur_sources() {
   find "${PROJECT_DIR}/.aur-sources" -mindepth 1 -maxdepth 1 -print -quit | grep -q . || return 1
 }
 
+# ---- mode observability: loud banner + persistent log ----
+# 安装器全自动运行、输出滚动很快（尤其 online 下载阶段），模式与结果必须一眼
+# 可见并可事后查询：模式横幅在分流时打印，验收汇总写入 .install_logs/06-aur.log
+# （installer runtime state，已 gitignore，不进仓库）。
+AUR_LOG="${PROJECT_DIR}/.install_logs/06-aur.log"
+
+aur_mode_banner() { # aur_mode_banner <MODE> <desc>
+  local mode="$1" desc="$2"
+  echo
+  echo -e "${H_CYAN}================================================================${NC}"
+  echo -e "${H_CYAN}  ★ AUR MODE: ${H_YELLOW}${mode}${H_CYAN} ★"
+  echo -e "${H_CYAN}  ${desc}${NC}"
+  echo -e "${H_CYAN}================================================================${NC}"
+}
+
+aur_log() { # aur_log <line>  追加一行到模式日志
+  mkdir -p "$(dirname "${AUR_LOG}")"
+  echo "[$(date '+%F %T')] $*" >> "${AUR_LOG}"
+}
+
 # ---- offline mode: pinned recipes built with makepkg from the source cache ----
 offline_mode() {
   # Optional offline AUR source cache: if sources were pre-placed in
@@ -264,6 +284,14 @@ offline_mode() {
     error "${failed} AUR package(s) failed to build; rerun install.sh to resume (06 will be retried)"
     exit 1
   fi
+  # 验收汇总（offline/makepkg）：每个 recipe 的已装版本，滚动结束后仍留在屏底
+  log "AUR summary (offline/makepkg):"
+  local r
+  for r in "${RECIPES[@]}"; do
+    log "  ${r}: $(pacman -Q "${r}" 2>/dev/null | awk '{print $2}')"
+    aur_log "installed ${r} $(pacman -Q "${r}" 2>/dev/null | awk '{print $2}')"
+  done
+  log "详情已写入 ${AUR_LOG}"
   success "AUR stage complete (offline mode)"
 }
 
@@ -350,15 +378,29 @@ online_mode() {
     error "${missing} AUR package(s) missing after online paru install"
     exit 1
   fi
+  # 验收汇总（online/paru）：模式 + paru 版本 + 每个目标包的已装版本
+  log "AUR summary (online/paru):"
+  log "  paru: $(paru --version 2>/dev/null | head -1)"
+  aur_log "paru $(paru --version 2>/dev/null | head -1)"
+  local s
+  for s in "${targets[@]}"; do
+    log "  ${s}: $(pacman -Q "${s}" 2>/dev/null | awk '{print $2}')"
+    aur_log "installed ${s} $(pacman -Q "${s}" 2>/dev/null | awk '{print $2}')"
+  done
+  log "详情已写入 ${AUR_LOG}"
   success "Installed ${#targets[@]} latest AUR packages via paru (online mode)"
 }
 
 # ---- mode dispatch: source cache present -> offline makepkg; else online paru ----
 if has_aur_sources; then
+  aur_mode_banner "OFFLINE — makepkg pinned recipes" "using .aur-sources/ cache + third_party/aur pinned PKGBUILDs; fully offline"
+  aur_log "mode=offline targets=${#RECIPES[@]}"
   offline_mode
 else
   if [[ -d "${PROJECT_DIR}/.aur-sources" ]]; then
     warn ".aur-sources/ 目录存在但为空或不可读——走在线模式（paru 拉最新）；若机器无海外网络请检查缓存是否解压完整"
   fi
+  aur_mode_banner "ONLINE — paru latest from AUR" "no .aur-sources/ cache (git clone install); paru pulls LATEST versions; needs network"
+  aur_log "mode=online targets=${#RECIPES[@]}"
   online_mode
 fi

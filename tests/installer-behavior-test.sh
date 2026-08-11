@@ -160,6 +160,16 @@ if grep -q 'online_mode()' "$root/scripts/06-aur.sh" \
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur dual-mode wiring missing (online paru or cache dispatch)"
 fi
+# 06-aur observability: mode banner + persistent log must exist so a fast-
+# scrolling install can be verified afterwards (user audit 2026-08-11: mode
+# was unverifiable by eye - banner too fast, output too dense).
+if grep -q 'aur_mode_banner' "$root/scripts/06-aur.sh" \
+   && grep -q 'AUR_LOG=' "$root/scripts/06-aur.sh" \
+   && grep -q '.install_logs/06-aur.log' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur mode banner + persistent log wired"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur mode banner / persistent log missing"
+fi
 # 04-drivers: required driver failure must exit nonzero (C-04)
 if grep -q 'required driver package(s) failed; aborting' "$root/scripts/04-drivers.sh" \
    && grep -q 'exit 1' "$root/scripts/04-drivers.sh"; then
