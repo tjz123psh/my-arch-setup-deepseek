@@ -2,8 +2,9 @@
 # fetch-aur-sources.sh - build the offline AUR source cache for
 # my-arch-setup-deepseek. Run on a machine WITH overseas access; the result
 # goes to ~/Downloads/aur-sources (makepkg SRCDEST layout). A physical
-# machine with no overseas access copies this (as aur-sources.tar.gz) into
-# the repo as .aur-sources/ and 06-aur builds every AUR recipe fully offline.
+# machine with no overseas access copies this (as aur-sources-physical.tar.gz
+# or aur-sources-vm.tar.gz) into the repo as .aur-sources/ and 06-aur builds
+# every AUR recipe fully offline.
 #
 # Two cache profiles (machine type), because vmware-workstation's vendor
 # payloads (~1G of ISOs) are physical-only:

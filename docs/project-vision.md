@@ -30,14 +30,14 @@ and it is not an audited/reproducible engineering system.
    rendering bugs. This was an explicit operator requirement.
 3. **AUR is fully automatic.** The manifest's AUR targets (count follows
    the manifest; see `./check-extend.sh` reconcile output) build from their real
-   upstream sources via makepkg, pinned under `third_party/aur/` (15 recipe
-   trees: 14 targets + `vmware-keymaps`, which is a build-time dependency of
-   `vmware-workstation` and is bootstrapped+installed first by 06-aur because
-   `makepkg -s` needs it installed before it can resolve the workstation
-   recipe's dependency). The target set is filtered by the same machine-role
-   `module_selected()` as packages: **physical builds 14 targets (including
-   vmware-workstation), a VM builds 13 (host stack excluded)** — a VM never
-   builds or installs vmware-workstation/vmware-keymaps. FlClash is
+   upstream sources via makepkg, pinned under `third_party/aur/` (recipe trees
+   include `vmware-keymaps`, a build-time dependency of `vmware-workstation`
+   bootstrapped+installed first by 06-aur because `makepkg -s` needs it
+   installed before it can resolve the workstation recipe's dependency). The
+   target set is filtered by the same machine-role `module_selected()` as
+   packages: physical includes vmware-workstation, a VM excludes it (host
+   stack excluded) — a VM never builds or installs
+   vmware-workstation/vmware-keymaps. FlClash is
    intentionally **not** an AUR target now:
    it is installed as `archlinuxcn/flclash`; the installer explicitly removes
    a legacy `flclash-bin` package before the pacman batch and verifies the exact
@@ -166,7 +166,7 @@ and it is not an audited/reproducible engineering system.
    host), a screen-recording engine preset (wf-recorder on BOTH machine
    types — wl-screenrec-git was dropped from archlinuxcn and its binary is
    broken by the ffmpeg 9 ABI, 2026-08-09; the full VM vs physical
-   granularity table lives in README ("机器类型颗粒度")),
+   granularity table lives in docs/comprehensive-review-20260807.md),
    and nomacs as the PNG default image viewer (mimeapps.list + acceptance
    check).
 8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB

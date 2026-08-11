@@ -12,7 +12,8 @@
 
 获取：
 - 仓库：`cd ~/Projects && tar --exclude='.git' --exclude='.aur-sources' --exclude='artifacts' --exclude='.install_logs' --exclude='.ai' -czf my-arch-setup.tar my-arch-setup-deepseek`
-- 缓存：`./fetch-aur-sources.sh physical|vm` 生成，或从 GitHub Releases（`aur-cache-*`）下载对应机型包
+- 缓存：`./fetch-aur-sources.sh physical|vm` 生成，或从 GitHub Releases 下载
+  `aur-sources-physical.tar.gz` / `aur-sources-vm.tar.gz`（按机器类型选）
 
 ## 目标机安装（tty）
 

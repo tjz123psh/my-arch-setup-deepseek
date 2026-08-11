@@ -25,7 +25,7 @@
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
 
 > 数字会漂移：包数（install/total）、映射数、recipe 树数、config 文件数等清单计数**以 `./check-extend.sh` 的 reconcile 输出为准**（运行后看 numbers 节打印的权威块）；README 已不再写死这些数字，随清单变化处均指向 reconcile。tar 体积会随增改变化：每次增改后重新打包
-> `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`），
+> `~/Downloads/my-arch-setup.tar`（权威命令见 `docs/physical-offline-install.md`：`tar --exclude='.git' --exclude='.aur-sources' --exclude='artifacts' --exclude='.install_logs' --exclude='.ai' -czf ~/Downloads/my-arch-setup.tar my-arch-setup-deepseek`），
 > 并按需更新 README 的代码包体积数字。
 
 ## 一、加一个官方软件包
