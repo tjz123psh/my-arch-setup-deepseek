@@ -5,13 +5,26 @@
 # machine with no overseas access copies this (as aur-sources.tar.gz) into
 # the repo as .aur-sources/ and 06-aur builds every AUR recipe fully offline.
 #
+# Two cache profiles (machine type), because vmware-workstation's vendor
+# payloads (~1G of ISOs) are physical-only:
+#   ./fetch-aur-sources.sh physical [dest]   # full: incl. vmware-workstation + keymaps
+#   ./fetch-aur-sources.sh vm [dest]         # slim: no vmware-workstation/keymaps
+# Package each into its own tar.gz and attach both to the GitHub Release
+# (aur-sources-physical.tar.gz / aur-sources-vm.tar.gz); the target machine
+# extracts only the one matching its machine type.
+#
 # Caches three kinds of inputs:
 #   1. PKGBUILD `source` files (git bare mirrors + downloaded files)
 #   2. Go module cache (greetd-dms-greeter builds via `go build`)
 #   3. cargo registry cache (paru builds via `cargo build --frozen`)
 set -uo pipefail
 
-DEST="${1:-$HOME/Downloads/aur-sources}"
+PROFILE="${1:-physical}"
+case "${PROFILE}" in
+  physical|vm) ;;
+  *) echo "unknown profile: ${PROFILE} (physical|vm)" >&2; exit 1 ;;
+esac
+DEST="${2:-$HOME/Downloads/aur-sources}"
 mkdir -p "$DEST"
 FAILED=0
 
@@ -77,65 +90,68 @@ dl WechatLinux-1783692407-x86_64.AppImage "https://dldir1v6.qq.com/weixin/Univer
 # wooz-git
 dl wooz-24e2856bf2cc13810f00971ae143973840555321.tar.gz "https://github.com/negrel/wooz/archive/24e2856bf2cc13810f00971ae143973840555321.tar.gz"
 
-echo
-echo "== VMware sources (vmware-workstation bundle + tools ISOs) =="
-# vmware-workstation 26H1-3 (AUR): the large vendor payloads (Workstation
-# bundle + guest-tools ISOs) are fetched at build time from archive.org and
-# packages-prod.broadcom.com. They are cached here WITH sha256 verification
-# (the checksums below come from the pinned PKGBUILD); the recipe-local files
-# (services, patches, bootstrap scripts, dkms.conf.in, ...) ship in the repo
-# and are NOT cached. Licensing: Workstation is a Broadcom/VMware product with
-# a personal-use EULA; the cache stays out of git (distributed via Releases,
-# never committed).
-dl_vmware() { # name url sha256
-  local name="$1" url="$2" expect="$3" got
-  if [[ -s "$DEST/$name" ]]; then
-    got="$(sha256sum "$DEST/$name" | cut -d' ' -f1)"
-    if [[ "$got" == "$expect" ]]; then echo "SKIP  $name (verified)"; return; fi
-    echo "WARN  $name checksum mismatch; re-downloading"
-    rm -f "$DEST/$name"
-  fi
-  if curl -fL -sS --connect-timeout 20 --max-time 7200 -o "$DEST/$name.part" "$url" 2>/tmp/aur-dl.err; then
-    got="$(sha256sum "$DEST/$name.part" | cut -d' ' -f1)"
-    if [[ "$got" == "$expect" ]]; then
-      mv "$DEST/$name.part" "$DEST/$name"
-      echo "OK    $name (verified, $(du -h "$DEST/$name" | cut -f1))"
+if [[ "${PROFILE}" == "physical" ]]; then
+  echo "== VMware sources (vmware-workstation bundle + tools ISOs) =="
+  # vmware-workstation 26H1-3 (AUR): the large vendor payloads (Workstation
+  # bundle + guest-tools ISOs) are fetched at build time from archive.org and
+  # packages-prod.broadcom.com. They are cached here WITH sha256 verification
+  # (the checksums below come from the pinned PKGBUILD); the recipe-local files
+  # (services, patches, bootstrap scripts, dkms.conf.in, ...) ship in the repo
+  # and are NOT cached. Licensing: Workstation is a Broadcom/VMware product with
+  # a personal-use EULA; the cache stays out of git (distributed via Releases,
+  # never committed).
+  dl_vmware() { # name url sha256
+    local name="$1" url="$2" expect="$3" got
+    if [[ -s "$DEST/$name" ]]; then
+      got="$(sha256sum "$DEST/$name" | cut -d' ' -f1)"
+      if [[ "$got" == "$expect" ]]; then echo "SKIP  $name (verified)"; return; fi
+      echo "WARN  $name checksum mismatch; re-downloading"
+      rm -f "$DEST/$name"
+    fi
+    if curl -fL -sS --connect-timeout 20 --max-time 7200 -o "$DEST/$name.part" "$url" 2>/tmp/aur-dl.err; then
+      got="$(sha256sum "$DEST/$name.part" | cut -d' ' -f1)"
+      if [[ "$got" == "$expect" ]]; then
+        mv "$DEST/$name.part" "$DEST/$name"
+        echo "OK    $name (verified, $(du -h "$DEST/$name" | cut -f1))"
+      else
+        echo "FAIL  $name checksum mismatch (got $got)"
+        rm -f "$DEST/$name.part"; FAILED=$((FAILED + 1))
+      fi
     else
-      echo "FAIL  $name checksum mismatch (got $got)"
+      echo "FAIL  $name :: $(tail -1 /tmp/aur-dl.err)"
       rm -f "$DEST/$name.part"; FAILED=$((FAILED + 1))
     fi
-  else
-    echo "FAIL  $name :: $(tail -1 /tmp/aur-dl.err)"
-    rm -f "$DEST/$name.part"; FAILED=$((FAILED + 1))
-  fi
-}
-# 1 bundle + 8 guest-tools ISOs (sha256 from third_party/aur/vmware-workstation/PKGBUILD)
-dl_vmware "VMware-Workstation-Full-26H1-25388281.x86_64.bundle" \
-  "https://archive.org/download/VMware-Workstation-Full-26H1-25388281.x86_64/VMware-Workstation-Full-26H1-25388281.x86_64.bundle" \
-  "3f6d2501e654dbc7701a8290ff6ffcfba6c5444cd5f35f4933cd08c9499f6d84"
-dl_vmware "linux.iso" "https://packages-prod.broadcom.com/tools/frozen/linux/linux.iso" \
-  "4e66b286b743d9cf788c487295b1dec3c6071d657674f650aadc23e8900758ff"
-dl_vmware "linuxPreGlibc25.iso" "https://packages-prod.broadcom.com/tools/frozen/linux/linuxPreGlibc25.iso" \
-  "aef8f747bd9a6e84d139c57b8c1f8e87c83a9b9df69cd09602030190fec21973"
-dl_vmware "netware.iso" "https://packages-prod.broadcom.com/tools/frozen/netware/netware.iso" \
-  "2c89993d811f5d90f7b0e2a286e9339907055e51ecb16f25509e5c4517326487"
-dl_vmware "solaris.iso" "https://packages-prod.broadcom.com/tools/frozen/solaris/solaris.iso" \
-  "4666b0adfec6636ecda60bfab889cbf28f06f77526442628a70789fd76823e70"
-dl_vmware "winPre2k.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/winPre2k.iso" \
-  "a17a11d65f841d213ffc2d6681acdf849c380e77055334c7a8127c1373991ebb"
-dl_vmware "winPreVista.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/winPreVista.iso" \
-  "aab73d3ef4668beec725541c08c41042bb22fc86cd5563310fc170b952631d8a"
-dl_vmware "winVistaSP1.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/WindowsToolsVista/SP1/windows.iso" \
-  "3b8f9d6e43f5d1dff0576cb93d008c14e0434d7233872f6c63988513d2bda5d1"
-dl_vmware "winVistaSP2.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/WindowsToolsVista/SP2/windows.iso" \
-  "8f1cc3181055891b98672f715e0ca7bbe4018960eae945d7a4b9f640c44c3d79"
-# vmware-keymaps (AUR dependency of vmware-workstation; small GitHub tarball).
-# The download NAME must equal the PKGBUILD source alias
-# (vmware-keymaps-1.0-3.tar.gz, pkgver=1.0 pkgrel=3) or makepkg cannot find
-# it in SRCDEST offline (review P1-7). The sha256 is pinned from the
-# PKGBUILD sha256sums so a supply-chain change fails the fetch.
-dl vmware-keymaps-1.0-3.tar.gz "https://github.com/chowbok/vmware-keymaps/archive/refs/tags/v1.0.tar.gz" \
-   "e8ee0df9e35c4a28ab46bc9f9cefc6e2934fe382b93f115bd2e61a2b74490649"
+  }
+  # 1 bundle + 8 guest-tools ISOs (sha256 from third_party/aur/vmware-workstation/PKGBUILD)
+  dl_vmware "VMware-Workstation-Full-26H1-25388281.x86_64.bundle" \
+    "https://archive.org/download/VMware-Workstation-Full-26H1-25388281.x86_64/VMware-Workstation-Full-26H1-25388281.x86_64.bundle" \
+    "3f6d2501e654dbc7701a8290ff6ffcfba6c5444cd5f35f4933cd08c9499f6d84"
+  dl_vmware "linux.iso" "https://packages-prod.broadcom.com/tools/frozen/linux/linux.iso" \
+    "4e66b286b743d9cf788c487295b1dec3c6071d657674f650aadc23e8900758ff"
+  dl_vmware "linuxPreGlibc25.iso" "https://packages-prod.broadcom.com/tools/frozen/linux/linuxPreGlibc25.iso" \
+    "aef8f747bd9a6e84d139c57b8c1f8e87c83a9b9df69cd09602030190fec21973"
+  dl_vmware "netware.iso" "https://packages-prod.broadcom.com/tools/frozen/netware/netware.iso" \
+    "2c89993d811f5d90f7b0e2a286e9339907055e51ecb16f25509e5c4517326487"
+  dl_vmware "solaris.iso" "https://packages-prod.broadcom.com/tools/frozen/solaris/solaris.iso" \
+    "4666b0adfec6636ecda60bfab889cbf28f06f77526442628a70789fd76823e70"
+  dl_vmware "winPre2k.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/winPre2k.iso" \
+    "a17a11d65f841d213ffc2d6681acdf849c380e77055334c7a8127c1373991ebb"
+  dl_vmware "winPreVista.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/winPreVista.iso" \
+    "aab73d3ef4668beec725541c08c41042bb22fc86cd5563310fc170b952631d8a"
+  dl_vmware "winVistaSP1.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/WindowsToolsVista/SP1/windows.iso" \
+    "3b8f9d6e43f5d1dff0576cb93d008c14e0434d7233872f6c63988513d2bda5d1"
+  dl_vmware "winVistaSP2.iso" "https://packages-prod.broadcom.com/tools/frozen/windows/WindowsToolsVista/SP2/windows.iso" \
+    "8f1cc3181055891b98672f715e0ca7bbe4018960eae945d7a4b9f640c44c3d79"
+  # vmware-keymaps (AUR dependency of vmware-workstation; small GitHub tarball).
+  # The download NAME must equal the PKGBUILD source alias
+  # (vmware-keymaps-1.0-3.tar.gz, pkgver=1.0 pkgrel=3) or makepkg cannot find
+  # it in SRCDEST offline (review P1-7). The sha256 is pinned from the
+  # PKGBUILD sha256sums so a supply-chain change fails the fetch.
+  dl vmware-keymaps-1.0-3.tar.gz "https://github.com/chowbok/vmware-keymaps/archive/refs/tags/v1.0.tar.gz" \
+     "e8ee0df9e35c4a28ab46bc9f9cefc6e2934fe382b93f115bd2e61a2b74490649"
+else
+  echo "== profile=${PROFILE}: skipping VMware sources (vmware-workstation/keymaps are physical-only) =="
+fi
 
 echo
 echo "== Go module cache (greetd-dms-greeter) =="

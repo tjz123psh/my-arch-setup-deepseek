@@ -148,7 +148,8 @@ refs() {
   local -A exempt_git_recipe=( [fuzzel-ime-git]=1 [greetd-dms-greeter-git]=1 )
   while IFS= read -r name; do
     [[ -n "${exempt_git_recipe[${name}]:-}" ]] && continue
-    if ! grep -qE "^# ${name}( |\$)" fetch-aur-sources.sh; then
+    # 允许前导空白：vmware 部分在 fetch 脚本的 physical 分支块内（缩进注释）
+    if ! grep -qE "^[[:space:]]*# ${name}( |\$)" fetch-aur-sources.sh; then
       echo "  FAIL recipe 在 fetch-aur-sources.sh 无缓存注释头：${name}"
       rc=1
     fi
