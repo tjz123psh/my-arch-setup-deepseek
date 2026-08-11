@@ -1,78 +1,51 @@
-# 物理机离线安装操作指南
+# 离线安装指南（无海外网络）
 
-适用：ASUS 工作站重装 Arch 后，**无海外网络（GitHub/codeberg 直连不通）**
-环境下一条命令恢复完整桌面。镜像走国内源，AUR 全离线构建。
+适用：重装 Arch（archinstall 完成分区/GRUB/联网）后，**无海外网络**（GitHub/codeberg
+直连不通）环境离线恢复。镜像走国内源，AUR 全离线构建。
 
-## 需要准备的文件（重装前，拷进 U 盘）
+## 需要的两个文件（拷进 U 盘 / 共享文件夹）
 
-| 文件 | 说明 |
-|---|---|
-| `my-arch-setup.tar` | 仓库代码（含安装器 + AUR 离线缓存支持） |
-| `aur-sources-physical.tar.gz` | AUR 离线源码缓存（物理机版：清单中的 AUR 目标 + vmware-workstation/keymaps + Go/cargo，约 1.6G） |
+| 文件 | 内容 | 大小 |
+|---|---|---|
+| `my-arch-setup.tar` | 仓库代码（安装器 + 配置 + 清单 + AUR recipe） | 78M |
+| `aur-sources-physical.tar.gz`（物理机）/ `aur-sources-vm.tar.gz`（虚拟机） | AUR 离线缓存（全部源码 + 构建依赖，解压为 `.aur-sources/`） | 1.6G / 899M |
 
-获取方式：
-- 代码：GitHub clone 或本机 `tar --exclude='.git' -czf my-arch-setup.tar my-arch-setup-deepseek`
-- 缓存：在能联网的机器上跑仓库里的 `./fetch-aur-sources.sh physical`（物理机版，生成 `~/Downloads/aur-sources-physical/`），再
-  `cd ~/Downloads && tar -czf aur-sources-physical.tar.gz --transform 's/^aur-sources-physical/.aur-sources/' aur-sources-physical`
+获取：
+- 仓库：`cd ~/Projects && tar --exclude='.git' --exclude='.aur-sources' --exclude='artifacts' --exclude='.install_logs' --exclude='.ai' -czf my-arch-setup.tar my-arch-setup-deepseek`
+- 缓存：`./fetch-aur-sources.sh physical|vm` 生成，或从 GitHub Releases（`aur-cache-*`）下载对应机型包
 
-## 重装后的操作（tty）
-
-### 1. 挂载 U 盘并确认设备名
+## 目标机安装（tty）
 
 ```bash
-lsblk -f        # 看 U 盘设备名（如 /dev/sdb1，vfat/ext4 都行）
-mount /dev/sdb1 /mnt
-```
+# ① 挂载 U 盘或共享文件夹（VMware hgfs 示例）
+sudo mkdir -p /mnt/hgfs && sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other
 
-### 2. 解包代码和 AUR 缓存
+# ② 解包仓库 → ~/my-arch-setup-deepseek/
+tar -xf /mnt/hgfs/test/my-arch-setup.tar -C ~/
 
-```bash
-tar -xf /mnt/my-arch-setup.tar -C ~                 # 得到 ~/my-arch-setup-deepseek/
-tar -xzf /mnt/aur-sources-physical.tar.gz -C ~/my-arch-setup-deepseek/   # 得到 .aur-sources/
-```
+# ③ 解压缓存进仓库 → .aur-sources/（触发 06 离线模式）
+tar -xzf /mnt/hgfs/test/aur-sources-physical.tar.gz -C ~/my-arch-setup-deepseek/
 
-### 3. 联网（只连国内，AUR 不依赖网络）
+# ④ 确认缓存就位
+ls -d ~/my-arch-setup-deepseek/.aur-sources
 
-archinstall 交接点已含网络（NetworkManager / dhcpcd），确认能访问国内镜像即可：
-
-```bash
+# ⑤ 联网（仅国内镜像即可）+ 安装
 curl -m 5 -s -o /dev/null -w "%{http_code}\n" https://mirrors.aliyun.com   # 期望 200
+cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机用 -t vm
 ```
 
-### 4. 运行安装器
+## 验证离线模式生效（06-aur 阶段）
 
-```bash
-cd ~/my-arch-setup-deepseek && ./install.sh -d niri -t physical
-```
+- 横幅：`★ AUR MODE: OFFLINE — makepkg pinned recipes ★`
+- 日志：`Using local AUR source cache: ... (offline mode)`，makepkg 构建、无 `Downloading`
+- 装完：`cat ~/my-arch-setup-deepseek/.install_logs/06-aur.log` 应显示 `mode=offline`
 
-- 全程**只需输一次 sudo 密码**（安装器临时授权，装完自动恢复）
-- 镜像 2GB 走国内源；AUR 阶段显示 `Using local AUR source cache ... (offline mode)`
-  = 离线缓存生效，清单中的 AUR 目标全部本地构建（vmware-keymaps 先行作为构建依赖）
-- 结束后按提示重启
+## 注意事项
 
-### 5. 装完验收
-
-- 登录 greetd（dms-greeter）进入 niri/DMS 桌面
-- 显卡：`supergfxctl -m Hybrid`（重启生效，之后可切）
-- 蓝牙 / 音频 / 挂起唤醒 / ASUS 控制中心（rog-control-center）
-- GRUB 引导菜单应显示 Elegant 主题
-
-## 常见问题
-
-- **U 盘挂不上**：先 `lsblk -f` 确认格式；vfat 直接 mount，ntfs 需要 `ntfs-3g`。
-- **AUR 没走缓存**：确认 `aur-sources.tar.gz` 解到了仓库内的 `.aur-sources/`
-  （`ls ~/my-arch-setup-deepseek/.aur-sources/` 应有 cargo、go-mod 等）；06 日志应出现
-  `Using local AUR source cache`。
-- **某 AUR 构建失败**：06 会自动重试一次；仍失败则报错退出，网络环境恢复后重跑
-  `./install.sh` 会从失败步骤续跑（已装的不会重装）。FlClash 不在该缓存中，
-  它由 `archlinuxcn/flclash` 通过 pacman 安装；若旧系统有 `flclash-bin`，03 会
-  先显式移除旧 AUR 包，再安装并核对新包。
-- **重新生成缓存**：在能联网的机器 `fetch-aur-sources.sh`（需 go/cargo 工具链）。
-- **strap.sh 不可用**：strap.sh 靠 https clone 拉代码（仓库是公开的，无需认证），但物理机无海外网络连不上 GitHub；此时用本指南的 U 盘方式即可。
-
-## 不需要担心的事
-
-- 传代码不走 GitHub（U 盘）✓
-- AUR 源码不联网（预缓存）✓
-- 镜像下载只连国内源（aliyun/ustc/清华/腾讯/华为/网易/兰大/浙大）✓
-- 一次密码、服务自启、dms 插件等已在本仓库 batch18/20/21 验证
+- **archinstall 基础安装时内核需 `linux-zen` 与 `linux` 并存**（默认只装 `linux`，03 硬性前置要求；可装完补 `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`）
+- **打包结构**：仓库 tar 必须带顶层目录（`my-arch-setup-deepseek/`）；缓存 tar 顶层必须是
+  `.aur-sources/`。否则解压散文件、离线模式不触发（06 会走在线 paru）
+- 全程一次 sudo 密码（安装器最小授权，装完自动恢复）
+- 某 AUR 构建失败自动重试一次；仍失败报错退出，网络恢复后重跑 `./install.sh` 续传
+- 旧系统 `flclash-bin` 由 03 显式迁移到 archlinuxcn/flclash
+- `strap.sh` 依赖 GitHub 直连，无海外网络时用本指南的 U 盘/共享方式
