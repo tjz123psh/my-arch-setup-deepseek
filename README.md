@@ -68,7 +68,7 @@ sudo bash strap.sh
 | --- | --- |
 | 01-mirror | 镜像源优化（8 个国内镜像：阿里/中科大/清华/腾讯/华为/网易/兰大/浙大）+ multilib 启用 |
 | 02-system | 基础工具（base-devel/git/python）+ 全系统升级 |
-| 03-packages | 校验 12 项硬交接点前置（base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（安装项 = pacman（含 archlinuxcn）+ AUR，数量随清单变化、以 `./check-extend.sh` reconcile 输出为准；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin / clash-verge-rev-bin） |
+| 03-packages | 校验硬交接点前置（verify 项数随清单变化、以 `./check-extend.sh` reconcile 输出为准；base/grub/内核/initramfs/文件系统/网络，缺失即中止；可补装工具包已并入安装清单）→ 安装软件包清单（安装项 = pacman（含 archlinuxcn）+ AUR，数量随清单变化、以 `./check-extend.sh` reconcile 输出为准；按机器角色与桌面选择过滤模块；驱动包由 04-drivers 专责；会显式迁移旧 flclash-bin / clash-verge-rev-bin） |
 | 04-drivers | **先装显卡驱动**（物理机：AMD + NVIDIA + ASUS 控制，required 失败即中止；VM 跳过） |
 |  05-niri/hyprland | 桌面环境（Niri 或 Niri+Hyprland 双会话，驱动之后） |
 | 06-aur | AUR 安装双模式：**在线**（无 `.aur-sources/` 缓存，git clone 场景）用 paru 从 AUR 装**最新版**（`--noconfirm --skipreview` 全自动，装后按清单精确验收）；**离线**（解压了缓存）用 makepkg 构建固定 recipe（`SRCDEST` 指向缓存全离线，bulk `pacman -U` 单 sudo 安装；vmware-keymaps 依赖仅 physical 时先 bootstrap）。目标数与 recipe 树数随清单变化、以 `./check-extend.sh` reconcile 输出为准；含 paru/greetd-dms-greeter/vmware-workstation；最终安装失败保留产物并中止） |
@@ -147,7 +147,7 @@ sudo bash strap.sh
 1. 用 archinstall 创建普通用户并启用 NetworkManager、连上 Wi-Fi
    **（内核：03-packages 硬性前置要求 `linux-zen` 与 `linux` 并存——archinstall
    默认只装 `linux`，需在 archinstall 的 kernel 选项里同时选 linux-zen，或装完补
-   `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`；12 项前置清单见
+   `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`；verify 前置清单见
    `manifests/workstation-packages.tsv` 的 `verify` 行，2026-08-10 全新 VM 安装实测）**
 2. `git clone https://github.com/tjz123psh/my-arch-setup-deepseek.git`
    （无海外网络 clone 不通时，用 U 盘拷贝 `my-arch-setup.tar`，见

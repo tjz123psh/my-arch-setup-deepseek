@@ -8,8 +8,9 @@
 就能自证没破坏现有流程。
 
 > **增改门禁（强制）**：任何增改 commit 前必须 `./check-extend.sh` 全绿。
-> 该脚本聚合 8 节：bash 语法、shellcheck、清单一致性、配置内容语法、
-> recipe 双向引用、secret scan、README 数字、行为测试。模型与操作者一视同仁。
+> 核心 8 节（自动快速模式）：bash 语法、shellcheck、清单一致性、配置内容语法、
+> recipe 双向引用、secret scan、README 数字、行为测试；改脚本/测试自动升级全量
+> 13 节（含慢速行为套件）。模型与操作者一视同仁。
 
 ## 总原则
 
@@ -23,10 +24,9 @@
 | 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
 
-> 数字会漂移：包数（install/total）、映射数、recipe 树数、config 文件数等清单计数**以 `./check-extend.sh` 的 reconcile 输出为准**（运行后看 numbers 节打印的权威块）；README 已不再写死这些数字。
-> （330）、tar 体积会随增改变化。**每次增改后同步更新 README 对应数字**（可用
-> `find config -type f | wc -l`、`awk` 统计清单行数核对），并重新打包
-> `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`）。
+> 数字会漂移：包数（install/total）、映射数、recipe 树数、config 文件数等清单计数**以 `./check-extend.sh` 的 reconcile 输出为准**（运行后看 numbers 节打印的权威块）；README 已不再写死这些数字，随清单变化处均指向 reconcile。tar 体积会随增改变化：每次增改后重新打包
+> `~/Downloads/my-arch-setup.tar`（`tar -czf ... --exclude='.git' --exclude='.aur-sources' --exclude='docs/handoff-*.md' .`），
+> 并按需更新 README 的代码包体积数字。
 
 ## 一、加一个官方软件包
 
@@ -95,7 +95,7 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 
 ## 六、验证纪律（每次增改后，提交前）
 
-1. **跑 `./check-extend.sh`** —— 一键总检（8 节，见上）。**任一节红 = 禁止提交**；
+1. **跑 `./check-extend.sh`** —— 一键总检（核心 8 节，全量 13 节，见上）。**任一节红 = 禁止提交**；
    红了按输出定位到节，修复后重跑至全绿。
 2. 改脚本逻辑（非纯数据）时，至少跑一次 VM 全新重装（`-d niri -t vm`），
    确认闭环 10/10。物理机专属改动用 `-t physical` 在 VM 里跑路径。
