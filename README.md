@@ -87,7 +87,7 @@ sudo bash strap.sh
 | 2 | 硬件驱动包（graphics-*/hardware-tools/asus-hardware 模块） | 由 04-drivers 安装 | 不安装 | 03-packages / module_selected |
 | 3 | VMware host 栈包（vmware-workstation） | ✅ 安装（AUR；vmware-keymaps 依赖先 bootstrap） | ❌ 不构建不安装 | 06-aur.sh（按 module_selected 过滤） |
 | 4 | VMware guest 工具（open-vm-tools） | ❌ 不安装 | ✅ 安装 | 03-packages（vmware-guest 模块） |
-| 5 | AUR recipe 构建数 | **14** | **13**（无 vmware-workstation/keymaps） | 06-aur.sh |
+| 5 | AUR 目标数（随清单变化，以 reconcile 输出为准） | physical = VM + 1（含 vmware-workstation；另 bootstrap vmware-keymaps） | VM = physical − 1（无 vmware-workstation/keymaps） | 06-aur.sh（module_selected 过滤） |
 | 6 | 硬件配置（rog-control-center.cfg） | ✅ 部署 | ❌ 跳过 | 07-config（ctx=config） |
 | 7 | VMware host 服务（vmware-networks / vmware-usbarbitrator）+ DKMS vmmon 检查 | ✅ 启用，DKMS 缺失 required 失败 | ❌ 不启用 | 08-services.sh |
 | 8 | VMware guest 服务（vmtoolsd） | ❌ 不启用 | ✅ 启用（required） | 08-services.sh |
@@ -104,6 +104,19 @@ sudo bash strap.sh
 - snapper root+home 快照初始化、fish 登录 shell、GRUB 主题、locale/时区/zram、nomacs PNG MIME 验收
 
 **仿物理测试 profile**（`-t physical --test-profile physical-sim-vmware`）：仅允许在 VMware guest 内使用（`systemd-detect-virt` 必须为 `vmware`，否则中止）；走完整 physical 包/配置/AUR 分支，但 host-only 动作（host 网络、USB arbitration、硬件模式切换）记录为 `NOT_APPLICABLE_SIMULATED`，不实际执行。此 profile 不能替代真实物理机验收。
+
+**模式矩阵（机器类型 × 安装方式）**：机器类型（`-t vm` / `-t physical`）与 AUR 安装方式（在线 paru / 离线 makepkg）是两个正交维度，组合出四种模式：
+
+| 模式 | 机器类型 | 06-aur 分流 | AUR 目标 | 构建方式 |
+| --- | --- | --- | --- | --- |
+| VM + 在线 | `-t vm` | ONLINE | VM 清单（不含 vmware-workstation） | paru 拉最新（需网络，版本随上游漂移） |
+| VM + 离线 | `-t vm` | OFFLINE | 同上 | makepkg 固定 recipe（全离线，可复现） |
+| 物理机 + 在线 | `-t physical` | ONLINE | 物理机清单（含 vmware-workstation） | paru 拉最新 |
+| 物理机 + 离线 | `-t physical` | OFFLINE | 同上，另 bootstrap vmware-keymaps | makepkg 固定 recipe |
+
+- 机器类型由 `-t` 参数决定（`module_selected()` 过滤 AUR 目标），安装方式由是否存在 `.aur-sources/` 缓存决定（`has_aur_sources()` 分流），**互不耦合**。
+- 可复现性：**离线模式**（固定 recipe）才有"同一 payload"的可复现 PASS；**在线模式**（paru 最新）只能验证"能装通"，不计可复现 PASS（见[验证背景](#验证背景)）。
+- 仿物理 profile 是第五种测试形态：在 VM 内跑物理机分支（`MACHINE_TYPE=physical`），用于 VM 中验证物理机路径，与四象限正交。
 
 ## 项目边界
 
