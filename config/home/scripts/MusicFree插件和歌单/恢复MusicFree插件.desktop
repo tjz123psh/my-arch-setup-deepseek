@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=恢复MusicFree插件
+Name[zh_CN]=恢复MusicFree插件
+Comment=一键恢复 MusicFree 插件备份（自动关闭 MusicFree，恢复后需重新打开）
+Exec=bash -c "~/scripts/MusicFree插件和歌单/一键恢复.sh"
+Terminal=true
+Icon=applications-multimedia
+Categories=Utility;
