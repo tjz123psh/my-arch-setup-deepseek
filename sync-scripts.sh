@@ -108,7 +108,13 @@ echo "  secret gate: clean (${#changed[@]} changed + ${#newfiles[@]} new scanned
 # ---------------------------------------------------------------------------
 mapping_bad=0
 mapping_plan=()
-for rel in "${changed[@]}" "${newfiles[@]}"; do
+# Mapping completeness is checked over EVERY file present in DEST (same +
+# changed + new), not just the ones this run would write: a file that lands
+# in config/home/scripts/ without a mapping row (manual cp, merge, earlier
+# sync bug) silently never gets deployed by 07-config. Found 2026-08-12:
+# 9 files copied by hand were classified "same" and the missing mapping
+# rows went undetected, so a fresh install would not restore them.
+for rel in "${same[@]}" "${changed[@]}" "${newfiles[@]}"; do
   # path safety: no '..' anywhere in the relative path
   if [[ "${rel}" == *".."* || "${rel}" == /* || "${rel}" == *"//"* ]]; then
     echo "  [INVALID PATH] ${rel}"
