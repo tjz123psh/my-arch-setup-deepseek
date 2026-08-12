@@ -98,7 +98,8 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 1. **跑 `./check-extend.sh`** —— 一键总检（核心 8 节，全量 13 节，见上）。**任一节红 = 禁止提交**；
    红了按输出定位到节，修复后重跑至全绿。
 2. 改脚本逻辑（非纯数据）时，至少跑一次 VM 全新重装（`-d niri -t vm`），
-   确认闭环 10/10。物理机专属改动用 `-t physical` 在 VM 里跑路径。
+   确认闭环 11 步（01-mirror→09-settings + 99-cleanup）。物理机专属改动用
+   `-t physical` 在 VM 里跑路径。
 3. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
 4. commit + push（git-push 约定见 AGENTS/仓库惯例）。
 

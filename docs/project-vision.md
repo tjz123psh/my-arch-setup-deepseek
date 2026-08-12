@@ -166,7 +166,7 @@ and it is not an audited/reproducible engineering system.
    host), a screen-recording engine preset (wf-recorder on BOTH machine
    types — wl-screenrec-git was dropped from archlinuxcn and its binary is
    broken by the ffmpeg 9 ABI, 2026-08-09; the full VM vs physical
-   granularity table lives in docs/comprehensive-review-20260807.md),
+   granularity table lives in docs/granularity.md),
    and nomacs as the PNG default image viewer (mimeapps.list + acceptance
    check).
 8. **Boundaries (never touched).** partitioning, formatting, pacstrap, GRUB

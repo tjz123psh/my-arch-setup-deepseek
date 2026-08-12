@@ -117,9 +117,9 @@ R4.12 起 dms-ensure.log 记录的是 autostart DMS 启动命令（qs 守卫 + d
 - 与"以前能渲染"的关系：能渲染的基线是 KVM（virtio-gpu）时代；KVM→VMware
   迁移后该上游缺陷暴露。物理机（AMD radeonsi）不受影响。
 - 处置：09-settings.sh 在 `systemd-detect-virt == vmware` 时写
-  `LIBGL_ALWAYS_SOFTWARE=1` 到 /etc/environment（见 README 颗粒度表第 10 行）；
-  物理机不写入，保留硬件 GL。此变通仅影响 VMware guest 渲染质量（CPU 渲染），
-  功能（终端/应用/DMS 栏）完整。
+  `LIBGL_ALWAYS_SOFTWARE=1` 到 /etc/environment（见 docs/granularity.md
+  设置行）；物理机不写入，保留硬件 GL。此变通仅影响 VMware guest 渲染质量
+  （CPU 渲染），功能（终端/应用/DMS 栏）完整。
 
 ## 七、验证完成标准（对应 R4.10 handoff 契约）
 
