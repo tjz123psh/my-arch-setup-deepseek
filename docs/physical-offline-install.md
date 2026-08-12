@@ -50,3 +50,24 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 - 某 AUR 构建失败自动重试一次；仍失败报错退出，网络恢复后重跑 `./install.sh` 续传
 - 旧系统 `flclash-bin` 由 03 显式迁移到 archlinuxcn/flclash
 - `strap.sh` 依赖 GitHub 直连，无海外网络时用本指南的 U 盘/共享方式
+
+## 验证记录
+
+### 2026-08-12 伪物理机离线验证（physical-sim-vmware + 压缩包挂载法）
+
+在 VMware guest（3.8G 内存 / 19G 磁盘）内以 `-t physical --test-profile
+physical-sim-vmware` 完整模拟物理机离线安装：
+
+1. 挂载共享文件夹（`vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other`），解压
+   `my-arch-setup.tar` 与 `aur-sources-physical.tar.gz`（顶层 `.aur-sources/`）
+2. `./install.sh -d both -t physical --test-profile physical-sim-vmware`
+3. 结果：11 步全绿；`06-aur.log` 首行 `mode=offline targets=12`；12 个 AUR
+   目标全部构建安装（含 `vmware-workstation 26H1-3` 的 bundle + 8 个 ISO +
+   DKMS 模块）；makepkg 全程"找到 xxx"、**零网络下载**（sha256 全部通过）；
+   bulk `pacman -U` 11 包成功；04/08/09 物理分支生效且硬件专属效果标
+   `NOT_APPLICABLE_SIMULATED`；07-config 部署 253 文件
+4. 对照：同 profile 在线安装（无 `.aur-sources/` → paru 拉最新）12/12 成功，
+   `mode=online` 正常
+
+结论：压缩包挂载离线安装法在物理机分支下正确性验证通过，可直接用于无海外
+网络的物理机恢复。
