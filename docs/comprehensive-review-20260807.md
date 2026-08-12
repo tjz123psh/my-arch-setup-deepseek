@@ -2,14 +2,20 @@
 
 > **当前有效版本：二次复审（2026-08-08）**。文件名沿用初审日期；本章及后文
 > 以当前工作树为准，旧的 KVM/批次记录只能作为历史证据，不能当作当前验收结论。
+>
+> **2026-08-12 收尾**：`artifacts/nightly-validation-20260807/` 本地验证生成物
+> 已清理（旧 TEST_ID `2c604a32…`/`2620613d…` 与当前 payload 不兼容、已作废）；
+> 本文档中的包数/目标数等为当时快照，**当前以 `./check-extend.sh` reconcile 输出
+> 为准**；最新验证记录见 `docs/physical-offline-install.md`，VM vs 物理机颗粒度
+> 见 `docs/granularity.md`。
 
 - 审查对象：`/home/pang/Projects/my-arch-setup-deepseek`
 - 审查基线：`main`，HEAD 为 `f44066d2a07b13a7bf542f17bde048d803ab2e6c`
 - 当前工作树：本次复审正在修改中（flclash 迁移、测试和文档修改尚未提交）
 
 > **后续模型进度（2026-08-08 14:30）**：`docs/next-model-prompt-20260808.txt` 的
-> P0/P1 已按本文件第 10 节顺序实施并回归通过（详见
-> `artifacts/nightly-validation-20260807/checkpoint.md` 末尾"二次复审 P0/P1 整改"）。
+> P0/P1 已按本文件第 10 节顺序实施并回归通过（对应验证记录见上方 2026-08-12
+> 收尾说明，`artifacts/` 已清理）。
 > 已修：06 AUR 角色过滤、sim preflight、sync-scripts 安全模型、reflector timeout、
 > progress context 加强、behavior 注入/counter、hardware config ctx、Hyprland 部署
 > 代码链、niri-vmtest-gen、.local/bin、vmware-keymaps 缓存名、VCS commit 固定、
