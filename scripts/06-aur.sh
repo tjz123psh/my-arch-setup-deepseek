@@ -41,14 +41,27 @@ section "Building and installing AUR target packages (${#RECIPES[@]})"
 # dead host fails the fetch and the recipe retry/failover kicks in instead.
 # -sS silences the per-file progress spam while keeping error output.
 # Applies to BOTH modes: paru also builds AUR packages via makepkg.
-if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
-  log "Adding timeouts to makepkg download agents..."
-  run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - -sS --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3|g' /etc/makepkg.conf"
+# ALSO: network blips (esp. proxy/overseas links) kill source downloads with
+#   curl: (35) TLS connect error / (56) OpenSSL SSL_read: unexpected eof
+# The stock DLAGENTS `--retry 3` only retries timeouts + HTTP 408/429/5xx;
+# TLS errors (35/56) are NOT transient for curl, so --retry never fires and
+# one blip fails the whole AUR stage. --retry-all-errors (curl>=7.71) retries
+# those too. Guard on 'retry-all-errors' (not 'connect-timeout 15') so a
+# system already patched by an older installer run still gets the upgrade.
+if ! grep -q 'retry-all-errors' /etc/makepkg.conf; then
+  log "Adding timeouts + retry-all-errors to makepkg download agents..."
+  # fresh stock DLAGENTS (no timeout at all) -> replace wholesale
+  run bash -c "sed -i 's|/usr/bin/curl -qgb \"\" -fLC - --retry 3 --retry-delay 3|/usr/bin/curl -qgb \"\" -fLC - -sS --connect-timeout 15 --max-time 600 --retry 3 --retry-delay 3 --retry-all-errors|g' /etc/makepkg.conf"
+  # older installer patch (timeouts present, --retry-all-errors missing) -> append.
+  # Keying on '--retry-delay 3 -o' (the makepkg %o placeholder follows) makes this
+  # idempotent: an already-fixed line reads '--retry-delay 3 --retry-all-errors -o'
+  # and is NOT matched, so re-running never double-appends.
+  run bash -c "sed -i 's|--retry-delay 3 -o|--retry-delay 3 --retry-all-errors -o|g' /etc/makepkg.conf"
   # verify the patch actually landed: a customized makepkg.conf (different
   # quoting/line) makes the sed a silent no-op, leaving dead hosts able to
   # hang the build forever (found 2026-08-10 swarm audit; codeberg 504).
-  if ! grep -q 'connect-timeout 15' /etc/makepkg.conf; then
-    warn "could not patch makepkg DLAGENTS (pattern mismatch?); source fetches have NO timeout"
+  if ! grep -q 'retry-all-errors' /etc/makepkg.conf; then
+    warn "could not patch makepkg DLAGENTS (pattern mismatch?); TLS-blip downloads will NOT be retried"
   fi
 fi
 
@@ -348,17 +361,30 @@ online_mode() {
   for t in "${targets[@]}"; do
     q+="$(printf '%q ' "${t}")"
   done
-  if [[ "$(id -u)" -eq 0 ]]; then
-    runuser -u "${TARGET_USER}" -- bash -lc "paru -S --noconfirm --skipreview ${q}" || {
-      error "paru install failed (online mode); rerun install.sh to retry"
+  # Network blips (proxy/overseas TLS drops, git clone resets) fail the whole
+  # paru batch with nothing installed. Retry the batch (max 3): packages that
+  # already succeeded are skipped by paru as up-to-date, so re-running is
+  # idempotent; a genuinely broken PKGBUILD still fails out after 3 attempts.
+  local attempt=1 max=3 paru_ok=0
+  while true; do
+    paru_ok=0
+    if [[ "$(id -u)" -eq 0 ]]; then
+      runuser -u "${TARGET_USER}" -- bash -lc "paru -S --noconfirm --skipreview ${q}" && paru_ok=1
+    else
+      paru -S --noconfirm --skipreview "${targets[@]}" && paru_ok=1
+    fi
+    if (( paru_ok == 1 )); then
+      break
+    fi
+    if (( attempt >= max )); then
+      error "paru install failed after ${max} attempts (online mode); rerun install.sh to retry"
       exit 1
-    }
-  else
-    paru -S --noconfirm --skipreview "${targets[@]}" || {
-      error "paru install failed (online mode); rerun install.sh to retry"
-      exit 1
-    }
-  fi
+    fi
+    warn "paru install failed (attempt ${attempt}/${max}); transient network? retrying in 5s"
+    aur_log "paru attempt ${attempt} failed; retrying"
+    sleep 5
+    attempt=$((attempt + 1))
+  done
 
   # Acceptance (same exact-name discipline as C-03): every target must be
   # installed; paru follows AUR HEAD so a renamed upstream package fails here
