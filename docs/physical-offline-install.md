@@ -75,3 +75,24 @@ VM 上重跑**——官方包/驱动/桌面全部"已是最新跳过"，验证�
 结论：压缩包挂载离线安装法的**离线模式触发与 AUR 构建链路**在物理机分支下
 正确性验证通过；干净物理机首次安装请预留 30-60 分钟（官方包全量 + AUR 冷
 构建，无 ccache/构建缓存）。
+
+### 2026-08-12 严格验证（干净 base 恢复快照，physical-sim-vmware）
+
+从干净 Arch base 快照（仅 base + openssh）恢复后，同一测试 VM 依次完成两轮
+完整安装（均为 `-d both -t physical --test-profile physical-sim-vmware`）：
+
+- **离线（压缩包挂载法）**：hgfs 挂载 → 解压 `my-arch-setup.tar` +
+  `aur-sources-physical.tar.gz` → 安装。11 步全绿；`06-aur.log`
+  `mode=offline targets=12`；12 个 AUR 目标全部构建安装（vmware-workstation
+  26H1-3 含 DKMS），makepkg 零网络下载（sha256 全过）。中途 04-drivers 曾因
+  清华镜像超时（`Operation too slow`）失败一次——安装器按"required 失败即
+  中止"正确退出，重跑 `install.sh` 断点续传成功（02/03 跳过，04 起重跑）。
+- **在线**：恢复同一快照 → 解压代码（无缓存）→ 安装。`mode=online targets=12`，
+  paru 拉最新 12/12（google-chrome 151.0.7922.108、opencode-bin 1.18.11 等
+  较离线固定 recipe 新，符合预期）；vmware-workstation 26H1-3 经 paru 构建。
+- 两轮 07-config 均部署 253 文件、08-services/09-settings 正常；`docker.service`
+  在 VM 内 enable 失败为 warn 继续（VM 无嵌套虚拟化，物理机无此问题）。
+- tty 会话下安装结束后提示 `Reboot now? [Y/n]` 等待确认（正常交互行为）。
+
+结论：**物理机分支的离线（挂载法）与在线安装均在干净 base 上完整跑通**，
+两种模式各自 12/12 成功，无回归。
