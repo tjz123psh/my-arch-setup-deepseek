@@ -56,7 +56,10 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 ### 2026-08-12 伪物理机离线验证（physical-sim-vmware + 压缩包挂载法）
 
 在 VMware guest（3.8G 内存 / 19G 磁盘）内以 `-t physical --test-profile
-physical-sim-vmware` 完整模拟物理机离线安装：
+physical-sim-vmware` 模拟物理机离线安装。**注意：本次在已装过完整系统的
+VM 上重跑**——官方包/驱动/桌面全部"已是最新跳过"，验证重点是 06-aur 离线
+模式与 AUR 构建链路；干净 base 首次安装的官方包全量耗时不在本次范围（参考
+2026-08-11 VM 离线干净安装约 1 小时量级）：
 
 1. 挂载共享文件夹（`vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other`），解压
    `my-arch-setup.tar` 与 `aur-sources-physical.tar.gz`（顶层 `.aur-sources/`）
@@ -69,5 +72,6 @@ physical-sim-vmware` 完整模拟物理机离线安装：
 4. 对照：同 profile 在线安装（无 `.aur-sources/` → paru 拉最新）12/12 成功，
    `mode=online` 正常
 
-结论：压缩包挂载离线安装法在物理机分支下正确性验证通过，可直接用于无海外
-网络的物理机恢复。
+结论：压缩包挂载离线安装法的**离线模式触发与 AUR 构建链路**在物理机分支下
+正确性验证通过；干净物理机首次安装请预留 30-60 分钟（官方包全量 + AUR 冷
+构建，无 ccache/构建缓存）。
