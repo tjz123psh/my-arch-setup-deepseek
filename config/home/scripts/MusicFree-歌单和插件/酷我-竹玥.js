@@ -166,15 +166,14 @@ async function $4e63e094b4590b2b$var$getArtistWorks(artistItem, page, type) {
 
 async function $4e63e094b4590b2b$var$getLyric(musicItem) {
     try {
-        const res = await (0, ($parcel$interopDefault($M8GQN$axios))).get("https://yunzhiapi.cn/API/jhlrcgc.php", {
-            params: { id: musicItem.id, msg: "kw" },
+        const res = await (0, ($parcel$interopDefault($M8GQN$axios))).get("https://kuwo.cn/openapi/v1/www/lyric/getlyric", {
+            params: { musicId: musicItem.id, httpStatus: 1 },
             timeout: 10000
         });
-        let rawLrc = res.data;
-        if (rawLrc?.trim().length > 0) return { rawLrc: rawLrc };
-        return { rawLrc: "" };
+        const list = res.data && res.data.data && res.data.data.lrclist;
+        if (!Array.isArray(list)) return { rawLrc: "" };
+        return { rawLrc: list.map((_) => `[${_.time}]${_.lineLyric}`).join("\n") };
     } catch (error) {
-        console.error("获取歌词失败:", error.message);
         return { rawLrc: "" };
     }
 }

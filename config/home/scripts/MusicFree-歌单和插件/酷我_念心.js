@@ -274,18 +274,24 @@ async function getArtistWorks(artistItem, page, type) {
 }
 
 async function getLyric(musicItem) {
-  const res = (
-    await axios_1.default.get("http://m.kuwo.cn/newh5/singles/songinfoandlrc", {
-      params: {
-        musicId: musicItem.id,
-        httpStatus: 1,
-      },
-    })
-  ).data;
-  const list = res.data.lrclist;
-  return {
-    rawLrc: list.map((_) => `[${_.time}]${_.lineLyric}`).join("\n"),
-  };
+  try {
+    const res = (
+      await axios_1.default.get("https://kuwo.cn/openapi/v1/www/lyric/getlyric", {
+        params: {
+          musicId: musicItem.id,
+          httpStatus: 1,
+        },
+        timeout: 10000,
+      })
+    ).data;
+    const list = res.data && res.data.lrclist;
+    if (!Array.isArray(list)) return { rawLrc: "" };
+    return {
+      rawLrc: list.map((_) => `[${_.time}]${_.lineLyric}`).join("\n"),
+    };
+  } catch (e) {
+    return { rawLrc: "" };
+  }
 }
 
 async function getAlbumInfo(albumItem) {

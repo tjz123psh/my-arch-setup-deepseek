@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # MusicFree 插件一键恢复脚本
-# 用法：双击运行，或终端执行：~/MusicFree-插件备份/一键恢复.sh
+# 用法：双击运行，或终端执行：~/scripts/MusicFree-歌单和插件/一键恢复.sh
 # 脚本会自动关闭运行中的 MusicFree，恢复插件，然后提示重新打开
 set -euo pipefail
 
