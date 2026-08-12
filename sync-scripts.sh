@@ -104,6 +104,32 @@ fi
 echo "  secret gate: clean (${#changed[@]} changed + ${#newfiles[@]} new scanned)"
 
 # ---------------------------------------------------------------------------
+# desktop gate: .desktop files that would be written must pass
+# desktop-file-validate. Hand-made entries keep breaking the spec (single-
+# quoted Exec with '~' outside quotes, stale paths) - fail closed so a
+# broken entry never lands in the repo (2026-08-12: third occurrence).
+# ---------------------------------------------------------------------------
+desktop_bad=0
+if command -v desktop-file-validate >/dev/null 2>&1; then
+  for rel in "${changed[@]}" "${newfiles[@]}"; do
+    [[ "${rel}" == *.desktop ]] || continue
+    if ! desktop-file-validate "${SRC}/${rel}" >/tmp/sync-desktop.err 2>&1; then
+      echo "  [DESKTOP INVALID] ${rel}"
+      sed 's/^/      /' /tmp/sync-desktop.err
+      desktop_bad=$((desktop_bad + 1))
+    fi
+  done
+  if (( desktop_bad > 0 )); then
+    echo "error: ${desktop_bad} .desktop file(s) failed desktop-file-validate; FAIL CLOSED, nothing was written"
+    echo "  (fix Exec quoting / reserved chars in ${SRC} first)"
+    exit 1
+  fi
+  echo "  desktop gate: clean (${#changed[@]} changed + ${#newfiles[@]} new scanned)"
+else
+  echo "  desktop gate: desktop-file-validate missing - skipped"
+fi
+
+# ---------------------------------------------------------------------------
 # mapping plan: validate existing rows + plan new rows
 # ---------------------------------------------------------------------------
 mapping_bad=0
