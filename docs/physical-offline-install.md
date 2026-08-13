@@ -18,10 +18,12 @@
 ## 目标机安装（tty）
 
 ```bash
-# ① 挂载 U 盘或共享文件夹。U 盘通常自动挂载（udisks）到
-#    /run/media/<用户名>/<卷名>/；手动挂载：udisksctl mount -b /dev/sdX1
-#    （或用 sudo mount /dev/sdX1 /mnt/usb）。
-USB=/run/media/pang/新加卷/arch        # 按实际卷名改；示例卷名"新加卷"
+# ① 挂载 U 盘或共享文件夹。桌面环境（udisks）通常自动挂载到
+#    /run/media/<用户名>/<卷名>/；但 archinstall 完重启进入新系统的 base
+#    tty 里没有 udisks，U 盘不会自动挂载，需手动：
+#      sudo mkdir -p /mnt/usb && sudo mount /dev/sda1 /mnt/usb
+#    （设备名按实际 lsblk 结果，ntfs3 内核模块 linux/linux-zen 都自带）
+USB=/mnt/usb/arch        # 桌面环境示例：/run/media/<用户名>/<卷名>/arch
 # VMware 共享文件夹（hgfs）示例：
 #   sudo mkdir -p /mnt/hgfs && sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other
 #   USB=/mnt/hgfs/test
