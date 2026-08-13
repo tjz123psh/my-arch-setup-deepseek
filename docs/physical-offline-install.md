@@ -18,14 +18,19 @@
 ## 目标机安装（tty）
 
 ```bash
-# ① 挂载 U 盘或共享文件夹（VMware hgfs 示例）
-sudo mkdir -p /mnt/hgfs && sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other
+# ① 挂载 U 盘或共享文件夹。U 盘通常自动挂载（udisks）到
+#    /run/media/<用户名>/<卷名>/；手动挂载：udisksctl mount -b /dev/sdX1
+#    （或用 sudo mount /dev/sdX1 /mnt/usb）。
+USB=/run/media/pang/新加卷/arch        # 按实际卷名改；示例卷名"新加卷"
+# VMware 共享文件夹（hgfs）示例：
+#   sudo mkdir -p /mnt/hgfs && sudo vmhgfs-fuse .host:/ /mnt/hgfs -o allow_other
+#   USB=/mnt/hgfs/test
 
 # ② 解包仓库 → ~/my-arch-setup-deepseek/
-tar -xf /mnt/hgfs/test/my-arch-setup.tar -C ~/
+tar -xf "$USB/my-arch-setup.tar" -C ~/
 
 # ③ 解压缓存进仓库 → .aur-sources/（触发 06 离线模式）
-tar -xzf /mnt/hgfs/test/aur-sources-physical.tar.gz -C ~/my-arch-setup-deepseek/
+tar -xzf "$USB/aur-sources-physical.tar.gz" -C ~/my-arch-setup-deepseek/
 
 # ④ 确认缓存就位
 ls -d ~/my-arch-setup-deepseek/.aur-sources
