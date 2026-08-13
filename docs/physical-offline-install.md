@@ -60,6 +60,19 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 
 ## 验证记录
 
+### 2026-08-13 物理机 U 盘物料验证（宿主实测）
+
+实际插入 U 盘（ntfs，卷标"新加卷"，sda1 未挂载状态）验证：
+
+- 挂载：`udisksctl mount -b /dev/sda1` → `/run/media/pang/新加卷`（用户态免密，
+  桌面环境自动挂载路径；base tty 手动挂载见上文 `sudo mount /dev/sda1 /mnt/usb`）
+- 物料：`my-arch-setup.tar`（78M）+ `aur-sources-physical.tar.gz`（1.6G）均在 `arch/`
+- 结构核对（关键）：代码包 `tar -tzf` 顶层为 `my-arch-setup-deepseek/`（带顶层目录，
+  解压到 ~/ 不会散文件）；缓存包顶层为 `.aur-sources/`（06-aur `has_aur_sources()`
+  检测条件满足 → 触发离线模式，不会误走在线 paru）
+
+结论：U 盘两个包结构与解压路径均正确，可直接按上文"目标机安装（tty）"流程使用。
+
 ### 2026-08-12 伪物理机离线验证（physical-sim-vmware + 压缩包挂载法）
 
 在 VMware guest（3.8G 内存 / 19G 磁盘）内以 `-t physical --test-profile
