@@ -13,7 +13,7 @@
 - 审查基线：`main`，HEAD 为 `f44066d2a07b13a7bf542f17bde048d803ab2e6c`
 - 当前工作树：本次复审正在修改中（flclash 迁移、测试和文档修改尚未提交）
 
-> **后续模型进度（2026-08-08 14:30）**：`docs/next-model-prompt-20260808.txt` 的
+> **后续模型进度（2026-08-08 14:30）**：`docs/archive/next-model-prompt-20260808.txt` 的
 > P0/P1 已按本文件第 10 节顺序实施并回归通过（对应验证记录见上方 2026-08-12
 > 收尾说明，`artifacts/` 已清理）。
 > 已修：06 AUR 角色过滤、sim preflight、sync-scripts 安全模型、reflector timeout、
@@ -25,7 +25,7 @@
 - 项目定位：个人 ASUS Arch Linux 恢复工具；公开 Git 仓库
 - 当前用户状态：用户报告物理机实战部署已完成；VMware 测试仍在进行
 - 本文性质：代码/清单/配置/文档的证据驱动复审 + 后续模型执行任务书
-- 可直接复制给后续模型的提示词：`docs/next-model-prompt-20260808.txt`
+- 可直接复制给后续模型的提示词：`docs/archive/next-model-prompt-20260808.txt`
 
 ## 0. 先看结论
 
@@ -184,7 +184,7 @@ flclash  pacman  archlinuxcn  pacman  personal-autostart  config-backed  install
 
 ### 2.3 仍需留意的统计/文档漂移
 
-历史 `docs/handoff-20260805.md`、`docs/handoff-20260806.md` 保留旧批次数字是有意的历史记录，但已加历史提示，不能作为当前状态来源。当前状态只看 README、project vision 和本文。本次修改后还必须：
+历史 `docs/archive/handoff-20260805.md`、`docs/archive/handoff-20260806.md` 保留旧批次数字是有意的历史记录，但已加历史提示，不能作为当前状态来源。当前状态只看 README、project vision 和本文。本次修改后还必须：
 
 1. 重跑 reconciliation，确认 191/12/8、177/14、231/15；
 2. 对所有 recipe 运行 `makepkg --printsrcinfo`，确认 15/15；
@@ -279,7 +279,7 @@ PKGBUILD/.SRCINFO 需要 vmware-keymaps-1.0-3.tar.gz
 
 - `/home/pang/.config/fish/config.fish`：曾发现凭据赋值形态，权限需复核；
 - `/home/pang/.config/fish/conf.d/age-api-key.fish`：曾发现凭据赋值形态；
-- `docs/handoff-20260805.md`、`docs/handoff-20260806.md`：历史 credential-bearing 内容已脱敏，但旧 Git 历史可能仍含原文；
+- `docs/archive/handoff-20260805.md`、`docs/archive/handoff-20260806.md`：历史 credential-bearing 内容已脱敏，但旧 Git 历史可能仍含原文；
 - ignored 的 `artifacts/nightly-validation-20260807/` 也曾有凭据描述字段，当前工作区已做值级脱敏；它仍是旧测试证据，不得重新用于验收。
 
 **解决方向：**
@@ -542,7 +542,7 @@ printf 'XDG_CURRENT_DESKTOP=%s\n' "${XDG_CURRENT_DESKTOP:-}"
 
 #### P0-5 公开历史文档曾保存 credential-bearing 内容
 
-- 位置：历史 `docs/handoff-20260805.md`、`docs/handoff-20260806.md`；当前值已脱敏，但历史 Git 对象可能仍在；
+- 位置：历史 `docs/archive/handoff-20260805.md`、`docs/archive/handoff-20260806.md`；当前值已脱敏，但历史 Git 对象可能仍在；
 - 方法：轮换/撤销所有曾暴露的凭据；对 Git 历史和发布包做扫描；必要时在用户确认后重写公开历史；以后只记录凭据位置/权限/可用性布尔值。
 
 #### P0-6 FlClash 替换不是完整事务
@@ -824,7 +824,7 @@ checkpoint 必须写：已完成轮次、失败/不可用轮次、最终 ID/hash
 
 ## 13. 给后续模型的执行原则
 
-完整可复制提示词见 `docs/next-model-prompt-20260808.txt`。
+完整可复制提示词见 `docs/archive/next-model-prompt-20260808.txt`。
 
 - 先读本文件和项目 `AGENTS.md`，不要读取/索要密码；
 - 只在工作区内改代码和文档；任何 Arch/VMware/guest apply 前先 inventory、dry-run 和明确批准；

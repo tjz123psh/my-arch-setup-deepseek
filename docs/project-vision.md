@@ -212,9 +212,9 @@ chain (systemd primary, per-display `dms run -d` last fallback, three-state
 plausible/absent/unverifiable verification via DMS runtime markers with
 PRE-check short-circuit, weak once-per-first-frame contract) is covered by
 synthetic runtime-marker/fake-PATH tests only; the real UWSM/greeter runtime,
-DMS bar appearance, IPC binds and exit cleanup still need the VMware
-acceptance listed in the R4.10 handoff
-(`download-mode-lab/fixtures/tmp/session-round4-10-patch/VMWARE-HANDOFF.md`).
+DMS bar appearance, IPC binds and exit cleanup were subsequently verified in
+the VMware clean-base runs (docs/physical-offline-install.md 验证记录; the
+session-round4 sandbox VMWARE-HANDOFF file is long gone with the sandbox).
 
 - Fresh-install selector bootstrap: `ensure_fzf` performs no package or
   database operation before mirror setup. If `fzf` is absent on the fresh
