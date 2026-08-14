@@ -129,7 +129,29 @@ validate_type() {
       ;;
     systemd)
       if have systemd-analyze; then
-        if ! systemd-analyze verify "$f" >/dev/null 2>&1; then rc=1; fi
+        # systemd-analyze verify also checks ExecStart executability. Paths
+        # that only exist after deployment (~/.local/bin helpers, opencode's
+        # node_modules) are valid config but missing on the dev host - those
+        # findings are ignored. A REAL typo pointing anywhere else must still
+        # FAIL the gate, so the filter keys on the offending path prefix, not
+        # on the message text alone (review minor, 2026-08-14).
+        local vout line p real_err=""
+        # `|| true`: systemd-analyze returns nonzero on findings (incl. the
+        # ignorable ones); under `set -e` the assignment would kill the run
+        # before we filter.
+        vout="$(systemd-analyze verify "$f" 2>&1 || true)"
+        while IFS= read -r line; do
+          [[ -z "${line}" ]] && continue
+          if [[ "${line}" =~ (is not executable|not found|No such file|没有那个文件) ]]; then
+            p="$(sed -n 's/.*\(Command\|Executable\) \([^ :]*\).*/\2/p' <<<"${line}")"
+            if [[ "${p}" == *"/.local/bin/"* || "${p}" == *"/.config/opencode/"* \
+               || "${p}" == *"node_modules/"* ]]; then
+              continue  # deployment-time program, absent on dev host: expected
+            fi
+          fi
+          real_err+="${line}"$'\n'
+        done <<<"${vout}"
+        if [[ -n "${real_err}" ]]; then rc=1; fi
       else note_skip "$f (systemd: systemd-analyze 缺失)"; return; fi
       ;;
     kdl)

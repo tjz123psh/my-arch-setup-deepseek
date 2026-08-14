@@ -418,10 +418,16 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
     # check above is not enough - a DKMS rebuild after a kernel upgrade can
     # silently break module loading. Required when Workstation is installed:
     # a missing vmmon module means the VMware host stack cannot run (P1-8).
+    # NOTE (2026-08-12): `dkms status | grep vmmon` NEVER matched - dkms names
+    # the entry by PACKAGE_NAME (vmware-workstation/<ver>, ...), which does
+    # not contain "vmmon", so the check always failed on real physical
+    # machines (PHY path never got past this). Verify the MODULE names with
+    # modprobe -n (dry-run, resolves dependencies), matching the acceptance
+    # check in docs/comprehensive-review-20260807.md §6.4.
     if [[ -f /usr/lib/systemd/system/vmware-networks.service ]] \
-       && command -v dkms >/dev/null 2>&1; then
-      if ! dkms status 2>/dev/null | grep -q vmmon; then
-        error "dkms status shows no vmmon module; VMware host stack cannot load (run: sudo dkms autoinstall; kernel headers required)"
+       && command -v modprobe >/dev/null 2>&1; then
+      if ! modprobe -n vmmon vmnet 2>/dev/null; then
+        error "vmmon/vmnet not built for kernel $(uname -r); VMware host stack cannot load (run: sudo dkms autoinstall; kernel headers required)"
         exit 1
       fi
     fi
@@ -432,7 +438,11 @@ elif [[ "${MACHINE_TYPE}" == "vm" ]]; then
   # vm / VMware guest: vmtoolsd is the required guest core (P1-8) - a
   # missing unit or a failed enable FAILS the step. vmware-vmblock-fuse is
   # optional (copy/paste + drag&drop) and only enabled when present.
-  if [[ -f /usr/lib/systemd/system/vmtoolsd.service ]]; then
+  # VMTOOLS_UNIT is injectable (tests point it at a sandbox unit; a physical
+  # dev host has no open-vm-tools unit - same DI pattern as 07-config's
+  # MAPPINGS/CONFIG_SRC). Found 2026-08-14: host reinstall exposed the
+  # dependency and broke session-lifecycle tests.
+  if [[ -f "${VMTOOLS_UNIT:-/usr/lib/systemd/system/vmtoolsd.service}" ]]; then
     if run systemctl enable --now vmtoolsd.service; then
       log "Service: vmtoolsd.service"
     else

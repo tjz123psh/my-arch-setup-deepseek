@@ -157,18 +157,36 @@ fi
 echo
 echo "== Go module cache (greetd-dms-greeter) =="
 if command -v go >/dev/null 2>&1; then
-  if [[ ! -d "$DEST/go-mod" ]] || [[ -z "$(ls -A "$DEST/go-mod" 2>/dev/null)" ]]; then
+  # Check out the EXACT commit pinned in the recipe (not the mirror HEAD):
+  # a HEAD/go.mod drift would make the cached module set useless for the
+  # pinned build (found 2026-08-12). A .pin marker binds the cache to that
+  # commit: partial (failed download) or stale (recipe pin moved) caches are
+  # discarded and rebuilt instead of being reused (review minor 2026-08-14).
+  local_repo="$(dirname "${BASH_SOURCE[0]}")/third_party/aur/greetd-dms-greeter-git"
+  PIN="$(grep -oE '#commit=[0-9a-f]{40}' "${local_repo}/PKGBUILD" | head -1 | cut -d= -f2)"
+  if [[ -z "${PIN}" ]]; then
+    echo "FAIL  go-mod: no pinned #commit= in ${local_repo}/PKGBUILD"
+    FAILED=$((FAILED + 1))
+  elif [[ ! -d "$DEST/go-mod" ]] || [[ -z "$(ls -A "$DEST/go-mod" 2>/dev/null)" ]] \
+       || [[ "$(cat "$DEST/go-mod/.pin" 2>/dev/null)" != "$PIN" ]]; then
+    rm -rf "$DEST/go-mod"
     rm -rf /tmp/aur-dg-wc
     git clone -q --no-checkout "$DEST/dank-greeter" /tmp/aur-dg-wc 2>/dev/null
-    git -C /tmp/aur-dg-wc checkout -q "$(git --git-dir="$DEST/dank-greeter" rev-parse HEAD)" 2>/dev/null
-    ( cd /tmp/aur-dg-wc/core && GOMODCACHE="$DEST/go-mod" GOPROXY=https://proxy.golang.org go mod download ) \
-      && echo "OK    go-mod ($(du -sh "$DEST/go-mod" | cut -f1))" || { echo "FAIL  go-mod"; FAILED=$((FAILED + 1)); }
+    git -C /tmp/aur-dg-wc checkout -q "${PIN}" 2>/dev/null
+    if ( cd /tmp/aur-dg-wc/core && GOMODCACHE="$DEST/go-mod" GOPROXY=https://proxy.golang.org go mod download ); then
+      echo "$PIN" > "$DEST/go-mod/.pin"
+      echo "OK    go-mod @ ${PIN:0:8} ($(du -sh "$DEST/go-mod" | cut -f1))"
+    else
+      echo "FAIL  go-mod"
+      FAILED=$((FAILED + 1))
+    fi
     rm -rf /tmp/aur-dg-wc
   else
-    echo "SKIP  go-mod"
+    echo "SKIP  go-mod (pin ${PIN:0:8} matches)"
   fi
 else
-  echo "NOTE  go not installed; skip Go module cache (greetd-dms-greeter will need network)"
+  echo "FAIL  go not installed; cannot build go-mod cache (install go, then rerun)"
+  FAILED=$((FAILED + 1))
 fi
 
 echo
@@ -191,7 +209,8 @@ if command -v cargo >/dev/null 2>&1; then
     echo "SKIP  cargo"
   fi
 else
-  echo "NOTE  cargo not installed; skip cargo cache (paru will need network)"
+  echo "FAIL  cargo not installed; cannot build cargo cache (install cargo/rust, then rerun)"
+  FAILED=$((FAILED + 1))
 fi
 
 echo

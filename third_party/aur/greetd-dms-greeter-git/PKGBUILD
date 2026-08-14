@@ -55,7 +55,11 @@ build() {
 
 	export CGO_ENABLED=0
 	export GOFLAGS="-buildmode=pie -trimpath -mod=readonly -modcacherw"
-	export GOMODCACHE="$srcdir/gomodcache"
+	# NOTE: GOMODCACHE must NOT be overridden here. The installer's offline
+	# mode injects .aur-sources/go-mod so the build never touches the network;
+	# overriding it here (as before) silently discarded that cache and forced
+	# greetd-dms-greeter to fetch every module from proxy.golang.org/GitHub,
+	# hanging offline installs (found 2026-08-12). -mod=readonly stays.
 
 	# Bake the quickshell UI into the binary (populates internal/shellembed/dist)
 	make sync-shell
@@ -72,7 +76,7 @@ build() {
 
 check() {
 	cd "$srcdir/dank-greeter/core"
-	export CGO_ENABLED=0 GOMODCACHE="$srcdir/gomodcache"
+	export CGO_ENABLED=0
 	# review P1-11: a failing test must FAIL the build, not be swallowed.
 	go test ./...
 }

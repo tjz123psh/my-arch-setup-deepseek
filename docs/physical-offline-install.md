@@ -115,3 +115,24 @@ VM 上重跑**——官方包/驱动/桌面全部"已是最新跳过"，验证�
 
 结论：**物理机分支的离线（挂载法）与在线安装均在干净 base 上完整跑通**，
 两种模式各自 12/12 成功，无回归。
+
+### 2026-08-15 修复回归验证（干净 base，physical-sim-vmware + vm）
+
+针对 2026-08-14 物理机离线安装失败（greetd 的 go 构建无 VPN 下从网络拉依赖）
+的修复后回归，同一 VM 依次跑两轮完整安装（修复后代码 + 重新生成的缓存，
+go-mod 含 `.pin=f353eaf…` 与 recipe 固定 commit 绑定）：
+
+- **伪物理机（physical-sim-vmware）**：`mode=offline targets=12`，12/12 构建
+  安装（含 vmware-workstation 26H1-3 DKMS、**greetd-dms-greeter r23.gf353eaf
+  从 go 缓存构建、零网络下载**）；07 部署 253 文件；08 physical 分支
+  `NOT_APPLICABLE_SIMULATED` 跳过 DKMS 段（modprobe 修复在真实 host 另验：
+  `modprobe -n vmmon vmnet` OK）。
+- **VM（-t vm）**：`mode=offline targets=11`，11/11 构建安装（vmware-workstation
+  正确排除）；07 部署 252 文件（rog-control-center.cfg 门控行正确跳过）；08 vm
+  分支 vmtoolsd/vmware-vmblock-fuse 启用成功。
+- 两轮均 11/11 步全绿；06-aur 缺 go-mod/cargo 缓存时 fail-closed（GOPROXY=off
+  / CARGO_NET_OFFLINE），缓存生成机（fetch-aur-sources.sh）无 go/cargo 时显式
+  失败。
+
+结论：离线缓存 go-mod 缺口与 vmmon DKMS 误报已修复，物理机离线安装的
+greetd 下载问题不再复现。

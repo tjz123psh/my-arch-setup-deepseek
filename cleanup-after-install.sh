@@ -57,9 +57,18 @@ rm_path() { # path label
   fi
   before_bytes="$(bytes "$p")"
   before_h="$(du -sh "$p" 2>/dev/null | cut -f1)"
-  if ! rm -rf -- "$p"; then
-    echo "WARN  删除失败: ${p}"
-    return 1
+  if ! rm -rf -- "$p" 2>/dev/null; then
+    # go module cache dirs are 0555 read-only (go's cache hardening): a plain
+    # rm -rf cannot unlink their entries, so the whole tree (e.g. .aur-sources
+    # with go-mod) fails to delete. Fall back to sudo rm -rf (interactive
+    # script; sudo prompts for the password once). Found 2026-08-14 on the
+    # physical machine.
+    if sudo rm -rf -- "$p"; then
+      echo "  （普通权限不足，已用 sudo 删除）"
+    else
+      echo "WARN  ${label} 删除失败: ${p}"
+      return 1
+    fi
   fi
   freed=$((freed + before_bytes))
   echo "DEL   ${label}（释放 ${before_h}）"

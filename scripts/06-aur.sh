@@ -195,13 +195,34 @@ offline_mode() {
     log "Using local AUR source cache: ${PROJECT_DIR}/.aur-sources (offline mode)"
     export SRCDEST="${PROJECT_DIR}/.aur-sources"
     # Build-dependency caches for the Go (greetd-dms-greeter) and Rust (paru)
-    # recipes; without them `go build` / `cargo build` hit the network even
-    # though the PKGBUILD sources are cached.
+    # recipes. Offline mode FAILS CLOSED when a required cache is missing:
+    # with the PKGBUILD GOMODCACHE override removed (2026-08-12), go would
+    # otherwise fall back to proxy.golang.org and hang a no-VPN machine
+    # (review major, 2026-08-14). CARGO_NET_OFFLINE makes paru's
+    # `cargo fetch --locked` use the cache instead of probing crates.io
+    # first (review minor, same date). fetch-aur-sources.sh generates both
+    # from the pinned recipe commits and writes a .pin marker, so presence
+    # here implies completeness.
     if [[ -d "${PROJECT_DIR}/.aur-sources/go-mod" ]]; then
       export GOMODCACHE="${PROJECT_DIR}/.aur-sources/go-mod"
+      export GOPROXY=off
+    else
+      error "offline AUR cache is missing .aur-sources/go-mod (required by greetd-dms-greeter); re-extract a complete aur-sources-*.tar.gz"
+      exit 1
     fi
     if [[ -d "${PROJECT_DIR}/.aur-sources/cargo" ]]; then
       export CARGO_HOME="${PROJECT_DIR}/.aur-sources/cargo"
+      export CARGO_NET_OFFLINE=true
+    else
+      error "offline AUR cache is missing .aur-sources/cargo (required by paru); re-extract a complete aur-sources-*.tar.gz"
+      exit 1
+    fi
+    # strap/root path: a cache extracted as root is unwritable by the
+    # runuser build (go needs $GOMODCACHE/cache/lock); hand it to TARGET_USER
+    # (review minor, 2026-08-14 - unverified on the strap path).
+    if [[ "$(id -u)" -eq 0 ]] && [[ -d "${PROJECT_DIR}/.aur-sources" ]]; then
+      chown -R "${TARGET_USER}:${TARGET_USER}" \
+        "${PROJECT_DIR}/.aur-sources/go-mod" "${PROJECT_DIR}/.aur-sources/cargo" 2>/dev/null || true
     fi
   fi
 

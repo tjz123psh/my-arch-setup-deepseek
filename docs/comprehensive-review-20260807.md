@@ -412,8 +412,10 @@ vm:       open-vm-tools selected; vmware-workstation + keymaps excluded
 物理/host：
 
 - 当前内核 headers 与 DKMS 匹配；
-- `dkms status` 同时证明 `vmmon`/`vmnet`；
-- `modprobe -n vmmon vmnet` 成功；
+- `dkms status` 证明 `vmware-workstation` 的 DKMS 构建成功（条目按包名
+  `vmware-workstation/<ver>` 行文，模块名另由下条证明——2026-08-14 修正：
+  旧表述"同时证明 vmmon/vmnet"与 `grep vmmon` 必然误报一致）；
+- `modprobe -n vmmon vmnet` 成功（08-services 的 required 检查）；
 - `vmware-networks.service`、`vmware-usbarbitrator.service` enabled+active；
 - 不 enable static `vmware-networks-configuration.service`，不寻找不存在的 `vmware-vmnet.service`；
 - host 服务或 DKMS 失败必须 required failure，不得只 warning。

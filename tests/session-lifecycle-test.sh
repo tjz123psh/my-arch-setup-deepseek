@@ -44,6 +44,13 @@ services="$root/scripts/08-services.sh"
 # all temp state lives INSIDE the workspace (Codex R3/R4.1: no /tmp)
 mkdir -p "$root/download-mode-lab/fixtures/tmp"
 sandbox="$(mktemp -d "$root/download-mode-lab/fixtures/tmp/session-test.XXXXXX")"
+# 08-services' vm branch requires the vmtoolsd.service unit to exist; a real
+# physical dev host has no open-vm-tools unit, so every vm-branch test would
+# exit early on the missing file (exposed 2026-08-14 after the host
+# reinstall). Inject a sandbox unit - 08-services supports VMTOOLS_UNIT, the
+# same DI pattern as 07-config's MAPPINGS/CONFIG_SRC.
+touch "$sandbox/vmtoolsd.service"
+export VMTOOLS_UNIT="$sandbox/vmtoolsd.service"
 # live fake-backend pids from suite M (comm=dms sh processes); the EXIT trap
 # kills them by EXACT PID only (never by process name, which could hit the
 # real host dms) and waits to reap them, so no /proc comm=dms test process
@@ -672,6 +679,18 @@ fi
 
 # F4g: greetd is-enabled rc=4 + stdout=not-found -> treated as converged
 # (the host's real systemctl contract; R4.4 item 4)
+# Negative path: the vm branch must FAIL when the vmtoolsd unit is missing
+# (the sandbox injection makes the positive path pass; this proves the
+# missing-unit branch still exits nonzero - review minor 2026-08-14).
+logvt="$sandbox/vt-missing.log"
+rc=0
+PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$logvt" FAKE_STATE_DIR="$sandbox/state-vt" \
+  HOME="$fakehome_b" PROJECT_DIR="$root" DESKTOP_ENV=none MACHINE_TYPE=vm \
+  VMTOOLS_UNIT=/nonexistent/vmtoolsd.service \
+  bash "$services" >>"$logvt" 2>&1 || rc=$?
+check "vm: missing vmtoolsd unit exits nonzero" "$rc" 1
+assert_grep "vm: missing-unit error names vmtoolsd" 'vmtoolsd.service unit missing' "$logvt"
+
 logg="$sandbox/f4g.log"
 rc=0
 PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$logg" FAKE_DMS_ENABLE_RC=1 \
