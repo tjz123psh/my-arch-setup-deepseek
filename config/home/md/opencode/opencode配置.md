@@ -13,7 +13,7 @@
 | Gemini MCP | 主 `gemini-3.5-flash-lite`，备用 `gemini-3.5-flash`；优先免费吞吐的图片分析与头脑风暴 |
 | Provider | `anthropic`、`linxi`、`other-linxi`（Opus 通道）、`ly`、`daye`（GPT 通道）、`grok`、`google` |
 | 凭据 | `~/.local/share/opencode/secrets/*-api-key`，配置里只写 `{file:...}` |
-| MCP | `context7`、`gemini-assistant`、`penpot`、`playwright`、`sequential-thinking` |
+| MCP | `context7`、`gemini-assistant`、`playwright`、`sequential-thinking` |
 | Plugin | `opencode-pty`、`opencode-notifier`、`opencode-dcp`（均锁精确版本） |
 | LSP | `lua-ls`、`rust`、`clangd` 启用，其余 35 个内置 server 显式关闭 |
 | Formatter | `stylua`（内置清单里没有它，需自定义声明） |

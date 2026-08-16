@@ -167,8 +167,6 @@ physical-v1	personal-scripts	config/home/scripts/package/paru-ui	scripts/package
 physical-v1	personal-scripts	config/home/scripts/share/prompts/aur-review.md	scripts/share/prompts/aur-review.md	744
 physical-v1	personal-autostart	config/home/.config/autostart/FlClash.desktop	.config/autostart/FlClash.desktop	644
 physical-v1	asus-hardware	config/home/.config/rog/rog-control-center.cfg	.config/rog/rog-control-center.cfg	644
-physical-v1	personal-user-services	config/home/.config/systemd/user/openai-oauth.service	.config/systemd/user/openai-oauth.service	644
-physical-v1	personal-user-services	config/home/.config/systemd/user/penpot-mcp.service	.config/systemd/user/penpot-mcp.service	644
 physical-v1	personal-user-services	config/home/.config/systemd/user/vellum-tray.service	.config/systemd/user/vellum-tray.service	644
 physical-v1	personal-user-services	config/home/.config/systemd/user/vellum.service	.config/systemd/user/vellum.service	644
 physical-v1	developer-editor	config/home/md/archlinux/Shorin-ArchLinux-Guide-合集.md	md/archlinux/Shorin-ArchLinux-Guide-合集.md	644
