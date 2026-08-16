@@ -56,6 +56,13 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 - 某 AUR 构建失败自动重试一次；仍失败报错退出，网络恢复后重跑 `./install.sh` 续传
 - 旧系统 `flclash-bin` 由 03 显式迁移到 archlinuxcn/flclash
 - `strap.sh` 依赖 GitHub 直连，无海外网络时用本指南的 U 盘/共享方式
+- **装错分支的补救**：若误用 `-t vm` 装了物理机（缺显卡驱动/vmware-workstation/rog
+  配置），**无需重装系统**——`rm -f .install_progress && ./install.sh -d both -t physical`
+  重跑即可补齐（已装包自动跳过）；装完需清理 vm 残留：`pacman -R open-vm-tools` +
+  `systemctl disable --now vmtoolsd vmware-vmblock-fuse` + 清依赖孤儿。注意重跑
+  physical 分支需要 physical 缓存（vm 缓存缺 vmware-workstation 源码）。
+- **重跑安装器前先退出桌面（注销到 tty）**：07-config 用 `cp` 覆盖部署，运行中的
+  二进制（vellum 等）报 ETXTBSY"文本文件忙"导致部署失败；退出桌面后再跑最干净。
 
 ## 验证记录
 
