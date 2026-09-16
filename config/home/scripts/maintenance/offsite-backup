@@ -82,6 +82,10 @@ if ! ROOT_DISK="$(backing_disk /)"; then
   ui_err "无法识别系统根目录所在磁盘。"
   exit 1
 fi
+if ! HOME_DISK="$(backing_disk "$HOME")"; then
+  ui_err "无法识别 HOME 所在磁盘。"
+  exit 1
+fi
 if ! TARGET_DISK="$(backing_disk "$TARGET")"; then
   ui_err "无法识别备份目标所在磁盘或远端文件系统。"
   exit 1
@@ -104,11 +108,17 @@ if [[ "$ROOT_DISK" == "$TARGET_DISK" ]]; then
   ui_err "目标与系统位于同一物理磁盘（%s），拒绝作为异盘备份。" "$ROOT_DISK"
   exit 1
 fi
+# 备份的数据源是 HOME：HOME 独立成盘时，目标是 HOME 同一块盘同样不是异盘备份。
+if [[ "$HOME_DISK" == "$TARGET_DISK" ]]; then
+  ui_err "目标与 HOME 位于同一物理磁盘（%s），拒绝作为异盘备份。" "$HOME_DISK"
+  exit 1
+fi
 
 if [[ "$VALIDATE_ONLY" -eq 1 ]]; then
   ui_banner "异盘目标校验" "offsite-backup · 只读预检"
   ui_panel_open "目标"
   ui_panel_kv "系统磁盘" "$ROOT_DISK"
+  ui_panel_kv "HOME 磁盘" "$HOME_DISK"
   ui_panel_kv "目标磁盘" "$TARGET_DISK"
   ui_panel_kv "文件系统" "$TARGET_FSTYPE"
   ui_panel_kv "目录" "$TARGET_REAL"
@@ -312,7 +322,7 @@ latest_set() {
 }
 
 prune_owned_sets() {
-  local names name marker old_set i j newest swap failed=0
+  local names name marker old_set i j newest swap failed=0 latest_name=""
   local -a owned_sets=()
   names="$(find "$DEST" -mindepth 1 -maxdepth 1 -type d -name 'set-*' -printf '%f\n')" \
     || { ui_warn "无法枚举旧备份集合，已跳过自动轮换"; return 1; }
@@ -338,7 +348,15 @@ prune_owned_sets() {
       owned_sets[newest]="$swap"
     fi
   done
+  # latest 指向的集合即使按名字排在保留数之外也不删：回拨时钟或同秒 PID
+  # 撞车时，刚发布并已通过校验的集合可能不是“按名字最新”，删掉它会让 latest 悬空。
+  if [[ -L "$DEST/latest" ]]; then
+    latest_name="$(readlink "$DEST/latest")" || latest_name=""
+  fi
   for ((i = KEEP; i < ${#owned_sets[@]}; i++)); do
+    if [[ -n "$latest_name" && "${owned_sets[i]}" == "$latest_name" ]]; then
+      continue
+    fi
     old_set="$DEST/${owned_sets[i]}"
     if ! rm -rf -- "${old_set:?}"; then
       ui_warn "无法删除超出保留数量的旧备份: %s" "$old_set"
@@ -363,6 +381,7 @@ ui_panel_line "新集合完整校验后才更新 latest；失败时上一份可�
 ui_panel_close
 ui_panel_open "目标校验"
 ui_panel_kv "系统磁盘" "$ROOT_DISK"
+ui_panel_kv "HOME 磁盘" "$HOME_DISK"
 ui_panel_kv "备份目标" "$TARGET_DISK"
 ui_panel_kv "目录" "$DEST"
 ui_panel_close
@@ -404,17 +423,40 @@ trap 'exit 131' QUIT
 create_consistent_home_source
 
 ui_working "正在估算 HOME 备份大小和目标可用空间"
-HOME_KIB="$(du -sk \
-  --exclude='.cache' \
-  --exclude='.local/share/Trash' \
-  --exclude='migration' \
-  --exclude='migration-backup' \
-  "$HOME_SNAPSHOT_SOURCE" 2>/dev/null | awk '{print $1}')"
-TARGET_FREE_KIB="$(df -Pk "$TARGET" | awk 'NR == 2 {print $4}')"
-if [[ ! "$HOME_KIB" =~ ^[0-9]+$ || ! "$TARGET_FREE_KIB" =~ ^[0-9]+$ ]]; then
-  ui_err "无法计算 HOME 大小或目标剩余空间。"
+# set -euo pipefail 下命令替换里未保护的 du/df 失败会直接中止脚本，后面的守卫
+# 就成了死代码。这里显式捕获退出码与 stderr：没有可用数值就按契约退出，
+# 有部分结果则明确告警（估算偏小只会浪费一次运行，不会损坏已有备份）。
+du_error="$STAGING/.du-error.$$"
+du_rc=0
+# 与 tar 归档一致：先 cd 进快照，排除规则同样锚定顶层 ./ 前缀（du 对不含 / 的
+# 模式按 basename 匹配任意层级，会比 tar 多排除嵌套 .cache 等目录）。
+HOME_KIB="$(cd "$HOME_SNAPSHOT_SOURCE" && du -sk \
+  --exclude='./.cache' \
+  --exclude='./.local/share/Trash' \
+  --exclude='./migration' \
+  --exclude='./migration-backup' \
+  . 2>"$du_error" | awk '{print $1}')" || du_rc=$?
+if [[ ! "$HOME_KIB" =~ ^[0-9]+$ ]]; then
+  ui_err "无法计算 HOME 备份大小（du 退出码 %s）。" "$du_rc"
+  [[ ! -s "$du_error" ]] || sed 's/^/  /' "$du_error" >&2
+  rm -f -- "$du_error"
   exit 1
 fi
+if [[ "$du_rc" -ne 0 ]]; then
+  ui_warn "du 报告 HOME 中有不可读目录（退出码 %s），空间估算可能偏小。" "$du_rc"
+  [[ ! -s "$du_error" ]] || sed 's/^/  /' "$du_error" >&2
+fi
+rm -f -- "$du_error"
+df_error="$STAGING/.df-error.$$"
+df_rc=0
+TARGET_FREE_KIB="$(df -Pk "$TARGET" 2>"$df_error" | awk 'NR == 2 {print $4}')" || df_rc=$?
+if [[ ! "$TARGET_FREE_KIB" =~ ^[0-9]+$ ]]; then
+  ui_err "无法读取备份目标可用空间（df 退出码 %s）: %s" "$df_rc" "$TARGET"
+  [[ ! -s "$df_error" ]] || sed 's/^/  /' "$df_error" >&2
+  rm -f -- "$df_error"
+  exit 1
+fi
+rm -f -- "$df_error"
 REQUIRED_KIB=$((HOME_KIB + HOME_KIB / 10))
 if (( TARGET_FREE_KIB < REQUIRED_KIB )); then
   ui_err "目标空间不足：预计至少需要 %s GiB，当前可用 %s GiB。" \

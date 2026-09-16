@@ -92,6 +92,9 @@ systemd_quote() {
   value="${value//\\/\\\\}"
   value="${value//\"/\\\"}"
   value="${value//%/%%}"
+  # ExecStart/ExecCondition 会做变量展开：路径里的字面量 $ 必须写成 $$，
+  # 否则含 $ 的目标目录会被展开成空串，定时备份静默跑错位置。
+  value="${value//\$/\$\$}"
   printf '"%s"' "$value"
 }
 
@@ -103,6 +106,18 @@ systemd_condition_path() {
   value="${value//$'\t'/\\x09}"
   value="${value//\"/\\x22}"
   printf '%s' "$value"
+}
+
+# 从 systemctl show 的 Key=Value 输出中取值；键不存在时返回 1（值可以为空）。
+systemd_show_property() {
+  local output="$1" key="$2" line
+  while IFS= read -r line; do
+    if [[ "$line" == "$key="* ]]; then
+      printf '%s' "${line#"$key="}"
+      return 0
+    fi
+  done <<< "$output"
+  return 1
 }
 
 confirm_change() {
@@ -402,9 +417,52 @@ remove_units() {
 }
 
 run_now() {
+  local start_rc=0 show_rc=0 show_output="" before_stamp="" after_stamp=""
+  local mono_known=0 condition="" result="" exec_status="" condition_note="" skipped=0
   [[ -f "$SERVICE_FILE" ]] || { ui_err "定时备份服务尚未安装"; return 1; }
   guard_unit_ownership || return 1
-  systemctl --user start "$SERVICE_NAME"
+  # 目标未挂载时，ConditionPathIsMountPoint/mountpoint 会让本次启动被跳过，
+  # 而 systemctl start 依然返回 0；因此必须对比本次启动前后的真实执行结果。
+  before_stamp="$(systemctl --user show "$SERVICE_NAME" \
+    --property=ExecMainStartTimestampMonotonic --value 2>/dev/null)" || before_stamp=""
+  systemctl --user start "$SERVICE_NAME" || start_rc=$?
+  show_output="$(systemctl --user show "$SERVICE_NAME" \
+    -p Result -p ExecMainStatus -p ConditionResult \
+    -p ExecMainStartTimestampMonotonic 2>&1)" || show_rc=$?
+  if [[ "$show_rc" -ne 0 ]]; then
+    ui_err "无法查询备份服务执行结果（systemctl show 退出码 %s）" "$show_rc"
+    [[ -z "$show_output" ]] || printf '%s\n' "$show_output" >&2
+    return 1
+  fi
+  result="$(systemd_show_property "$show_output" Result || true)"
+  exec_status="$(systemd_show_property "$show_output" ExecMainStatus || true)"
+  condition="$(systemd_show_property "$show_output" ConditionResult || true)"
+  if after_stamp="$(systemd_show_property "$show_output" ExecMainStartTimestampMonotonic)"; then
+    mono_known=1
+  else
+    after_stamp=""
+  fi
+  [[ -z "$condition" ]] || condition_note="（ConditionResult=$condition）"
+  if [[ "$condition" == "no" ]]; then
+    skipped=1
+  elif [[ "$mono_known" -eq 1 && ( -z "$after_stamp" || "$after_stamp" == "$before_stamp" ) ]]; then
+    skipped=1
+  fi
+  if [[ "$skipped" -eq 1 ]]; then
+    if [[ "$start_rc" -ne 0 ]]; then
+      ui_err "备份服务未能启动（systemctl 退出码 %s），本次没有执行任何备份%s。" \
+        "$start_rc" "$condition_note"
+    else
+      ui_err "备份服务因条件未运行，本次没有执行任何备份%s；目标磁盘可能未挂载，或 ExecCondition 的 mountpoint 检查未通过。" \
+        "$condition_note"
+    fi
+    return 1
+  fi
+  if [[ "$start_rc" -ne 0 || "$result" != "success" || "$exec_status" != "0" ]]; then
+    ui_err "备份服务执行失败：Result=%s ExecMainStatus=%s（systemctl 退出码 %s）%s" \
+      "${result:-未知}" "${exec_status:-未知}" "$start_rc" "$condition_note"
+    return 1
+  fi
   ui_ok "备份服务已完成。"
 }
 

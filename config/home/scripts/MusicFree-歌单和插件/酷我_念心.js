@@ -606,7 +606,7 @@ module.exports = {
   author: "玥然OvO",
   version: "1.0.0",
   appVersion: ">0.1.0-alpha.0",
-  srcUrl: "https://raw.gitcode.com/Crystim/mfp/raw/main/%E9%85%B7%E6%88%91_%E5%BF%B5%E5%BF%83.js",
+  srcUrl: "",
   cacheControl: "no-cache",
   hints: {
     importMusicSheet: [

@@ -14,6 +14,8 @@ return {
       "codelldb", -- C/C++/Rust 调试器（DAP 用）
       "java-debug-adapter", -- Java 调试器（DAP 用）
       "java-test", -- Java 测试运行器（DAP 用）
+      "lemminx", -- XML / pom.xml 语言服务器
+      "vscode-spring-boot-tools", -- Spring Boot application.yml/properties 补全
       "delve", -- Go 调试器（DAP 用）
       "stylua", -- Lua 格式化器
       "google-java-format", -- Java 格式化器

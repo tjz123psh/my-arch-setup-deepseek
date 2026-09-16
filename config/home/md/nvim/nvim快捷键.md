@@ -129,14 +129,27 @@
 
 **C/C++ 调试：** `g++ -g main.cpp -o main` → `<F9>` 设断点 → `<F5>` 输入可执行文件路径
 
-**Java 调试：** `<F9>` 设断点 → `<F5>` 输入主类名（如 `Hello`）
+**Java 调试：** `<F9>` 设断点 → `<F5>` 自动选择项目主类；如果 jdtls 尚未扫描到主类，再手动输入类名。
 
-## Java 专用
+## Java / Spring Boot 专用
 
 | 快捷键 | 功能 |
 |--------|------|
 | `<leader>co` | Java 代码操作 |
 | `<leader>ot` | 整理 import |
+| `<leader>Jt` | 在终端运行光标处的测试方法 |
+| `<leader>JT` | 在终端运行当前测试类 |
+| `<leader>Jg` | 调试光标处的测试方法（DAP） |
+| `<leader>JG` | 调试当前测试类（DAP） |
+| `<leader>Jd` | 重新扫描 Java 主类 |
+| `<leader>mb` | 让 jdtls 重新导入并构建项目 |
+| `<leader>sr` | 运行 Spring Boot 项目 |
+| `<leader>mc` | 编译项目 |
+| `<leader>mt` | 运行 Maven/Gradle 测试 |
+| `<leader>mp` | 打包并跳过测试 |
+| `<leader>mi` | 安装到本地仓库并跳过测试 |
+| `<leader>mn` | 清理构建产物 |
+| `<leader>ml` | 查看依赖树 |
 
 ## 终端（toggleterm）
 

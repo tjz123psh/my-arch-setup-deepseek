@@ -4,8 +4,11 @@
 # 不能让 errexit 在 pause_for_menu 之前直接关掉整个窗口。
 set -uo pipefail
 
-export PATH="$HOME/.local/bin:$HOME/scripts/maintenance:$PATH"
 SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+# 旧实现把 ~/scripts/maintenance 写死进 PATH：这套脚本一旦挪窝或改名，
+# 菜单要么找不到工具，要么用上 PATH 里另一份同名旧脚本。改成认自己所在目录。
+SCRIPT_DIR="$(cd -- "$(dirname -- "$SELF")" && pwd -P)"
+export PATH="$HOME/.local/bin:$SCRIPT_DIR:$PATH"
 
 UI_LIB="$(dirname "$SELF")/lib/ui.sh"
 # shellcheck source=lib/ui.sh
@@ -13,6 +16,9 @@ UI_LIB="$(dirname "$SELF")/lib/ui.sh"
 
 NET_TOOL=""
 BT_TOOL=""
+
+# 菜单里的临时文件走 lib/ui.sh 的统一登记器：在 less 里按 Ctrl+C
+# 或直接关窗也不会留在 /tmp。
 
 show_cursor() {
   if [ -t 1 ]; then
@@ -31,8 +37,15 @@ clear_screen() {
   fi
 }
 
-trap show_cursor EXIT
-trap 'exit 130' INT
+trap 'show_cursor; ui_tmp_cleanup' EXIT
+
+# 顶层空闲菜单：Ctrl+C 直接结束整个菜单。
+_int_trap_exit() { exit 130; }
+# 叶子子工具运行期间：Ctrl+C 只打断这一次操作，菜单本体不能被带走。
+# 子工具（或它调起的 fzf）收 SIGINT 后以 130 返回，run_leaf_and_pause
+# 据此回到父菜单——这就是「130 = 返回上一级」的契约。
+_int_trap_defer() { :; }
+trap _int_trap_exit INT
 trap 'exit 143' TERM
 
 if systemctl is-active --quiet NetworkManager 2>/dev/null && command -v nmtui >/dev/null 2>&1; then
@@ -380,9 +393,9 @@ _print_preview_body() {
       ;;
     log-check)
       printf '\033[36m说明\033[0m  日志报告\n'
-      printf '\033[36m性质\033[0m  只读生成 Markdown，不会修改 systemd 配置。\n\n'
+      printf '\033[36m性质\033[0m  只读检查，默认只打印到终端，不写文件、不改 systemd 配置。\n\n'
       printf '汇总 systemctl --failed、systemctl --user --failed、journalctl -p 3 -b。\n'
-      printf '报告默认写到 ~/log-check-YYYYMMDD-HHMMSS.md，方便回看和发送。\n'
+      printf '需要回看或发送时用 --save[=路径] 生成 Markdown 报告。\n'
       printf '适合更新后、迁移后、桌面异常、引导服务异常时快速定位第一批问题。\n'
       ;;
     post-update-check)
@@ -643,11 +656,50 @@ menu_start_position() {
   printf '%s' "$position"
 }
 
+# 把 STR 右填充到 WIDTH 显示列，结果写入变量名 $1（不 fork）。
+# ui_pad 本身不 fork，但要拼进 printf 就得用 $(...) 命令替换；
+# 「查看快照」一屏上千次命令替换正是卡顿的根源，改用 printf -v 直写变量。
+_tm_pad_into() {
+  local __name="$1" __str="$2" __width="$3" __pad
+  _ui_dwidth_calc "$__str"
+  __pad=$(( __width - UI_DWIDTH_RESULT ))
+  if (( __pad < 0 )); then __pad=0; fi
+  printf -v "$__name" '%s%*s' "$__str" "$__pad" ''
+}
+
+# 把 TEXT 截断到 MAX 显示列并以省略号收尾，结果写入变量名 $1。
+# 快路径只整体量一次宽度；只有超宽的行才二分定位截断点（显示宽度对前缀
+# 单调不减，二分结果和旧的逐字符 $(ui_dwidth "$ch") 完全一致），
+# 因此长描述不再产生上千次 fork。
+_tm_fit_into() {
+  local __name="$1" __text="$2" __max="$3" __lo __hi __mid
+  _ui_dwidth_calc "$__text"
+  if (( UI_DWIDTH_RESULT <= __max )); then
+    printf -v "$__name" '%s' "$__text"
+    return 0
+  fi
+  # 给省略号留一列；旧的逐字符实现用的就是 max-1 的预算，
+  # 这里保持一致（max<=1 时预算为 0/负数，结果只剩一个省略号）。
+  __max=$(( __max - 1 ))
+  __lo=0
+  __hi=${#__text}
+  while (( __lo < __hi )); do
+    __mid=$(( (__lo + __hi + 1) / 2 ))
+    _ui_dwidth_calc "${__text:0:__mid}"
+    if (( UI_DWIDTH_RESULT <= __max )); then
+      __lo=$__mid
+    else
+      __hi=$(( __mid - 1 ))
+    fi
+  done
+  printf -v "$__name" '%s…' "${__text:0:__lo}"
+}
+
 choose_menu() {
   local title="$1"
   local items="$2"
   local initial_key="${3:-}"
-  local selected choice key label act desc status start_position
+  local selected choice key label act desc status start_position _menu_label _menu_act
 
   # fzf 每次重新打开默认聚焦第一项。保留调用方上次确认的 key，
   # 让执行、取消或查看结果后仍回到刚才的功能，而非跳回菜单顶部。
@@ -698,16 +750,22 @@ choose_menu() {
     )"
     status=$?
     set -e
-    [ "$status" -eq 0 ] || return 1
+    # 保留 fzf 的真实退出码：130 是 Esc/Ctrl+C（回上一级），2 之类是 fzf
+    # 自己出错；一律折叠成 1 会让主菜单把「选择器失败」当成「用户退出」。
+    [ "$status" -eq 0 ] || return "$status"
   else
     printf "${CYAN}%s${NC}\n" "$title"
     printf "${DIM}────────────────────────────────────────${NC}\n"
     while IFS=$'\t' read -r key label act desc; do
       [ -n "$key" ] || continue
+      # %-12s/%-18s 按字节填充，中文标签（4 个汉字就 12 字节）会被撑歪；
+      # 这里改按显示列填充。
+      _tm_pad_into _menu_label "$label" 12
       if [ "$act" = "__exit" ]; then
-        printf "  ${CYAN}%s${NC}  %-12s ${DIM}%s${NC}\n" "$key" "$label" "$desc"
+        printf "  ${CYAN}%s${NC}  %s ${DIM}%s${NC}\n" "$key" "$_menu_label" "$desc"
       else
-        printf "  ${CYAN}%s${NC}  %-12s ${DIM}%-18s${NC} %s\n" "$key" "$label" "$act" "$desc"
+        _tm_pad_into _menu_act "$act" 18
+        printf "  ${CYAN}%s${NC}  %s ${DIM}%s${NC} %s\n" "$key" "$_menu_label" "$_menu_act" "$desc"
       fi
     done <<< "$items"
     printf "${DIM}────────────────────────────────────────${NC}\n"
@@ -719,20 +777,47 @@ choose_menu() {
   printf '%s\n' "$selected"
 }
 
-run_command() {
-  local act="$1"
+# 叶子工具一律先按本脚本所在目录解析，再退回 PATH：
+# 整套脚本被移动、改名或被别处的同名脚本遮蔽时，菜单仍然调用自己这一份。
+resolve_tool() {
+  local name="$1"
 
-  if command -v "$act" >/dev/null 2>&1; then
-    # 子脚本据此知道结果页由 term-menu 统一暂停，避免内外连续按两次键。
-    if TERM_MENU_CHILD=1 "$act"; then
-      return 0
-    else
-      return $?
-    fi
-  else
-    printf "${RED}命令不可用:${NC} %s\n" "$act"
+  if [[ -x "$SCRIPT_DIR/$name" ]]; then
+    printf '%s\n' "$SCRIPT_DIR/$name"
+    return 0
+  fi
+  command -v "$name" 2>/dev/null
+}
+
+# run_tool 名称 [参数...] —— 带 TERM_MENU_CHILD 标记执行一个叶子工具。
+# 子脚本据此知道结果页由 term-menu 统一暂停，避免内外连续按两次键。
+# 同名 shell 函数优先：测试用函数给叶子工具打桩，绝不能越过它去执行真实脚本
+# （否则一次 run_snapshot_deletions 打桩测试会真的删掉系统上的快照）。
+run_tool() {
+  local name="$1"
+  shift
+  local bin
+
+  if declare -F "$name" >/dev/null 2>&1; then
+    TERM_MENU_CHILD=1 "$name" "$@"
+    return $?
+  fi
+  bin="$(resolve_tool "$name")" || bin=""
+  if [[ -z "$bin" ]]; then
+    printf "${RED}命令不可用:${NC} %s\n" "$name"
     return 127
   fi
+  TERM_MENU_CHILD=1 "$bin" "$@"
+}
+
+# 工具是否可用：函数打桩、脚本目录、PATH 三者有其一即可。
+have_tool() {
+  declare -F "$1" >/dev/null 2>&1 && return 0
+  [ -n "$(resolve_tool "$1")" ]
+}
+
+run_command() {
+  run_tool "$1"
 }
 
 exit_menu() {
@@ -832,7 +917,7 @@ show_migration_menu() {
 }
 
 show_snapshots() {
-  local conf cols desc_width tmp line_count page_lines snapshot_status=0
+  local conf cols desc_width tmp line_count page_lines snapshot_status=0 _SNAP_ROW
 
   if ! command -v snapper >/dev/null 2>&1; then
     _leaf_stat "miss" "缺少依赖：snapper"
@@ -854,32 +939,16 @@ show_snapshots() {
     desc_width=48
   fi
 
-  compact_text() {
-    local text="$1"
-    local max="$2"
-    # 用显示列（非字节）截断，兼顾 CJK 描述
-    if [ "$(ui_dwidth "$text")" -le "$max" ]; then
-      printf '%s' "$text"
-      return
-    fi
-    local out="" ch i w=0
-    for ((i = 0; i < ${#text}; i++)); do
-      ch="${text:i:1}"
-      w=$((w + $(ui_dwidth "$ch")))
-      [ "$w" -gt $((max - 1)) ] && break
-      out+="$ch"
-    done
-    printf '%s…' "$out"
-  }
-
-  # 一行数据：缩进 + 各列按显示列右填充；ui_pad 会剥离 ANSI，故带色单元也对齐。
+  # 一行数据：缩进 + 各列按显示列右填充。填充走 _tm_pad_into（printf -v 直写
+  # 变量），宽度走 _ui_dwidth_calc（会剥离 ANSI，故带色单元也对齐）；
+  # 整行不再为每列各 fork 一次 $(ui_pad …)，这是「查看快照」卡顿的主因。
   _snap_row() {
-    printf "%*s%s %s %s %s %s\n" "$W_IND" "" \
-      "$(ui_pad "$1" "$W_ID")" \
-      "$(ui_pad "$2" "$W_TIME")" \
-      "$(ui_pad "$3" "$W_USER")" \
-      "$(ui_pad "$4" "$W_CLEAN")" \
-      "$5"
+    local c_id c_time c_user c_clean
+    _tm_pad_into c_id "$1" "$W_ID"
+    _tm_pad_into c_time "$2" "$W_TIME"
+    _tm_pad_into c_user "$3" "$W_USER"
+    _tm_pad_into c_clean "$4" "$W_CLEAN"
+    printf -v _SNAP_ROW '%*s%s %s %s %s %s' "$W_IND" "" "$c_id" "$c_time" "$c_user" "$c_clean" "$5"
   }
 
   # 单个 snapper 配置的快照清单：分节标题 + 表头 + 分隔线 + 数据行。
@@ -913,16 +982,16 @@ show_snapshots() {
       [ -n "$user" ] || user="—"
       [ -n "$cleanup" ] || cleanup="—"
       [ -n "$desc" ] || desc="—"
-      desc_display="$(compact_text "$desc" "$desc_width")"
+      _tm_fit_into desc_display "$desc" "$desc_width"
       count=$((count + 1))
 
-      entries+="$(_snap_row \
+      _snap_row \
         "$idcell" \
         "$date_display" \
         "${UI_C_SUBTLE}${user}${UI_RESET}" \
         "${UI_C_SUBTLE}${cleanup}${UI_RESET}" \
-        "${UI_C_TEXT}${desc_display}${UI_RESET}")"
-      entries+=$'\n'
+        "${UI_C_TEXT}${desc_display}${UI_RESET}"
+      entries+="$_SNAP_ROW"$'\n'
     done <<< "$rows"
 
     ui_subsection "$conf 快照   ${UI_DIM}${count} 个条目${UI_RESET}"
@@ -933,6 +1002,7 @@ show_snapshots() {
       "${UI_C_SUBTLE}用户${UI_RESET}" \
       "${UI_C_SUBTLE}清理${UI_RESET}" \
       "${UI_C_SUBTLE}描述${UI_RESET}"
+    printf '%s\n' "$_SNAP_ROW"
     # 分隔线：与列区等宽
     rule_w=$((W_ID + W_TIME + W_USER + W_CLEAN + 4 + desc_width))
     printf "%*s${UI_DIM}" "$W_IND" ""
@@ -946,9 +1016,37 @@ show_snapshots() {
     fi
   }
 
+  # 旧实现写死只看 root/home：多出来的 snapper 配置在这里看不到，
+  # 却能在「删除快照」里被选中，两个界面对不上。
+  local -a all_configs=() ordered_configs=() 
+  local cfg_name known
+  while IFS=$'\037' read -r cfg_name _; do
+    [ "$cfg_name" = "config" ] && continue
+    [ -n "$cfg_name" ] || continue
+    all_configs+=("$cfg_name")
+  done < <(snapper --csvout --separator $'\037' list-configs 2>/dev/null || true)
+  for known in root home; do
+    for cfg_name in ${all_configs[@]+"${all_configs[@]}"}; do
+      if [ "$cfg_name" = "$known" ]; then
+        ordered_configs+=("$known")
+        break
+      fi
+    done
+  done
+  for cfg_name in ${all_configs[@]+"${all_configs[@]}"}; do
+    case "$cfg_name" in
+      root | home) ;;
+      *) ordered_configs+=("$cfg_name") ;;
+    esac
+  done
+  if [ "${#ordered_configs[@]}" -eq 0 ]; then
+    ordered_configs=(root home)
+  fi
+
   tmp="$(mktemp)"
+  ui_tmp_register "$tmp"
   {
-    for conf in root home; do
+    for conf in "${ordered_configs[@]}"; do
       print_snapshot_list "$conf" || snapshot_status=1
     done
 
@@ -974,7 +1072,8 @@ show_snapshots() {
     cat "$tmp"
   fi
 
-  rm -f "$tmp"
+  # 已经登记过的临时文件走统一登记器，别只删文件留下过期登记项
+  ui_tmp_discard "$tmp"
   return "$snapshot_status"
 }
 
@@ -990,18 +1089,74 @@ run_snapshot_deletions() {
   local conf="$1"
   shift
   local snap_id status=0
+  local -a del_args=()
+
+  for snap_id in "$@"; do
+    del_args+=(-del "$snap_id")
+  done
 
   ui_maintenance_lock_acquire "批量删除快照" || return $?
-  for snap_id in "$@"; do
-    # 本层已完成关键词确认；子脚本继承锁，不会与当前批次自相冲突。
-    quicksave -c "$conf" -del "$snap_id" --yes || status=1
-  done
+  # 本层已完成关键词确认；子脚本继承锁，不会与当前批次自相冲突。
+  # 一次调用删完：删 N 个不再起 N 个 quicksave 进程和 N 次 snapper delete。
+  run_tool quicksave -c "$conf" "${del_args[@]}" --yes || status=1
   ui_maintenance_lock_release
   return "$status"
 }
 
+# quicksave 会给 root/home 打同一个 maintenance_batch，quickload 靠它成套恢复。
+# 只删掉半套会让成套恢复失效，删除前必须说清楚。
+warn_batch_pairs() {
+  local conf="$1"
+  shift
+  local sep=$'\037'
+  local -A id_batch=()
+  local -A batch_configs=()
+  local number userdata batch other peers id
+
+  while IFS="$sep" read -r number userdata; do
+    [[ "$number" =~ ^[0-9]+$ ]] || continue
+    [[ "$userdata" == *maintenance_batch=* ]] || continue
+    batch="${userdata#*maintenance_batch=}"
+    batch="${batch%%,*}"
+    id_batch["$number"]="$batch"
+    batch_configs["$batch"]+=" $conf"
+  done < <(snapper --csvout --separator "$sep" -c "$conf" list --columns number,userdata 2>/dev/null || true)
+
+  # 旧实现对每个选中 ID 重查所有配置（20 个 ID = 41 次 snapper）。改成每个
+  # 配置只查一次，在内存里建「批次 → 出现过的配置」映射后匹配。
+  while IFS="$sep" read -r other _; do
+    [ -n "$other" ] || continue
+    [ "$other" = "config" ] && continue
+    [ "$other" = "$conf" ] && continue
+    while IFS="$sep" read -r _ userdata; do
+      [[ "$userdata" == *maintenance_batch=* ]] || continue
+      batch="${userdata#*maintenance_batch=}"
+      batch="${batch%%,*}"
+      [ -n "$batch" ] || continue
+      batch_configs["$batch"]+=" $other"
+    done < <(snapper --csvout --separator "$sep" -c "$other" list --columns number,userdata 2>/dev/null || true)
+  done < <(snapper --csvout --separator "$sep" list-configs 2>/dev/null || true)
+
+  for id in "$@"; do
+    batch="${id_batch[$id]:-}"
+    [ -n "$batch" ] || continue
+    peers=""
+    for other in ${batch_configs[$batch]:-}; do
+      [ "$other" = "$conf" ] && continue
+      case " $peers " in
+        *" $other "*) continue ;;
+      esac
+      peers+=" $other"
+    done
+    if [ -n "$peers" ]; then
+      printf "  ${YELLOW}注意${NC} #%s 属于成套快照批次，%s 侧还留着；删掉这一半后 quickload 的成套恢复会失效。\n" \
+        "$id" "${peers# }"
+    fi
+  done
+}
+
 delete_snapshot() {
-  if ! command -v snapper >/dev/null 2>&1 || ! command -v quicksave >/dev/null 2>&1; then
+  if ! command -v snapper >/dev/null 2>&1 || ! have_tool quicksave; then
     printf "${RED}缺少依赖:${NC} snapper 或 quicksave\n"
     return 1
   fi
@@ -1066,7 +1221,9 @@ delete_snapshot() {
 
   if command -v fzf >/dev/null 2>&1; then
     selected=$(
-      printf "%s\n" "$snapshots" |
+      # $snapshots 每条已自带换行；再补一个会给 fzf 多送一个空条目，
+      # 选中它会报“无效快照 ID”。
+      printf "%s" "$snapshots" |
         fzf \
           --delimiter=$'\t' \
           --with-nth=1,2,3 \
@@ -1101,7 +1258,7 @@ delete_snapshot() {
           --color="$(fzf_colors)"
     ) || return 130
   else
-    printf "%s\n" "$snapshots"
+    printf "%s" "$snapshots"
     printf "\n输入要删除的快照 ID，多个用空格分隔: "
     read -r snap_id
     mapfile -t manual_ids < <(split_snapshot_ids "$snap_id")
@@ -1132,6 +1289,8 @@ delete_snapshot() {
     printf "\n"
   done <<< "$selected"
 
+  warn_batch_pairs "$conf" "${snap_ids[@]}"
+
   printf "\n输入 ${RED}delete${NC} 确认删除: "
   read -r confirm
   if [ "$confirm" != "delete" ]; then
@@ -1155,19 +1314,19 @@ run_clean_all() {
   fi
 
   # 本层已要求输入完整关键词，避免 clean 再次确认。
-  clean all --yes
+  run_tool clean all --yes
 }
 
 run_cache_clean_safe() {
-  cache-clean --safe
+  run_tool cache-clean --safe
 }
 
 run_cache_clean_dev() {
-  cache-clean --dev
+  run_tool cache-clean --dev
 }
 
 run_cache_clean_chrome() {
-  cache-clean --chrome
+  run_tool cache-clean --chrome
 }
 
 # 结果页内的徽章行 / 键值行（缩进 2，不带左轨 │，以免与闭合框头脚冲突）。
@@ -1314,20 +1473,42 @@ run_leaf() {
     delete-snapshot) delete_snapshot ;;
     view-snapshots) show_snapshots ;;
     network-status) show_network_status ;;
-    migration-pack-plan) TERM_MENU_CHILD=1 migration-pack --plan ;;
-    migration-pack-pack) TERM_MENU_CHILD=1 migration-pack --pack ;;
-    migration-pack-check) TERM_MENU_CHILD=1 migration-pack --check ;;
-    migration-pack-offsite) TERM_MENU_CHILD=1 offsite-backup ;;
-    backup-restore) TERM_MENU_CHILD=1 backup-restore ;;
-    backup-restore-apply) TERM_MENU_CHILD=1 backup-restore --apply-home ;;
+    migration-pack-plan) run_tool migration-pack --plan ;;
+    migration-pack-pack) run_tool migration-pack --pack ;;
+    migration-pack-check) run_tool migration-pack --check ;;
+    migration-pack-offsite) run_tool offsite-backup ;;
+    backup-restore) run_tool backup-restore ;;
+    backup-restore-apply) run_tool backup-restore --apply-home ;;
     blueman-manager|blueberry)
+      # 后台起 GUI：先确认真起来了再报「已启动」，否则（命令缺失、无显示
+      # 环境等）会把立即退出说成成功。
       "$act" &
-      printf "${GREEN}已启动:${NC} %s\n" "$label"
+      local bt_pid=$! bt_rc=0
       sleep 1
+      if kill -0 "$bt_pid" 2>/dev/null; then
+        printf "${GREEN}已启动:${NC} %s\n" "$label"
+      else
+        wait "$bt_pid" 2>/dev/null || bt_rc=$?
+        printf "${RED}启动失败:${NC} %s 立即退出（退出码：%s）\n" "$label" "$bt_rc"
+        return 1
+      fi
       ;;
     *)
       run_command "$act"
       ;;
+  esac
+}
+
+# 只读检查类动作：非零退出表示“有需要人工处理的项目，或某项无法检查”，
+# 而不是执行失败。结果页的措辞要按这个区分。
+leaf_is_check() {
+  case "${1:-}" in
+    hw-doctor | storage-health | btrfs-scrub | gpu-check | check-battery | boot-check | \
+      recommend-check | terminal-tools | pacnew-check | log-check | post-update-check | \
+      network-status | view-snapshots | cache-clean)
+      return 0
+      ;;
+    *) return 1 ;;
   esac
 }
 
@@ -1338,8 +1519,13 @@ run_leaf_and_pause() {
   local act="$2"
   local status=0
 
+  # 叶子动作（叶子脚本，以及它调起的 fzf/less 等）运行期间临时换成「延迟」
+  # INT trap：Ctrl+C 只打断这一次操作，由子工具以 130 返回，这里再回到父菜单。
+  # 沿用顶层 trap 会让 Ctrl+C 抢在 130 之前把整个菜单关掉。
+  trap _int_trap_defer INT
   run_leaf "$label" "$act"
   status=$?
+  trap _int_trap_exit INT
 
   if [ "$status" -eq 130 ] || [ "$status" -eq 10 ]; then
     return 0
@@ -1347,7 +1533,13 @@ run_leaf_and_pause() {
 
   if [ "$status" -ne 0 ]; then
     printf '\n'
-    ui_warn "该操作未成功完成（退出码：%s）。上方消息会保留到你返回菜单。" "$status"
+    if [ "$status" -ne 127 ] && leaf_is_check "$act"; then
+      # 只读检查用非零表示“有项目要人工处理，或某项根本无法检查”，
+      # 不是脚本本身出错。照实说，否则用户会以为工具坏了。
+      ui_warn "检查已完成：有项目需要人工处理，或部分项目无法检查（退出码：%s）。详情见上方。" "$status"
+    else
+      ui_warn "该操作未成功完成（退出码：%s）。上方消息会保留到你返回菜单。" "$status"
+    fi
   fi
 
   pause_for_menu
@@ -1357,10 +1549,21 @@ run_leaf_and_pause() {
 # 主菜单：进入子菜单后返回本层，选叶子动作则执行后暂停再回本层，
 # 只有选「退出」或按 Esc 才真正退出。
 show_main_menu() {
-  local selected key label act desc current_key="01"
+  local selected key label act desc current_key="01" menu_status=0
   while true; do
     clear_screen
-    selected="$(choose_menu "维护菜单" "$MAIN_ITEMS" "$current_key")" || exit_menu
+    menu_status=0
+    selected="$(choose_menu "维护菜单" "$MAIN_ITEMS" "$current_key")" || menu_status=$?
+    if [ "$menu_status" -ne 0 ]; then
+      # fzf 约定：0 正常、1 没有匹配项、2 自身出错、130 Esc/Ctrl+C。
+      # 1/130 都只是「这次没选中」，按「退出菜单」正常收尾（Esc 的既有契约）；
+      # 2 之类才是选择器故障，必须原样非 0 退出，不能折叠成 0 的成功退出。
+      if [ "$menu_status" -eq 130 ] || [ "$menu_status" -eq 1 ]; then
+        exit_menu
+      fi
+      ui_err "菜单选择失败（退出码：%s）" "$menu_status"
+      exit "$menu_status"
+    fi
     IFS=$'\t' read -r key label act desc <<< "$selected"
     current_key="$key"
 

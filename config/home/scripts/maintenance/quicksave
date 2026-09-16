@@ -37,7 +37,7 @@ MSG_CLEAN_OK="旧快照清理完成"
 MSG_SAVE_OK="存档成功"
 
 MSG_DEL_OK="快照删除成功"
-MSG_DEL_BODY="已删除配置 [%s] 中的快照 #%s"
+MSG_DEL_BODY="已删除配置 [%s] 中的快照：%s"
 MSG_DEL_ALL_BODY="已清空配置 [%s] 中的所有快照"
 MSG_DEL_FAIL="快照删除失败"
 MSG_DEL_EMPTY="配置 [%s] 中没有可供删除的快照"
@@ -97,20 +97,21 @@ OPT_YES=0
 while [[ $# -gt 0 ]]; do
     case "${1:-}" in
         -c|--config)
-            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 1; fi
+            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 2; fi
             OPT_CONFIG="$2"; shift 2 ;;
         -d|--description)
-            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 1; fi
+            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 2; fi
             OPT_DESC="$2"; shift 2 ;;
         -del|--delete)
-            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 1; fi
+            if [[ $# -lt 2 ]]; then notify_err "参数 %s 缺少取值" "$1"; exit 2; fi
             OPT_DELETE+=("$2"); shift 2 ;;
         -y|--yes) OPT_YES=1; shift 1 ;;
         -lc|--list-configs) OPT_LIST_CONFIGS=1; shift 1 ;;
         -l|--list) OPT_LIST=1; shift 1 ;;
         -x|--debug) OPT_DEBUG=1; shift 1 ;;
         -h|--help) print_help; exit 0 ;;
-        *) notify_err "未知参数: %s" "${1:-}"; exit 1 ;;
+        # 退出码 2 = 命令行参数错误，与 README 的退出码约定一致。
+        *) notify_err "未知参数: %s" "${1:-}"; exit 2 ;;
     esac
 done
 
@@ -129,7 +130,7 @@ for cmd in btrfs snapper awk; do
     fi
 done
 
-declare -A CONFIG_MAP
+declare -gA CONFIG_MAP
 CONFIG_COUNT=0
 SNAP_SEP=$'\037'
 CONFIG_ROWS=""
@@ -263,9 +264,15 @@ if [[ ${#OPT_DELETE[@]} -gt 0 ]]; then
         )
 
         if [[ ${#all_ids[@]} -gt 0 ]]; then
-            if [[ $OPT_YES -ne 1 ]] && ! ui_confirm_word "将删除配置 [$DEL_TARGET] 的全部 ${#all_ids[@]} 个快照。" "delete"; then
-                ui_warn "已取消删除"
-                exit 0
+            if [[ $OPT_YES -ne 1 ]]; then
+                if [[ ! -t 0 ]]; then
+                    ui_warn "非交互环境不会自动确认；请显式使用 --yes（本次未做任何修改）。"
+                    exit 2
+                fi
+                if ! ui_confirm_word "将删除配置 [$DEL_TARGET] 的全部 ${#all_ids[@]} 个快照。" "delete"; then
+                    ui_warn "已取消删除"
+                    exit 0
+                fi
             fi
             if snapper -c "$DEL_TARGET" delete "${all_ids[@]}"; then
                 notify_ok "$MSG_DEL_OK" "$(printf "$MSG_DEL_ALL_BODY" "$DEL_TARGET")"
@@ -283,19 +290,23 @@ if [[ ${#OPT_DELETE[@]} -gt 0 ]]; then
                 exit 1
             fi
         done
-        if [[ $OPT_YES -ne 1 ]] && ! ui_confirm_word "将删除配置 [$DEL_TARGET] 的快照：${OPT_DELETE[*]}。" "delete"; then
-            ui_warn "已取消删除"
-            exit 0
-        fi
-        # 逐个删除指定 ID
-        for snap_id in "${OPT_DELETE[@]}"; do
-            if snapper -c "$DEL_TARGET" delete "$snap_id"; then
-                notify_ok "$MSG_DEL_OK" "$(printf "$MSG_DEL_BODY" "$DEL_TARGET" "$snap_id")"
-            else
-                notify_err "%s（ID: %s）" "$MSG_DEL_FAIL" "$snap_id"
-                DELETE_SUCCESS=0
+        if [[ $OPT_YES -ne 1 ]]; then
+            if [[ ! -t 0 ]]; then
+                ui_warn "非交互环境不会自动确认；请显式使用 --yes（本次未做任何修改）。"
+                exit 2
             fi
-        done
+            if ! ui_confirm_word "将删除配置 [$DEL_TARGET] 的快照：${OPT_DELETE[*]}。" "delete"; then
+                ui_warn "已取消删除"
+                exit 0
+            fi
+        fi
+        # 一次交给 snapper 批量删除：删 N 个不再起 N 次进程，行为也更接近一个事务。
+        if snapper -c "$DEL_TARGET" delete "${OPT_DELETE[@]}"; then
+            notify_ok "$MSG_DEL_OK" "$(printf "$MSG_DEL_BODY" "$DEL_TARGET" "${OPT_DELETE[*]}")"
+        else
+            notify_err "%s（ID: %s）" "$MSG_DEL_FAIL" "${OPT_DELETE[*]}"
+            DELETE_SUCCESS=0
+        fi
     fi
     [[ $DELETE_SUCCESS -eq 1 ]] && exit 0
     exit 1
@@ -312,6 +323,18 @@ SNAP_BATCH_ID="$(date -u '+%Y%m%dT%H%M%S.%N')-$$"
 CREATED_CONFS=()
 CREATED_IDS=()
 
+# 中断保护：批次必须成套，否则 quickload 拒绝成套恢复、白占空间。旧实现只在
+# create 报错时回滚，Ctrl+C/SIGTERM 会留下半套批次。
+rollback_created_batch() {
+    local i
+    (( ${#CREATED_IDS[@]} > 0 )) || return 0
+    for ((i = ${#CREATED_IDS[@]} - 1; i >= 0; i--)); do
+        snapper -c "${CREATED_CONFS[$i]}" delete "${CREATED_IDS[$i]}" >/dev/null 2>&1 || true
+    done
+}
+trap 'rollback_created_batch; ui_warn "快照创建被中断，已回删本批次已创建项。"; exit 130' INT
+trap 'rollback_created_batch; ui_warn "快照创建被终止，已回删本批次已创建项。"; exit 143' TERM
+
 for conf in "${TARGETS[@]}"; do
     snap_id=""
     if snap_id="$(snapper -c "$conf" create --print-number \
@@ -326,13 +349,19 @@ for conf in "${TARGETS[@]}"; do
         break
     fi
 done
+# 批次创建已结束（成功或失败），后续清理/报告不再需要中断回滚。
+trap - INT TERM
 
 if [[ $SAVE_SUCCESS -ne 1 ]]; then
     notify_err "创建配置 [%s] 的快照失败，正在回删本批次已创建项。" "$conf"
+    rollback_created_batch
     rollback_failed=0
-    for ((i = ${#CREATED_IDS[@]} - 1; i >= 0; i--)); do
-        snapper -c "${CREATED_CONFS[$i]}" delete "${CREATED_IDS[$i]}" >/dev/null 2>&1 || rollback_failed=1
-    done
+    if (( ${#CREATED_IDS[@]} > 0 )); then
+        # 回滚函数内部已忽略单条失败；这里再用一次查询确认剩余项，便于诊断。
+        for ((i = ${#CREATED_IDS[@]} - 1; i >= 0; i--)); do
+            snapper -c "${CREATED_CONFS[$i]}" get "${CREATED_IDS[$i]}" >/dev/null 2>&1 && rollback_failed=1
+        done
+    fi
     if [[ "$rollback_failed" -ne 0 ]]; then
         notify_err "本批次回删不完整，请按批次 ID 检查：%s" "$SNAP_BATCH_ID"
     fi

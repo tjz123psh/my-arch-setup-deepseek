@@ -19,6 +19,9 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd -P)"
 # === 统一 UI 库（用于 fzf 配色/边框；C_* 标签色是喂给 --ansi 的数据流，另行保留）===
 # shellcheck source=lib/ui.sh
 . "$SCRIPT_DIR/lib/ui.sh"
+# shellcheck source=lib/config.sh
+. "$SCRIPT_DIR/lib/config.sh"
+maintenance_config_load || exit 2
 SYSUP_CMD="$SCRIPT_DIR/sysup"
 if [[ ! -x "$SYSUP_CMD" ]]; then
     SYSUP_CMD="sysup"
@@ -26,18 +29,24 @@ fi
 
 # === 解析内部参数 ===
 FORCE_REFRESH=0
+LOAD_ACTIONS=0
+REFRESH_SCOPE=all
 if (( $# > 1 )); then
     printf '参数过多；用法: checkallupdates [--refresh]\n' >&2
     exit 2
 fi
 case "${1:-}" in
     --refresh) FORCE_REFRESH=1 ;;
+    --refresh-stale) FORCE_REFRESH=1; REFRESH_SCOPE=stale ;;
+    --load-actions) LOAD_ACTIONS=1 ;;
     -h|--help)
         cat <<'EOF'
 用法: checkallupdates [--refresh]
 
-  无参数       打开 Pacman、AUR、Flatpak 待更新列表
-  --refresh    刷新缓存并输出机器字段列表（供 fzf reload）
+  无参数          打开 Pacman、AUR、Flatpak 待更新列表
+  --refresh       刷新全部来源并输出机器字段列表（供 fzf reload）
+  --refresh-stale 只刷新已过期的来源，其余沿用缓存
+  --load-actions  内部使用：供 fzf load 事件决定是否触发后台刷新
 EOF
         exit 0
         ;;
@@ -54,6 +63,13 @@ CACHE_STATUS="$CACHE_DIR/source-status.tsv"
 CACHE_STAMP="$CACHE_DIR/last-refresh"
 CACHE_MAX_AGE=3600
 
+# 单个来源的查询超时与刷新锁等待上限（秒）。
+# 优先级：环境变量 > ~/.config/maintenance/config > 内置默认值。
+QUERY_TIMEOUT="$(maintenance_config_get UPDATE_QUERY_TIMEOUT 90 CHECKALLUPDATES_QUERY_TIMEOUT)"
+REFRESH_LOCK_WAIT="$(maintenance_config_get UPDATE_LOCK_WAIT 300 CHECKALLUPDATES_LOCK_WAIT)"
+[[ "$QUERY_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || QUERY_TIMEOUT=90
+[[ "$REFRESH_LOCK_WAIT" =~ ^[1-9][0-9]*$ ]] || REFRESH_LOCK_WAIT=300
+
 # 确保缓存目录存在
 mkdir -p "$CACHE_DIR"
 
@@ -64,6 +80,9 @@ export C_CYAN=$'\x1b[1;36m'      # 青色 - Pacman
 export C_GREEN=$'\x1b[1;32m'     # 绿色 - 无更新提示
 export C_RESET=$'\x1b[0m'        # 重置
 NO_UPDATES_TEXT="[None]    当前没有待更新项目"
+PENDING_TEXT="[  …  ]   正在查询 Pacman、AUR 和 Flatpak 更新，请稍候"
+# 打开列表时若缓存已过期，先把旧数据摆出来，刷新交给 fzf 的 load 事件在后台跑。
+REFRESH_PENDING=0
 
 # === 工具函数 ===
 pause_for_result() {
@@ -80,15 +99,62 @@ check_cmd() {
     command -v "$1" &> /dev/null
 }
 
+# 单个来源的新鲜度：各来源分别计时，一个来源失败不再拖着其它来源重查。
+_cau_source_is_fresh() {
+    local stamp="$CACHE_DIR/last-refresh-$1"
+    local current_time file_time
+
+    [[ -f "$stamp" ]] || return 1
+    current_time="${EPOCHSECONDS:-$(date +%s)}"
+    file_time=$(stat -c %Y "$stamp" 2>/dev/null || printf 0)
+    (( current_time - file_time < CACHE_MAX_AGE ))
+}
+
 cache_is_fresh() {
     local file="$1"
     local current_time file_time
 
     [[ -f "$file" && -f "$CACHE_REPO" && -f "$CACHE_AUR" \
         && -f "$CACHE_FLATPAK" && -f "$CACHE_STATUS" ]] || return 1
-    current_time=$(date +%s)
+    current_time=${EPOCHSECONDS:-$(date +%s)}
     file_time=$(stat -c %Y "$file" 2>/dev/null || printf 0)
-    (( current_time - file_time < CACHE_MAX_AGE ))
+    (( current_time - file_time < CACHE_MAX_AGE )) || return 1
+    _cau_source_is_fresh pacman && _cau_source_is_fresh aur && _cau_source_is_fresh flatpak
+}
+
+# 缓存年龄的中文说明，显示在列表边框标签上，让人一眼看出数据是不是旧的。
+cache_age_text() {
+    local mtime now age
+
+    [[ -f "$CACHE_STAMP" ]] || { printf '尚未成功刷新'; return 0; }
+    mtime="$(stat -c %Y "$CACHE_STAMP" 2>/dev/null || printf 0)"
+    now="${EPOCHSECONDS:-$(date +%s)}"
+    age=$(( now - mtime ))
+    (( age < 0 )) && age=0
+    if (( age < 60 )); then
+        printf '刚刚更新'
+    elif (( age < 3600 )); then
+        printf '%s 分钟前' "$(( age / 60 ))"
+    elif (( age < 86400 )); then
+        printf '%s 小时前' "$(( age / 3600 ))"
+    else
+        printf '%s 天前' "$(( age / 86400 ))"
+    fi
+}
+
+# fzf 每次读完列表都会问一次“接下来做什么”：
+#   还挂着刷新标记 → 摘掉标记并触发一次后台刷新（reload-sync 期间旧列表保持可见）
+#   没有标记       → 只把边框标签复位成实际的数据时间
+# 用一次性标记而不是 start 事件，是因为 start 会在首屏渲染前就把旧列表丢掉。
+print_load_actions() {
+    local flag="${CHECKALLUPDATES_PENDING_FLAG:-}"
+
+    if [[ -n "$flag" && -f "$flag" ]]; then
+        rm -f -- "$flag"
+        printf 'change-list-label( 待更新列表 · 正在刷新 )+reload-sync(%s --refresh-stale)' "'$SCRIPT_PATH'"
+        return 0
+    fi
+    printf 'change-list-label( 待更新列表 · %s )' "$(cache_age_text)"
 }
 
 aur_helper() {
@@ -105,105 +171,389 @@ print_tagged_cache() {
     local source="$2"
     local label="$3"
     local color="$4"
-    local line package
 
     [[ -s "$file" ]] || return 0
 
     # 前两列是不给用户看的机器字段；fzf 只展示第三列。这样 Enter 后可以
     # 可靠取得来源和包名，不必从 ANSI 彩色文本或版本字符串中反向猜测。
-    while IFS= read -r line; do
-        [[ -n "$line" ]] || continue
-        read -r package _ <<< "$line"
-        [[ -n "$package" ]] || continue
-        printf '%s\t%s\t%s%s%s%s\n' "$source" "$package" "$color" "$label" "$C_RESET" "$line"
-    done < "$file"
+    # 用 awk 一次成型：逐行 read + here-string 会为每个包创建一个临时文件，
+    # 几百个待更新包时那部分开销肉眼可见。
+    awk -v source="$source" -v label="$label" -v color="$color" -v reset="$C_RESET" \
+        'NF { printf "%s\t%s\t%s%s%s%s\n", source, $1, color, label, reset, $0 }' "$file"
 }
 
-refresh_update_cache() {
-    local tmp_repo tmp_aur tmp_flatpak tmp_status tmp_err helper rc message
-    local refresh_fd=""
-    local refresh_failed=0
+# --- 刷新期间的临时文件与子进程清理 -------------------------------------------
+# 旧实现开 5 个 mktemp 却没有任何清理钩子：fzf 取消 reload、Ctrl+C 或直接关窗，
+# 都会让临时文件永久堆在缓存目录里，同时把已经查好的数据一并丢弃。
+_CAU_TMPFILES=()
+_CAU_QUERY_PIDS=()
+_CAU_MAIN_PID="${BASHPID:-$$}"
 
-    if check_cmd flock; then
-        exec {refresh_fd}>"$CACHE_DIR/refresh.lock"
-        flock "$refresh_fd"
+# 中断时连并行查询的子进程一起收掉：只杀到 timeout/查询命令这一层。
+# checkupdates 自己有 INT/TERM trap 会删掉私有 db.lck，pacman 事务本身不受影响。
+_cau_kill_query() {
+    local pid="$1"
+    if check_cmd pkill; then
+        pkill -TERM -P "$pid" 2>/dev/null || true
     fi
+    kill "$pid" 2>/dev/null || true
+}
 
-    tmp_repo=$(mktemp "$CACHE_DIR/repo.XXXXXX")
-    tmp_aur=$(mktemp "$CACHE_DIR/aur.XXXXXX")
-    tmp_flatpak=$(mktemp "$CACHE_DIR/flatpak.XXXXXX")
-    tmp_status=$(mktemp "$CACHE_DIR/status.XXXXXX")
-    tmp_err=$(mktemp "$CACHE_DIR/error.XXXXXX")
+# 只有创建这些临时文件的那个进程才做清理：并行查询的子 shell 绝不能删同伴的文件。
+_cau_cleanup() {
+    local pid
+    [[ "${BASHPID:-$$}" == "$_CAU_MAIN_PID" ]] || return 0
+    if (( ${#_CAU_QUERY_PIDS[@]} > 0 )); then
+        for pid in "${_CAU_QUERY_PIDS[@]}"; do
+            _cau_kill_query "$pid"
+        done
+        _CAU_QUERY_PIDS=()
+    fi
+    if (( ${#_CAU_TMPFILES[@]} > 0 )); then
+        rm -f -- "${_CAU_TMPFILES[@]}" 2>/dev/null || true
+        _CAU_TMPFILES=()
+    fi
+    # 只删除本进程创建的刷新标记：fzf 的 reload/load 子进程会继承这个环境变量，
+    # 它们退出时不该把父进程的标记删掉。
+    if [[ -n "${CHECKALLUPDATES_PENDING_FLAG:-}" \
+          && "${CHECKALLUPDATES_PENDING_OWNER:-}" == "${BASHPID:-$$}" ]]; then
+        rm -f -- "$CHECKALLUPDATES_PENDING_FLAG" 2>/dev/null || true
+    fi
+}
 
-    : > "$tmp_repo"
-    : > "$tmp_aur"
-    : > "$tmp_flatpak"
-    : > "$tmp_status"
+# 回收历史遗留的 mktemp 产物：只删超过 1 小时、确定不属于本次刷新的文件。
+_cau_reclaim_orphans() {
+    local pattern
+    for pattern in repo aur flatpak status error; do
+        find "$CACHE_DIR" -maxdepth 1 -type f -name "$pattern.??????" -mmin +60 -delete 2>/dev/null || true
+    done
+    # 终端被强杀（SIGKILL）时 trap 跑不到，陈旧的刷新标记同样按时间回收。
+    find "$CACHE_DIR" -maxdepth 1 -type f -name 'refresh-pending.*' -mmin +60 -delete 2>/dev/null || true
+}
+
+# 把命令 stderr 压成一行短消息，供状态栏展示。
+_cau_error_text() {
+    tr '\t\r\n' '   ' < "$1" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//'
+}
+
+# run_query 秒数 命令 [参数...]
+#   只给真实的外部命令套 timeout：网络或镜像卡死时不再无限等待。
+#   测试用 shell 函数打桩的命令保持直接调用，行为与打桩完全一致。
+run_query() {
+    local seconds="$1"
+    shift
+    if declare -F "$1" >/dev/null 2>&1 || ! check_cmd timeout; then
+        "$@"
+        return $?
+    fi
+    timeout "$seconds" "$@"
+}
+
+# 三个来源各查各的：任一来源超时、失败或被中断都不影响其它来源；
+# 查得的数据立刻原子落盘，中断不再作废已经完成的工作。
+_cau_query_pacman() {
+    local out="$1" status="$2" err="$3" rc=0 message
 
     if ! check_cmd checkupdates; then
+        printf 'pacman\terror\t缺少 checkupdates（pacman-contrib），无法检查官方仓库\n' > "$status"
+        rm -f -- "$CACHE_DIR/last-refresh-pacman"
+        return 1
+    fi
+    # pacman-contrib 把 fakeroot 列为可选依赖，但 checkupdates 实际会
+    # 依赖它创建临时同步数据库。预先指出缺什么，不能只把其英文 stderr
+    # 透传成一个难理解的“查询失败”。
+    if ! check_cmd fakeroot; then
+        printf 'pacman\terror\t缺少 fakeroot（pacman-contrib 的 checkupdates 所需可选依赖）；请安装 fakeroot\n' > "$status"
+        rm -f -- "$CACHE_DIR/last-refresh-pacman"
+        return 1
+    fi
+
+    run_query "$QUERY_TIMEOUT" checkupdates > "$out" 2> "$err" || rc=$?
+    if (( rc == 0 || rc == 2 )); then
+        # 先落盘数据，成功后才写 ok 状态：否则会出现"状态 ok 但缓存没更新"。
+        if mv -- "$out" "$CACHE_REPO"; then
+            printf 'pacman\tok\t\n' > "$status"
+            # 数据落盘成功就立刻打时间戳：父进程随后被中断也不影响这份数据的新鲜度。
+            touch "$CACHE_DIR/last-refresh-pacman"
+            return 0
+        fi
+        printf 'pacman\terror\t无法写入缓存文件 %s（磁盘空间或权限问题）\n' "$CACHE_REPO" > "$status"
+        return 1
+    fi
+    # 查询失败时保留上一次成功列表：失败不等于"没有待更新项目"，空文件不能覆盖它。
+    rm -f -- "$CACHE_DIR/last-refresh-pacman"
+    if (( rc == 124 )); then
+        message="查询超时（超过 $QUERY_TIMEOUT 秒）；镜像源可能过慢，可先运行「更新镜像源」"
+    else
+        message="$(_cau_error_text "$err")"
+    fi
+    printf 'pacman\terror\t%s\n' "${message:-checkupdates 查询失败（退出码：$rc）}" > "$status"
+    return 1
+}
+
+_cau_query_aur() {
+    local out="$1" status="$2" err="$3" rc=0 helper message
+
+    helper="$(aur_helper)"
+    if [[ -z "$helper" ]]; then
+        : > "$out"
+        if mv -- "$out" "$CACHE_AUR"; then
+            printf 'aur\tskipped\t未安装 paru 或 yay，AUR 未检查\n' > "$status"
+            touch "$CACHE_DIR/last-refresh-aur"
+            return 0
+        fi
+        printf 'aur\terror\t无法写入缓存文件 %s（磁盘空间或权限问题）\n' "$CACHE_AUR" > "$status"
+        return 1
+    fi
+
+    run_query "$QUERY_TIMEOUT" "$helper" -Qua > "$out" 2> "$err" || rc=$?
+    if (( rc == 0 )) || { (( rc == 1 )) && [[ ! -s "$out" && ! -s "$err" ]]; }; then
+        if mv -- "$out" "$CACHE_AUR"; then
+            printf 'aur\tok\t\n' > "$status"
+            touch "$CACHE_DIR/last-refresh-aur"
+            return 0
+        fi
+        printf 'aur\terror\t无法写入缓存文件 %s（磁盘空间或权限问题）\n' "$CACHE_AUR" > "$status"
+        return 1
+    fi
+    # 查询失败时保留上一次成功列表，避免把"查询失败"显示成"没有待更新"。
+    rm -f -- "$CACHE_DIR/last-refresh-aur"
+    if (( rc == 124 )); then
+        message="查询超时（超过 $QUERY_TIMEOUT 秒）；AUR 接口或网络可能不通"
+    else
+        message="$(_cau_error_text "$err")"
+    fi
+    printf 'aur\terror\t%s\n' "${message:-$helper 查询失败（退出码：$rc）}" > "$status"
+    return 1
+}
+
+_cau_query_flatpak() {
+    local out="$1" status="$2" err="$3" rc=0 message
+
+    if ! check_cmd flatpak; then
+        : > "$out"
+        if mv -- "$out" "$CACHE_FLATPAK"; then
+            printf 'flatpak\tskipped\t未安装 Flatpak，Flatpak 来源未检查\n' > "$status"
+            touch "$CACHE_DIR/last-refresh-flatpak"
+            return 0
+        fi
+        printf 'flatpak\terror\t无法写入缓存文件 %s（磁盘空间或权限问题）\n' "$CACHE_FLATPAK" > "$status"
+        return 1
+    fi
+
+    if [[ "${CHECKALLUPDATES_FLATPAK_CACHED:-0}" == "1" ]]; then
+        run_query "$QUERY_TIMEOUT" flatpak remote-ls --updates --cached --columns=application,version > "$out" 2> "$err" || rc=$?
+    else
+        run_query "$QUERY_TIMEOUT" flatpak remote-ls --updates --columns=application,version > "$out" 2> "$err" || rc=$?
+    fi
+    if (( rc == 0 )); then
+        if mv -- "$out" "$CACHE_FLATPAK"; then
+            printf 'flatpak\tok\t\n' > "$status"
+            touch "$CACHE_DIR/last-refresh-flatpak"
+            return 0
+        fi
+        printf 'flatpak\terror\t无法写入缓存文件 %s（磁盘空间或权限问题）\n' "$CACHE_FLATPAK" > "$status"
+        return 1
+    fi
+    # 查询失败时保留上一次成功列表。
+    rm -f -- "$CACHE_DIR/last-refresh-flatpak"
+    if (( rc == 124 )); then
+        message="查询超时（超过 $QUERY_TIMEOUT 秒）；Flatpak 远端元数据同步可能很慢"
+    else
+        message="$(_cau_error_text "$err")"
+    fi
+    printf 'flatpak\terror\t%s\n' "${message:-Flatpak 查询失败（退出码：$rc）}" > "$status"
+    return 1
+}
+
+# 子进程被杀时状态碎片可能是空的：补一条明确的中断说明，不让来源静默消失。
+# 返回非 0 表示该来源本次刷新失败（skipped 不算失败）。
+_cau_settle_status() {
+    local file="$1" source="$2" label="$3" rc="$4" state=""
+
+    if [[ ! -s "$file" ]]; then
+        printf '%s\terror\t%s 查询被中断（退出码：%s）；按 Ctrl+R 可重试\n' \
+            "$source" "$label" "$rc" > "$file"
+        return 1
+    fi
+    IFS=$'\t' read -r _ state _ < "$file" || true
+    [[ "$state" != "error" ]]
+}
+
+# 本轮不查询的来源沿用上一轮的状态行，避免它在列表里静默消失。
+_cau_carry_status() {
+    local source="$1" file="$2" line=""
+
+    if [[ -f "$CACHE_STATUS" ]]; then
+        line="$(awk -F '\t' -v s="$source" '$1 == s { print; exit }' "$CACHE_STATUS")"
+    fi
+    if [[ -n "$line" ]]; then
+        printf '%s\n' "$line" > "$file"
+    else
+        printf '%s\tok\t\n' "$source" > "$file"
+    fi
+}
+
+# refresh_update_cache [pacman|aur|flatpak|stale ...]
+#   不带参数刷新全部来源；带来源名只刷新指定来源（更新完单个软件包时用）；
+#   stale 只刷新自身已过期的来源，其余沿用缓存，不做无谓的网络查询。
+refresh_update_cache() {
+    local refresh_fd="" refresh_failed=0
+    local tmp_repo tmp_aur tmp_flatpak tmp_status
+    local st_pacman st_aur st_flatpak
+    local err_pacman err_aur err_flatpak
+    local pid_pacman pid_aur pid_flatpak
+    local rc_pacman=0 rc_aur=0 rc_flatpak=0
+    local do_pacman=0 do_aur=0 do_flatpak=0 arg state
+
+    if (( $# == 0 )); then
+        do_pacman=1
+        do_aur=1
+        do_flatpak=1
+    else
+        for arg in "$@"; do
+            case "$arg" in
+                pacman) do_pacman=1 ;;
+                aur) do_aur=1 ;;
+                flatpak) do_flatpak=1 ;;
+                stale)
+                    _cau_source_is_fresh pacman || do_pacman=1
+                    _cau_source_is_fresh aur || do_aur=1
+                    _cau_source_is_fresh flatpak || do_flatpak=1
+                    ;;
+                *)
+                    printf '未知的刷新来源: %s\n' "$arg" >&2
+                    return 2
+                    ;;
+            esac
+        done
+    fi
+
+    mkdir -p "$CACHE_DIR" 2>/dev/null || true
+    _CAU_MAIN_PID="${BASHPID:-$$}"
+
+    if check_cmd flock; then
+        if ! exec {refresh_fd}>"$CACHE_DIR/refresh.lock"; then
+            printf '无法打开刷新锁 %s，本次刷新已取消。\n' "$CACHE_DIR/refresh.lock" >&2
+            return 1
+        fi
+        # 旧实现是无限等待；现在等满就放弃：超时后继续刷新会和另一个实例
+        # 并发查询、互相覆盖缓存，等于在最需要互斥时没有互斥。
+        if ! flock -w "$REFRESH_LOCK_WAIT" "$refresh_fd"; then
+            printf '另一个刷新仍在进行（已等待 %s 秒），本次刷新已取消；稍后按 Ctrl+R 重试。\n' "$REFRESH_LOCK_WAIT" >&2
+            exec {refresh_fd}>&-
+            return 1
+        fi
+    fi
+
+    # 只在确认本进程持有刷新锁之后才回收历史临时文件，避免删掉并发刷新的产物；
+    # 回收本身仍保留 1 小时时效门槛。
+    _cau_reclaim_orphans
+
+    local mktemp_failed=0 tmpfile
+    tmp_repo="$(mktemp "$CACHE_DIR/repo.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    tmp_aur="$(mktemp "$CACHE_DIR/aur.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    tmp_flatpak="$(mktemp "$CACHE_DIR/flatpak.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    tmp_status="$(mktemp "$CACHE_DIR/status.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    st_pacman="$(mktemp "$CACHE_DIR/status.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    st_aur="$(mktemp "$CACHE_DIR/status.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    st_flatpak="$(mktemp "$CACHE_DIR/status.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    err_pacman="$(mktemp "$CACHE_DIR/error.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    err_aur="$(mktemp "$CACHE_DIR/error.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    err_flatpak="$(mktemp "$CACHE_DIR/error.XXXXXX" 2>/dev/null)" || mktemp_failed=1
+    for tmpfile in "$tmp_repo" "$tmp_aur" "$tmp_flatpak" "$tmp_status" \
+        "$st_pacman" "$st_aur" "$st_flatpak" \
+        "$err_pacman" "$err_aur" "$err_flatpak"; do
+        if [[ -n "$tmpfile" ]]; then
+            _CAU_TMPFILES+=("$tmpfile")
+        fi
+    done
+
+    if (( mktemp_failed == 1 )); then
+        # 旧实现不检查 mktemp：缓存目录不可写时会"0 次查询却返回 0 并展示旧缓存"。
+        printf '无法在 %s 创建刷新临时文件（磁盘空间或权限问题）；本次刷新未开始，缓存保持原样。\n' "$CACHE_DIR" >&2
+        _cau_cleanup
+        if [[ -n "$refresh_fd" ]]; then
+            flock -u "$refresh_fd" 2>/dev/null || true
+            exec {refresh_fd}>&-
+        fi
+        return 1
+    fi
+
+    # 需要查询的来源并行跑：总耗时从“三个来源相加”降到“最慢的那一个”。
+    _CAU_QUERY_PIDS=()
+    if (( do_pacman == 1 )); then
+        _cau_query_pacman "$tmp_repo" "$st_pacman" "$err_pacman" &
+        pid_pacman=$!
+        _CAU_QUERY_PIDS+=("$pid_pacman")
+    fi
+    if (( do_aur == 1 )); then
+        _cau_query_aur "$tmp_aur" "$st_aur" "$err_aur" &
+        pid_aur=$!
+        _CAU_QUERY_PIDS+=("$pid_aur")
+    fi
+    if (( do_flatpak == 1 )); then
+        _cau_query_flatpak "$tmp_flatpak" "$st_flatpak" "$err_flatpak" &
+        pid_flatpak=$!
+        _CAU_QUERY_PIDS+=("$pid_flatpak")
+    fi
+
+    if (( do_pacman == 1 )); then
+        wait "$pid_pacman" || rc_pacman=$?
+    fi
+    if (( do_aur == 1 )); then
+        wait "$pid_aur" || rc_aur=$?
+    fi
+    if (( do_flatpak == 1 )); then
+        wait "$pid_flatpak" || rc_flatpak=$?
+    fi
+    _CAU_QUERY_PIDS=()
+
+    # 时间戳由查询子进程在"数据落盘成功后"立刻打：刷新被中断时，已经查完的
+    # 来源不会因为没跑完收尾逻辑而被当成过期数据重查。父进程只在子进程被
+    # 中断或状态为 error 时补一次清理；跳过的来源沿用旧状态和旧计时。
+    if (( do_pacman == 1 )); then
+        _cau_settle_status "$st_pacman" pacman Pacman "$rc_pacman" \
+            || rm -f -- "$CACHE_DIR/last-refresh-pacman"
+    else
+        _cau_carry_status pacman "$st_pacman"
+    fi
+    if (( do_aur == 1 )); then
+        _cau_settle_status "$st_aur" aur AUR "$rc_aur" \
+            || rm -f -- "$CACHE_DIR/last-refresh-aur"
+    else
+        _cau_carry_status aur "$st_aur"
+    fi
+    if (( do_flatpak == 1 )); then
+        _cau_settle_status "$st_flatpak" flatpak Flatpak "$rc_flatpak" \
+            || rm -f -- "$CACHE_DIR/last-refresh-flatpak"
+    else
+        _cau_carry_status flatpak "$st_flatpak"
+    fi
+
+    local status_write_ok=1
+    if ! cat -- "$st_pacman" "$st_aur" "$st_flatpak" > "$tmp_status"; then
+        status_write_ok=0
+    fi
+    if (( status_write_ok == 1 )) && ! mv -- "$tmp_status" "$CACHE_STATUS"; then
+        status_write_ok=0
+    fi
+    if (( status_write_ok == 0 )); then
+        # 状态文件写不成时不能沿用旧状态冒充本轮结果，更不能打最新时间戳。
+        printf '无法写入来源状态缓存 %s，本次刷新按失败处理。\n' "$CACHE_STATUS" >&2
         refresh_failed=1
-        printf 'pacman\terror\t缺少 checkupdates（pacman-contrib），无法检查官方仓库\n' >> "$tmp_status"
-    elif ! check_cmd fakeroot; then
-        # pacman-contrib 把 fakeroot 列为可选依赖，但 checkupdates 实际会
-        # 依赖它创建临时同步数据库。预先指出缺什么，不能只把其英文 stderr
-        # 透传成一个难理解的“查询失败”。
+        rm -f -- "$tmp_status"
+    fi
+
+    # 合并后的状态才是判据：沿用下来的历史错误同样算“这份缓存还不完整”。
+    if [[ -f "$CACHE_STATUS" ]]; then
+        while IFS=$'\t' read -r _ state _; do
+            [[ "$state" == "error" ]] && refresh_failed=1
+        done < "$CACHE_STATUS"
+    else
         refresh_failed=1
-        printf 'pacman\terror\t缺少 fakeroot（pacman-contrib 的 checkupdates 所需可选依赖）；请安装 fakeroot\n' >> "$tmp_status"
-    else
-        rc=0
-        checkupdates > "$tmp_repo" 2> "$tmp_err" || rc=$?
-        if (( rc == 0 || rc == 2 )); then
-            printf 'pacman\tok\t\n' >> "$tmp_status"
-        else
-            refresh_failed=1
-            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-            printf 'pacman\terror\t%s\n' "${message:-checkupdates 查询失败（退出码：$rc）}" >> "$tmp_status"
-            : > "$tmp_repo"
-        fi
     fi
 
-    helper=$(aur_helper)
-    if [[ -n "$helper" ]]; then
-        : > "$tmp_err"
-        rc=0
-        "$helper" -Qua > "$tmp_aur" 2> "$tmp_err" || rc=$?
-        if (( rc == 0 )) || { (( rc == 1 )) && [[ ! -s "$tmp_aur" && ! -s "$tmp_err" ]]; }; then
-            printf 'aur\tok\t\n' >> "$tmp_status"
-        else
-            refresh_failed=1
-            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-            printf 'aur\terror\t%s\n' "${message:-$helper 查询失败（退出码：$rc）}" >> "$tmp_status"
-            : > "$tmp_aur"
-        fi
-    else
-        printf 'aur\tskipped\t未安装 paru 或 yay，AUR 未检查\n' >> "$tmp_status"
-    fi
-
-    if check_cmd flatpak; then
-        : > "$tmp_err"
-        rc=0
-        if [[ "${CHECKALLUPDATES_FLATPAK_CACHED:-0}" == "1" ]]; then
-            flatpak remote-ls --updates --cached --columns=application,version > "$tmp_flatpak" 2> "$tmp_err" || rc=$?
-        else
-            flatpak remote-ls --updates --columns=application,version > "$tmp_flatpak" 2> "$tmp_err" || rc=$?
-        fi
-        if (( rc == 0 )); then
-            printf 'flatpak\tok\t\n' >> "$tmp_status"
-        else
-            refresh_failed=1
-            message="$(tr '\t\r\n' '   ' < "$tmp_err" | sed 's/[[:space:]]\+/ /g; s/^ //; s/ $//')"
-            printf 'flatpak\terror\t%s\n' "${message:-Flatpak 查询失败（退出码：$rc）}" >> "$tmp_status"
-            : > "$tmp_flatpak"
-        fi
-    else
-        printf 'flatpak\tskipped\t未安装 Flatpak，Flatpak 来源未检查\n' >> "$tmp_status"
-    fi
-
-    mv -- "$tmp_repo" "$CACHE_REPO"
-    mv -- "$tmp_aur" "$CACHE_AUR"
-    mv -- "$tmp_flatpak" "$CACHE_FLATPAK"
-    mv -- "$tmp_status" "$CACHE_STATUS"
-    rm -f -- "$tmp_err"
     if (( refresh_failed == 0 )); then
         touch "$CACHE_STAMP"
     else
@@ -214,6 +564,7 @@ refresh_update_cache() {
         flock -u "$refresh_fd"
         exec {refresh_fd}>&-
     fi
+    _cau_cleanup
     return "$refresh_failed"
 }
 
@@ -253,6 +604,9 @@ print_cached_updates_or_empty() {
     output="$(print_cached_updates; print_cached_source_statuses)"
     if [[ -n "$output" ]]; then
         printf '%s\n' "$output"
+    elif (( REFRESH_PENDING == 1 )); then
+        # 首次使用还没有任何缓存时，别把“正在查询”显示成“没有待更新项目”。
+        printf 'pending\t-\t%s%s%s\n' "$C_CYAN" "$PENDING_TEXT" "$C_RESET"
     else
         printf 'none\t-\t%s%s%s\n' "$C_GREEN" "$NO_UPDATES_TEXT" "$C_RESET"
     fi
@@ -317,8 +671,9 @@ update_all_pacman() {
     fi
     ui_maintenance_lock_release
 
-    ui_info "正在刷新待更新列表..."
-    refresh_update_cache || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
+    # 只重查刚动过的来源：AUR / Flatpak 的结果没有变化，不必再等一轮网络查询。
+    ui_info "正在刷新 Pacman 待更新列表..."
+    refresh_update_cache pacman || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
     pause_before_list
     return "$update_status"
 }
@@ -398,8 +753,9 @@ update_selected() {
     fi
     ui_maintenance_lock_release
 
-    ui_info "正在刷新待更新列表..."
-    refresh_update_cache || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
+    # 同上：只重查刚更新过的那个来源。
+    ui_info "正在刷新 %s 待更新列表..." "$source_name"
+    refresh_update_cache "$source" || ui_warn "待更新列表刷新失败；已保留来源错误状态，可稍后重试。"
     pause_before_list
     return "$update_status"
 }
@@ -410,8 +766,17 @@ main() {
 # ---------------------------------------------------------
     # 分支 1：Ctrl+R 触发的重载刷新进程
     # ---------------------------------------------------------
+    if [[ $LOAD_ACTIONS == 1 ]]; then
+        print_load_actions
+        return 0
+    fi
+
     if [[ $FORCE_REFRESH == 1 ]]; then
-        refresh_update_cache || refresh_status=$?
+        if [[ "$REFRESH_SCOPE" == "stale" ]]; then
+            refresh_update_cache stale || refresh_status=$?
+        else
+            refresh_update_cache || refresh_status=$?
+        fi
         print_cached_updates_or_empty
         return "$refresh_status"
     fi
@@ -434,15 +799,24 @@ main() {
         return 2
     fi
 
-    if ! cache_is_fresh "$CACHE_STAMP"; then
-        ui_working "正在查询 Pacman、AUR 和 Flatpak 更新"
-        refresh_update_cache || true
-    fi
-
     local footer fzf_output fzf_status key selection source package display
+
+    # 刷新标记按进程命名：多个列表实例互不干扰，退出时由清理钩子收掉。
+    # OWNER 用来让 fzf 的 reload/load 子进程（会继承同一个环境变量）不要
+    # 误删父进程的标记。
+    export CHECKALLUPDATES_PENDING_FLAG="$CACHE_DIR/refresh-pending.$$"
+    export CHECKALLUPDATES_PENDING_OWNER="$$"
 
     while true; do
         footer="$(ui_status_line)"
+        # 旧实现在这里同步跑完一整轮查询才开界面，慢的时候等于把终端卡死一两分钟。
+        # 现在先秒开已有列表，过期时只挂一个刷新标记，由 fzf 的 load 事件在后台刷新。
+        REFRESH_PENDING=0
+        rm -f -- "$CHECKALLUPDATES_PENDING_FLAG"
+        if ! cache_is_fresh "$CACHE_STAMP"; then
+            REFRESH_PENDING=1
+            : > "$CHECKALLUPDATES_PENDING_FLAG"
+        fi
         # fzf 用 130 表示 Esc/中断。由 term-menu 启动时把这个状态传给
         # 父菜单，使它能直接返回上一级，而不是再显示一次结果暂停页。
         set +e
@@ -456,7 +830,7 @@ main() {
             --border-label="╢  待更新项目 ╟" \
             --border-label-pos=3 \
             --list-border=rounded \
-            --list-label=' 待更新列表 ' \
+            --list-label=" 待更新列表 · $(cache_age_text) " \
             --list-label-pos=3 \
             --input-border=rounded \
             --input-label=' 筛选 ' \
@@ -478,7 +852,8 @@ main() {
             --expect=enter,ctrl-u \
             --header='  ↑↓ 循环选择     Enter 按来源更新     Ctrl+U 完整系统更新     Ctrl+R 强制刷新     Esc 返回' \
             --color="$(ui_fzf_colors)" \
-            --bind="ctrl-r:change-prompt(⏳ 正在拉取最新数据... > )+reload('${SCRIPT_PATH}' --refresh)+change-prompt(  )"
+            --bind="load:transform:'${SCRIPT_PATH}' --load-actions" \
+            --bind="ctrl-r:change-list-label( 待更新列表 · 正在刷新 )+reload-sync('${SCRIPT_PATH}' --refresh)"
         )"
         fzf_status=$?
         set -e
@@ -495,11 +870,18 @@ main() {
 
         if [[ "$key" == "ctrl-u" ]]; then
             run_full_update || true
-            refresh_update_cache || true
+            # sysup 收尾已经刷过缓存，这里只补查仍然过期的来源，不重复整轮查询。
+            refresh_update_cache stale || true
             continue
         fi
 
         IFS=$'\t' read -r source package display <<< "$selection"
+        if [[ "$source" == "pending" ]]; then
+            clear
+            ui_info "正在后台刷新待更新列表，请稍候几秒后返回查看。"
+            pause_for_result
+            continue
+        fi
         if [[ "$source" == "status" ]]; then
             clear
             ui_warn "%b" "$display"
@@ -519,5 +901,11 @@ main() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    # 被 fzf 取消 reload、Ctrl+C 或直接关窗时，先收掉后台查询和临时文件。
+    trap '_cau_cleanup' EXIT
+    trap '_cau_cleanup; exit 130' INT
+    trap '_cau_cleanup; exit 143' TERM
+    # 直接关掉终端窗口是 SIGHUP，一样要收掉后台查询和临时文件。
+    trap '_cau_cleanup; exit 129' HUP
     main "$@"
 fi

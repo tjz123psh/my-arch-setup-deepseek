@@ -23,7 +23,7 @@ reason_line() {
   ui_panel_line "${UI_DIM}    $1${UI_RESET}"
 }
 
-declare -A INSTALLED_PKGS=()
+declare -gA INSTALLED_PKGS=()
 RECOMMEND_QUERY_FAILED=0
 
 load_installed_pkgs() {
@@ -124,9 +124,12 @@ check_group() {
 
 main() {
   local vendor gpu virt microcode_pkg microcode_reason
+  local vendor_state gpu_state vendor_display gpu_display
   local core_items hardware_items desktop_items terminal_items
   local install_line conditional_line optional_line
   local vendor_rc=127 gpu_rc=127 virt_rc=127 strict=0
+  # missing = 缺命令（127）；failed = 命令报错（1）；absent = 查询成功但确实没有。
+  local missing_cmd=0
 
   if (( $# > 1 )); then
     ui_err "参数过多；用法: recommend-check [--strict]"
@@ -146,7 +149,8 @@ main() {
     panel "环境错误" ""
     ui_panel_stat miss "缺少 pacman；这不是可识别的 Arch 环境"
     panel_end
-    exit 1
+    ui_tally_summary
+    return 127
   fi
   if ! load_installed_pkgs; then
     panel "环境错误" ""
@@ -156,49 +160,88 @@ main() {
   fi
 
   vendor=""
+  vendor_state="missing"
   if have lscpu; then
     vendor_rc=0
     vendor="$(cpu_vendor 2>&1)" || vendor_rc=$?
-    if [[ "$vendor_rc" -ne 0 ]]; then vendor=""
-    elif [[ -z "$vendor" ]]; then vendor_rc=1
+    if [[ "$vendor_rc" -ne 0 ]]; then
+      vendor=""
+      vendor_state="failed"
+    elif [[ -z "$vendor" ]]; then
+      vendor_state="absent"
+    else
+      vendor_state="present"
     fi
   fi
   gpu=""
+  gpu_state="missing"
   if have lspci; then
     gpu_rc=0
     gpu="$(first_gpu_line 2>&1)" || gpu_rc=$?
-    if [[ "$gpu_rc" -ne 0 ]]; then gpu=""
-    elif [[ -z "$gpu" ]]; then gpu_rc=1
+    if [[ "$gpu_rc" -ne 0 ]]; then
+      gpu=""
+      gpu_state="failed"
+    elif [[ -z "$gpu" ]]; then
+      gpu_state="absent"
+    else
+      gpu_state="present"
     fi
   fi
   virt=""
+  virt_rc=127
   if have systemd-detect-virt; then
     virt_rc=0
     virt="$(systemd-detect-virt 2>&1)" || virt_rc=$?
-  fi
-  if [[ "$virt_rc" -eq 1 && ( -z "$virt" || "$virt" == "none" ) ]]; then
-    virt="physical"
-    virt_rc=0
-  elif [[ "$virt_rc" -eq 0 && -z "$virt" ]]; then
-    virt="physical"
-  elif [[ "$virt_rc" -ne 0 ]]; then
+    if [[ "$virt_rc" -eq 1 && ( -z "$virt" || "$virt" == "none" ) ]]; then
+      virt="physical"
+      virt_rc=0
+    elif [[ "$virt_rc" -eq 0 && -z "$virt" ]]; then
+      virt="physical"
+    elif [[ "$virt_rc" -ne 0 ]]; then
+      virt="unknown"
+    fi
+  else
     virt="unknown"
   fi
 
+  case "$vendor_state" in
+    present) vendor_display="$vendor" ;;
+    absent)  vendor_display="未报告" ;;
+    *)       vendor_display="无法确认" ;;
+  esac
+  case "$gpu_state" in
+    present) gpu_display="$gpu" ;;
+    absent)  gpu_display="未检测到" ;;
+    *)       gpu_display="无法确认" ;;
+  esac
+
   panel "当前环境" ""
   ui_panel_kv "运行环境" "${virt:-unknown}"
-  ui_panel_kv "CPU 厂商" "${vendor:-unknown}"
-  ui_panel_kv "GPU" "${gpu:-unknown}"
-  if [[ "$vendor_rc" -ne 0 ]]; then
-    ui_panel_stat warn "CPU 厂商查询失败（退出码 $vendor_rc）"
+  ui_panel_kv "CPU 厂商" "$vendor_display"
+  ui_panel_kv "GPU" "$gpu_display"
+  if [[ "$vendor_state" == "missing" ]]; then
+    ui_panel_stat miss "缺少 lscpu，无法确认 CPU 厂商"
+    missing_cmd=1
+  elif [[ "$vendor_state" == "failed" ]]; then
+    ui_panel_stat err "CPU 厂商查询失败（退出码 $vendor_rc），无法确认 CPU 厂商"
     RECOMMEND_QUERY_FAILED=1
+  elif [[ "$vendor_state" == "absent" ]]; then
+    ui_panel_stat info "lscpu 未报告 Vendor ID，无法按厂商推荐 CPU 微码"
   fi
-  if [[ "$gpu_rc" -ne 0 ]]; then
-    ui_panel_stat warn "GPU 查询失败（退出码 $gpu_rc）"
+  if [[ "$gpu_state" == "missing" ]]; then
+    ui_panel_stat miss "缺少 lspci，无法确认显卡"
+    missing_cmd=1
+  elif [[ "$gpu_state" == "failed" ]]; then
+    ui_panel_stat err "GPU 查询失败（退出码 $gpu_rc），无法确认显卡"
     RECOMMEND_QUERY_FAILED=1
+  elif [[ "$gpu_state" == "absent" ]]; then
+    ui_panel_stat info "PCI 总线上没有 VGA / 3D / Display 控制器（无独显/核显，正常）"
   fi
-  if [[ "$virt_rc" -ne 0 ]]; then
-    ui_panel_stat warn "虚拟化环境查询失败（退出码 $virt_rc）"
+  if [[ "$virt_rc" -eq 127 ]]; then
+    ui_panel_stat miss "缺少 systemd-detect-virt，无法确认运行环境"
+    missing_cmd=1
+  elif [[ "$virt_rc" -ne 0 ]]; then
+    ui_panel_stat err "虚拟化环境查询失败（退出码 $virt_rc），无法确认运行环境"
     RECOMMEND_QUERY_FAILED=1
   fi
   if has_bluetooth_controller; then
@@ -244,7 +287,10 @@ main() {
     desktop_items+=("blueman|blueman-manager|可选|蓝牙图形管理|当前没检测到蓝牙控制器，实机有蓝牙外设时再考虑。")
   fi
 
-  if [[ "$virt" != "physical" ]]; then
+  if [[ "$virt" == "unknown" ]]; then
+    # 查询失败不能说成"当前是虚拟机"，只能说无法确认。
+    ui_panel_stat info "运行环境无法确认（查询失败或缺少命令），CPU 微码包按实机 CPU 再决定。"
+  elif [[ "$virt" != "physical" ]]; then
     ui_panel_stat info "当前是虚拟机，CPU 微码包按实机 CPU 再决定，不在这里强推。"
   else
     case "$vendor" in
@@ -313,6 +359,8 @@ main() {
 
   panel_end
   ui_tally_summary
+  # 缺命令（127）优先；查询失败即使没有 --strict 也必须非零。
+  [[ "$missing_cmd" -eq 0 ]] || return 127
   [[ "$RECOMMEND_QUERY_FAILED" -eq 0 ]] || return 1
   ui_tally_status "$strict"
 }

@@ -1,0 +1,11 @@
+[Unit]
+Description=Clipboard X11 bridge (mirror Wayland clipboard to X11 for X11 apps)
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/pang/scripts/desktop/clipboard-x11-bridge
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

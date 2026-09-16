@@ -19,12 +19,16 @@ SET_DIR=""
 MIGRATION_DIR=""
 SOURCE_KIND="offsite"
 STAGE=""
+ARCHIVE_LIST=""
+ARCHIVE_LIST_SRC=""
+ARCHIVE_LIST_READY=0
 
 cancel_to_parent() {
   if [[ "${TERM_MENU_CHILD:-0}" == "1" ]]; then
     exit 130
   fi
-  exit 0
+  # 非菜单调用：取消不是成功，按用法/取消契约返回 2。
+  exit 2
 }
 
 usage() {
@@ -240,8 +244,43 @@ resolve_source() {
   MIGRATION_DIR="$SET_DIR/migration"
 }
 
+# 同一归档只读一次：用 tar -tvf 生成成员清单（含大小），
+# 路径边界校验与暂存空间估算都复用该清单，避免为同样的事实反复解压归档。
+archive_listing() {
+  local archive="$1" compress="$2"
+  if [[ "$ARCHIVE_LIST_READY" -eq 1 && "$ARCHIVE_LIST_SRC" == "$archive" ]]; then
+    return 0
+  fi
+  ARCHIVE_LIST_READY=0
+  if [[ -z "$ARCHIVE_LIST" ]]; then
+    ARCHIVE_LIST="$(mktemp)" || return 1
+    ui_tmp_register "$ARCHIVE_LIST"
+  fi
+  : > "$ARCHIVE_LIST"
+  if [[ "$compress" == "zstd" ]]; then
+    LC_ALL=C tar --zstd --numeric-owner -tvf "$archive" > "$ARCHIVE_LIST" || return 1
+  else
+    LC_ALL=C tar --numeric-owner -tzvf "$archive" > "$ARCHIVE_LIST" || return 1
+  fi
+  ARCHIVE_LIST_SRC="$archive"
+  ARCHIVE_LIST_READY=1
+}
+
+# 从 -tvf 清单中还原成员名：去掉前 5 列（权限、属主、大小、日期、时间），
+# 符号链接行再截掉 tar 追加的 " -> 目标"。
+archive_listing_names() {
+  awk '
+    {
+      name = $0
+      sub(/^([^[:space:]]+[[:space:]]+){5}/, "", name)
+      if (substr($0, 1, 1) == "l") sub(/ -> .*$/, "", name)
+      print name
+    }
+  ' "$ARCHIVE_LIST"
+}
+
 verify_home_archive() {
-  local checksum entry normalized list_file unsafe_entry=""
+  local checksum entry normalized unsafe_entry=""
   [[ -s "$SET_DIR/home.tar.zst" && -s "$SET_DIR/home.tar.zst.sha256" ]] \
     || { ui_err "备份集合缺少 HOME 归档或校验文件"; return 1; }
   checksum="$(< "$SET_DIR/home.tar.zst.sha256")"
@@ -249,15 +288,9 @@ verify_home_archive() {
     <<< "$checksum" || { ui_err "HOME 校验文件格式无效或引用了其它路径"; return 1; }
   (cd "$SET_DIR" && sha256sum -c home.tar.zst.sha256) \
     || { ui_err "HOME 归档 SHA256 校验失败"; return 1; }
-  tar --zstd -tf "$SET_DIR/home.tar.zst" >/dev/null \
+  # 一次 -tvf 同时完成"归档可完整读取"、"成员路径边界"和后续体积估算。
+  archive_listing "$SET_DIR/home.tar.zst" zstd \
     || { ui_err "HOME 归档损坏，无法完整读取"; return 1; }
-
-  list_file="$(mktemp)"
-  if ! tar --zstd -tf "$SET_DIR/home.tar.zst" > "$list_file"; then
-    rm -f "$list_file"
-    ui_err "无法读取 HOME 归档清单"
-    return 1
-  fi
   while IFS= read -r entry; do
     normalized="${entry#./}"
     [[ -z "$normalized" || "$normalized" == "." ]] && continue
@@ -266,8 +299,7 @@ verify_home_archive() {
       unsafe_entry="$entry"
       break
     fi
-  done < "$list_file"
-  rm -f "$list_file"
+  done < <(archive_listing_names)
   if [[ -n "$unsafe_entry" ]]; then
     ui_err "HOME 归档包含越界路径: %s" "$unsafe_entry"
     return 1
@@ -275,19 +307,12 @@ verify_home_archive() {
 }
 
 verify_migration_archive_paths() {
-  local archive list_file entry normalized unsafe_entry=""
+  local archive entry normalized unsafe_entry=""
   archive="$(migration_payload_archive)"
-  list_file="$(mktemp)"
   if migration_is_v2; then
-    tar --zstd -tf "$archive" > "$list_file" || {
-      rm -f "$list_file"
-      ui_err "无法读取 v2 迁移包归档清单"
-      return 1
-    }
-  elif ! tar -tzf "$archive" > "$list_file"; then
-    rm -f "$list_file"
-    ui_err "无法读取迁移包归档清单"
-    return 1
+    archive_listing "$archive" zstd || { ui_err "无法读取 v2 迁移包归档清单"; return 1; }
+  else
+    archive_listing "$archive" gzip || { ui_err "无法读取迁移包归档清单"; return 1; }
   fi
   while IFS= read -r entry; do
     normalized="${entry#./}"
@@ -297,8 +322,7 @@ verify_migration_archive_paths() {
       unsafe_entry="$entry"
       break
     fi
-  done < "$list_file"
-  rm -f "$list_file"
+  done < <(archive_listing_names)
   if [[ -n "$unsafe_entry" ]]; then
     ui_err "迁移包归档包含越界路径: %s" "$unsafe_entry"
     return 1
@@ -306,28 +330,24 @@ verify_migration_archive_paths() {
 }
 
 prepare_stage() {
-  local stage_parent estimate_bytes free_kib required_kib archive
+  local stage_parent estimate_bytes free_kib required_kib archive compress
   stage_parent="${MAINTENANCE_RESTORE_STAGING_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/maintenance-restore-staging}"
   mkdir -p "$stage_parent"
   if [[ "$SOURCE_KIND" == "offsite" ]]; then
     archive="$SET_DIR/home.tar.zst"
-    estimate_bytes="$(LC_ALL=C tar --zstd --numeric-owner -tvf "$archive" \
-      | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
+    compress=zstd
   else
     archive="$(migration_payload_archive)"
     if [[ "$(migration_payload_mode)" == 'metadata-only' ]]; then
       ui_err "该迁移包只含异盘备份元数据，不能单独恢复 HOME；请从对应 set-* 集合恢复"
       return 1
     fi
-    if migration_is_v2; then
-      estimate_bytes="$(LC_ALL=C tar --zstd --numeric-owner -tvf "$archive" \
-        | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
-    else
-      estimate_bytes="$(LC_ALL=C tar --numeric-owner -tzvf "$archive" \
-        | awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}')"
-    fi
+    if migration_is_v2; then compress=zstd; else compress=gzip; fi
   fi
-  free_kib="$(df -Pk "$stage_parent" | awk 'NR == 2 {print $4}')"
+  archive_listing "$archive" "$compress" \
+    || { ui_err "无法读取归档清单，未估算恢复暂存空间"; return 1; }
+  estimate_bytes="$(awk '$3 ~ /^[0-9]+$/ {sum += $3} END {printf "%.0f", sum + 0}' "$ARCHIVE_LIST")"
+  free_kib="$(df -Pk "$stage_parent" 2>/dev/null | awk 'NR == 2 {print $4}')" || free_kib=""
   [[ "$estimate_bytes" =~ ^[0-9]+$ && "$free_kib" =~ ^[0-9]+$ ]] \
     || { ui_err "无法估算恢复暂存空间"; return 1; }
   required_kib=$((estimate_bytes / 1024 + estimate_bytes / 10240 + 1024))
@@ -363,8 +383,9 @@ write_package_plan() {
   current="$(mktemp)"
   all_official="$(mktemp)"
   tmp="$(mktemp)"
+  ui_tmp_register "$current" "$all_official" "$tmp"
   if ! pacman -Qq | sort -u > "$current"; then
-    rm -f "$current" "$all_official" "$tmp"
+    ui_tmp_discard "$current" "$all_official" "$tmp"
     ui_err "无法查询当前已安装包，未生成恢复计划"
     return 1
   fi
@@ -378,7 +399,7 @@ write_package_plan() {
     : > "$PLAN_DIR/packages-foreign.txt"
   fi
   comm -23 "$all_official" "$current" > "$PLAN_DIR/packages-official.txt"
-  rm -f "$current" "$all_official" "$tmp"
+  ui_tmp_discard "$current" "$all_official" "$tmp"
 }
 
 enabled_units_from_file() {
@@ -391,15 +412,16 @@ write_service_plan() {
   user_file="$(migration_services_file user)"
   current_system="$(mktemp)"
   current_user="$(mktemp)"
+  ui_tmp_register "$current_system" "$current_user"
   if ! systemctl list-unit-files --state=enabled --no-legend --plain 2>/dev/null \
       | awk '{print $1}' | sort -u > "$current_system"; then
-    rm -f "$current_system" "$current_user"
+    ui_tmp_discard "$current_system" "$current_user"
     ui_err "无法查询当前系统服务，未生成恢复计划"
     return 1
   fi
   if ! systemctl --user list-unit-files --state=enabled --no-legend --plain 2>/dev/null \
       | awk '{print $1}' | sort -u > "$current_user"; then
-    rm -f "$current_system" "$current_user"
+    ui_tmp_discard "$current_system" "$current_user"
     ui_err "无法查询当前用户服务，未生成恢复计划"
     return 1
   fi
@@ -407,7 +429,7 @@ write_service_plan() {
     "$current_system" > "$PLAN_DIR/services-system.txt"
   comm -23 <(enabled_units_from_file "$user_file") \
     "$current_user" > "$PLAN_DIR/services-user.txt"
-  rm -f "$current_system" "$current_user"
+  ui_tmp_discard "$current_system" "$current_user"
 }
 
 write_home_plan() {
@@ -432,10 +454,12 @@ write_home_plan() {
 
 cleanup() {
   [[ -z "${STAGE:-}" || ! -d "$STAGE" ]] || rm -rf -- "$STAGE"
+  # 旧实现只清 STAGE，另外 7 个 mktemp 中断时会留在 /tmp。
+  ui_tmp_cleanup
 }
 trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+trap 'cleanup; exit 130' INT
+trap 'cleanup; exit 143' TERM
 
 resolve_source
 ui_banner "备份恢复" "backup-restore · 校验 / 计划 / HOME 合并"
@@ -506,6 +530,10 @@ fi
 
 ui_maintenance_lock_acquire "恢复异盘 HOME" || exit $?
 ROLLBACK="${XDG_CACHE_HOME:-$HOME/.cache}/maintenance-restore-rollback/$(date '+%Y%m%d-%H%M%S')-$$"
+# rsync -a 会把暂存目录自身的 mode/mtime 套到 $HOME 上（staging 是 mktemp 的 0700）。
+# 先记录 HOME 自身的属性，合并后原样恢复：恢复动作不应顺带改动 HOME 目录本身。
+HOME_MODE_BEFORE="$(stat -c '%a' -- "$HOME" 2>/dev/null || true)"
+HOME_MTIME_BEFORE="$(stat -c '%y' -- "$HOME" 2>/dev/null || true)"
 mkdir -p "$ROLLBACK"
 chmod 700 "$(dirname "$ROLLBACK")" "$ROLLBACK" 2>/dev/null || true
 ui_info "正在合并 HOME；被覆盖的旧文件将保存到回滚目录..."
@@ -513,6 +541,14 @@ if ! rsync -a --no-owner --no-group --backup --backup-dir="$ROLLBACK" \
     -- "$STAGE/" "$HOME/"; then
   ui_err "HOME 合并失败；已覆盖文件的旧版本保存在: %s" "$ROLLBACK"
   exit 1
+fi
+if [[ -n "$HOME_MODE_BEFORE" && "$(stat -c '%a' -- "$HOME" 2>/dev/null || true)" != "$HOME_MODE_BEFORE" ]]; then
+  chmod "$HOME_MODE_BEFORE" -- "$HOME" 2>/dev/null \
+    || ui_warn "无法恢复 HOME 目录权限（期望 %s）: %s" "$HOME_MODE_BEFORE" "$HOME"
+fi
+if [[ -n "$HOME_MTIME_BEFORE" ]]; then
+  touch -d "$HOME_MTIME_BEFORE" -- "$HOME" 2>/dev/null \
+    || ui_warn "无法恢复 HOME 目录时间戳: %s" "$HOME"
 fi
 sync -f "$HOME" 2>/dev/null || sync
 ui_ok "HOME 恢复完成；没有删除当前系统额外文件。"

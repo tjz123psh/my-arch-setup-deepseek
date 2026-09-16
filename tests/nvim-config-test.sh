@@ -19,8 +19,8 @@ files = {
     for path in payload.rglob("*")
     if path.is_file()
 }
-if len(files) != 42:
-    raise SystemExit(f"expected 42 reviewed Neovim files, found {len(files)}")
+if len(files) != 46:
+    raise SystemExit(f"expected 46 reviewed Neovim files, found {len(files)}")
 
 required = {".gitignore", "init.lua", "lazy-lock.json", "stylua.toml"}
 missing_required = sorted(required - files)

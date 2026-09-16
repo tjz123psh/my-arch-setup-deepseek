@@ -10,5 +10,9 @@
     "enabled": true,
     "lastChip": 1,
     "backgroundImage": "file:///home/pang/.config/DankMaterialShell/plugins/dankmaintenance/bg-winter.png"
+  },
+  "screenRecorderYS": {
+    "enabled": true,
+    "resolution": "1080p"
   }
 }

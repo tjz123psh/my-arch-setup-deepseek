@@ -1,27 +1,20 @@
-# MusicFree 插件备份（2026-08-12 重建）
+# MusicFree 插件备份（2026-08-21 更新）
 
-本目录是 MusicFree 插件的本地备份，共 4 个。
+本目录是 MusicFree 插件的本地备份，恢复用：退出 MusicFree → 运行 一键恢复.sh → 重开。
 
-## 文件清单
+## 插件清单（6 个）
 
-| 文件 | 类型 | 说明 |
-|---|---|---|
-| 酷我JHMS.js | 音源·酷我（自带歌词） | 已修复歌词接口 |
-| 酷我_念心.js | 音源·酷我（自带歌词） | 已修复歌词接口 |
-| 酷我-竹玥.js | 音源·酷我 | 已修复歌词接口 |
-| qUjJ9rDU1d53RT8fLL0XQ.js | 音源·B站 | MusicFree 官方插件市场 |
+| 文件 | 类型 |
+|---|---|
+| 酷我JHMS.js | 音源·酷我（自带歌词） |
+| 酷我_念心.js | 音源·酷我（自带歌词） |
+| 酷我-竹玥.js | 音源·酷我（⚠️ 2026-08-21 实测已过期：接口要求v5，公开渠道无v5；另两个酷我源正常） |
+| GD音乐台.js | 音源·聚合（网易云等，自带歌词） |
+| W音乐.js | 音源·网易系（2026-08-21 新增，已实测可搜可播） |
+| qUjJ9rDU1d53RT8fLL0XQ.js | 音源·B站 |
 
-## 重要说明（2026-08-12）
+## 说明
 
-三个酷我插件均已在运行目录**打过歌词补丁**：
-- 原歌词接口（旧接口/第三方中转）已失效，统一改为酷我新接口 `kuwo.cn/openapi/v1/www/lyric/getlyric`
-- 增加异常保护：歌词获取失败时返回空而不是报错（避免 MusicFree 歌词流程崩溃）
-- 本备份与运行目录保持一致，恢复即恢复修复版
-
-## 恢复方法
-
-1. 完全退出 MusicFree
-2. 运行本目录的 `一键恢复.sh`（或双击 `恢复MusicFree插件.desktop`）
-3. 重新打开 MusicFree
-
-> 注意：MusicFree 运行时会清理插件目录，恢复前必须退出应用（脚本已自动处理）。
+- GD音乐台：走 gdstudio 音乐 API，可播网易云曲库（绕过本机 IP 风控），自带歌词
+- W音乐：来源 https://cdn.jsdelivr.net/gh/ThomasBy2025/musicfree@main/plugins/wy.js （备用：raw.githubusercontent.com/ThomasBy2025/musicfree/refs/heads/main/plugins/wy.js）
+- 歌单文件：歌单.json（原版）/ 歌单-念心版.json（酷我歌已改为念心源，推荐导入）

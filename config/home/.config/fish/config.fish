@@ -37,3 +37,9 @@ end
 if test -r ~/.config/fish/private-env.fish
     source ~/.config/fish/private-env.fish
 end
+
+# Added by md-reader installer
+fish_add_path /home/pang/.local/bin
+
+# dsh (DeepSeek Harness) 用户级全局安装
+fish_add_path -g ~/.npm-global/bin

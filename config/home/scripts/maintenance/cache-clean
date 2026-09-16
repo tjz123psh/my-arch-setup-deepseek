@@ -250,6 +250,7 @@ clean_chrome() {
 
 # 本次模式实际会碰的目录（用于清理前后对比与计划展示）。
 # 输出每行一个路径，去重由调用方处理。
+# shellcheck disable=SC2329  # 保留给外部/后续调用：当前实现走 cache_row 清单
 target_paths() {
   if [[ "$MODE_SAFE" == true ]]; then
     printf '%s\n' \
@@ -360,6 +361,11 @@ fi
 
 show_targets
 
+# 非交互环境必须显式 --yes：默认拒绝并返回用法错误 2，而不是静默 0。
+if [[ "$ASSUME_YES" != true && ! -t 0 ]]; then
+  printf '%s\n' '非交互环境不会自动确认；请显式使用 --yes（本次未做任何修改）。' >&2
+  exit 2
+fi
 if ! confirm '即将删除上述缓存。'; then
   warn '已取消'
   exit 0

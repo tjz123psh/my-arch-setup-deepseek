@@ -26,13 +26,28 @@ if [[ -n "${_UI_SH_LOADED:-}" ]]; then
 fi
 _UI_SH_LOADED=1
 
+# 宽度计算依赖按"字符"迭代：cron/systemd/ssh 下常见 LC_ALL=C/POSIX，那时
+# ${s:i:1} 按字节切分，中文会被算成 3 列。必要时用 C.UTF-8 覆盖（仅函数内）。
+_UI_NEEDS_UTF8=0
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+  *UTF-8*|*utf8*|*UTF8*) ;;
+  *)
+    if LC_ALL=C.UTF-8 locale charmap 2>/dev/null | grep -q UTF-8; then
+      _UI_NEEDS_UTF8=1
+    fi
+    ;;
+esac
+
 # ------------------------------------------------------------------------------
 # 颜色决策：UI_FORCE_COLOR > NO_COLOR > TTY 检测
 # ------------------------------------------------------------------------------
 _ui_use_color() {
-  if [[ -n "${UI_FORCE_COLOR:-}" ]]; then
-    return 0
-  fi
+  # UI_FORCE_COLOR=1/true/yes 强制上色，=0/false/no 明确关闭；
+  # 旧实现只看"非空"，于是 UI_FORCE_COLOR=0 反而会强制上色。
+  case "${UI_FORCE_COLOR:-}" in
+    1|true|yes) return 0 ;;
+    0|false|no) return 1 ;;
+  esac
   if [[ -n "${NO_COLOR:-}" ]]; then
     return 1
   fi
@@ -106,23 +121,136 @@ BLUE="$UI_BLUE"
 CYAN="$UI_CYAN"
 
 # ------------------------------------------------------------------------------
+# sudo 保活
+#   ui_sudo_keepalive_start ["提示文案"]  校验管理员权限并启动后台保活
+#   ui_sudo_keepalive_stop                停止保活（幂等）
+# 原来 sysup 和 clean 各写一份，细节已经不一致：clean 会在保活子进程里关掉
+# 维护锁描述符，sysup 不会——那会让退出后的孤儿 sleep 继续持锁。这里以正确的
+# 那一份为准统一。调用方需要把 ui_sudo_keepalive_stop 接进自己的 trap 链。
+# ------------------------------------------------------------------------------
+UI_SUDO_KEEPALIVE_PID=""
+
+ui_sudo_keepalive_start() {
+  local prompt="${1:-}"
+
+  [[ -z "$UI_SUDO_KEEPALIVE_PID" ]] || return 0
+  command -v sudo >/dev/null 2>&1 || return 127
+  [[ -z "$prompt" ]] || ui_info "%s" "$prompt"
+  sudo -v || return 1
+  # 主进程被 SIGKILL 时 EXIT trap 跑不到，保活子进程必须自己发现父进程消失后退出；
+  # 否则会变成永久孤儿，每 60 秒继续 sudo -n true。
+  local keepalive_parent="${BASHPID:-$$}"
+  (
+    # 后台保活绝不能继承维护锁，否则主脚本退出后孤儿 sleep 会继续持锁，
+    # 导致紧接着运行 quicksave 被误判为“另一项维护正在运行”。
+    if [[ "${UI_MAINTENANCE_LOCK_FD:-}" =~ ^[0-9]+$ ]]; then
+      exec {UI_MAINTENANCE_LOCK_FD}>&-
+    fi
+    while true; do
+      kill -0 "$keepalive_parent" 2>/dev/null || exit 0
+      # 凭据已过期就没必要继续保活。
+      sudo -n true 2>/dev/null || exit 0
+      sleep 60
+    done
+  ) </dev/null >/dev/null 2>&1 &
+  UI_SUDO_KEEPALIVE_PID=$!
+}
+
+ui_sudo_keepalive_stop() {
+  [[ -n "$UI_SUDO_KEEPALIVE_PID" ]] || return 0
+  pkill -TERM -P "$UI_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  kill "$UI_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  wait "$UI_SUDO_KEEPALIVE_PID" 2>/dev/null || true
+  UI_SUDO_KEEPALIVE_PID=""
+}
+
+# ------------------------------------------------------------------------------
+# 临时文件登记与清理
+#   ui_tmp_register 路径...  登记本进程创建的临时文件/目录
+#   ui_tmp_discard  路径...  立即删除并从登记表移除（正常路径用）
+#   ui_tmp_cleanup           删除全部登记项，幂等；只在登记它们的进程里生效
+#
+# 调用方要自己把 ui_tmp_cleanup 接进 trap 链，例如：
+#   trap 'ui_tmp_cleanup' EXIT
+# 注意：命令替换是子 shell，在里面登记不会传回父 shell，必须在父 shell 登记：
+#   f="$(mktemp)"; ui_tmp_register "$f"
+# ------------------------------------------------------------------------------
+UI_TMP_PATHS=()
+UI_TMP_OWNER_PID="${BASHPID:-$$}"
+
+ui_tmp_register() {
+  (( $# > 0 )) || return 0
+  UI_TMP_PATHS+=("$@")
+}
+
+ui_tmp_discard() {
+  local path target keep=()
+
+  (( $# > 0 )) || return 0
+  for target in "$@"; do
+    rm -rf -- "$target" 2>/dev/null || true
+  done
+  for path in ${UI_TMP_PATHS[@]+"${UI_TMP_PATHS[@]}"}; do
+    for target in "$@"; do
+      [[ "$path" == "$target" ]] && continue 2
+    done
+    keep+=("$path")
+  done
+  UI_TMP_PATHS=(${keep[@]+"${keep[@]}"})
+}
+
+ui_tmp_cleanup() {
+  # 子 shell 不能替父进程清理：并行任务里删掉同伴的文件是灾难。
+  [[ "${BASHPID:-$$}" == "$UI_TMP_OWNER_PID" ]] || return 0
+  (( ${#UI_TMP_PATHS[@]} > 0 )) || return 0
+  rm -rf -- "${UI_TMP_PATHS[@]}" 2>/dev/null || true
+  UI_TMP_PATHS=()
+}
+
+# ------------------------------------------------------------------------------
 # 日志函数
-#   第一个参数是 printf 格式串，其余作为参数。纯文本消息请避免包含裸 %。
+#   第一个参数是 printf 格式串，其余作为参数。
+#   消息里出现"裸 %"（例如"已完成 100%"）时 printf 会把它当格式符：文本被截断，
+#   而且在 set -e 的调用方里会直接中止整个脚本。这里先判断格式串是否安全，
+#   不安全就按纯文本输出，避免文案或用户数据把脚本打挂。
 #   ui_info/ui_ok/ui_warn/ui_err 打印到 stdout；ui_die 打印后 exit 1。
 # ------------------------------------------------------------------------------
 # 徽章前缀：TTY 下为「图标 」（图标后一个空格），非 TTY 下为「[标签] 」。
 # 图标本身占 2 列，故 TTY 分支统一补 1 空格，视觉与文字标签「[xx] 」对齐。
-ui_info() { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_SAPPHIRE}${UI_ICON_INFO}${UI_RESET} ${fmt}\n" "$@"; }
+# 纯 Bash 判断格式串是否只含合法转换（含宽度/精度/%%），不额外 fork。
+_ui_fmt_is_safe() {
+  local s="$1"
+  while [[ "$s" =~ %[-+\ #0-9.]*[sdqbioxXeEfgGc%] ]]; do
+    s="${s/"${BASH_REMATCH[0]}"/}"
+  done
+  [[ "$s" != *%* ]]
+}
+
+_ui_log() { # $1=颜色 $2=图标，其后为 格式串 [参数...]
+  local color="$1" icon="$2" fmt
+  shift 2
+  fmt="${1:-}"
+  shift 2>/dev/null || true
+  if _ui_fmt_is_safe "$fmt"; then
+    printf "${color}${icon}${UI_RESET} ${fmt}\n" "$@"
+  elif (( $# > 0 )); then
+    printf "%s%s%s %s %s\n" "$color" "$icon" "$UI_RESET" "$fmt" "$*"
+  else
+    printf "%s%s%s %s\n" "$color" "$icon" "$UI_RESET" "$fmt"
+  fi
+}
+
+ui_info() { _ui_log "$UI_C_SAPPHIRE" "$UI_ICON_INFO" "$@"; }
 # 在可能持续数秒至数分钟的同步操作前调用。它不是百分比进度条，
 # 但会立即告诉用户当前卡在哪个阶段，避免空白终端看起来像已卡死。
 ui_working() { local text="${1:-}"; ui_info "%s；请稍候…" "${text:-正在处理}"; }
-ui_ok()   { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_GREEN}${UI_ICON_OK}${UI_RESET} ${fmt}\n" "$@"; }
-ui_warn() { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_YELLOW}${UI_ICON_WARN}${UI_RESET} ${fmt}\n" "$@"; }
-ui_err()  { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_RED}${UI_ICON_ERR}${UI_RESET} ${fmt}\n" "$@" >&2; }
+ui_ok()   { _ui_log "$UI_C_GREEN" "$UI_ICON_OK" "$@"; }
+ui_warn() { _ui_log "$UI_C_YELLOW" "$UI_ICON_WARN" "$@"; }
+ui_err()  { _ui_log "$UI_C_RED" "$UI_ICON_ERR" "$@" >&2; }
 ui_die()  { ui_err "$@"; exit 1; }
 
 # 缺失/未检出项，用于检查类脚本
-ui_miss() { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_YELLOW}${UI_ICON_MISS}${UI_RESET} ${fmt}\n" "$@"; }
+ui_miss() { _ui_log "$UI_C_YELLOW" "$UI_ICON_MISS" "$@"; }
 
 # ------------------------------------------------------------------------------
 # 跨维护脚本互斥锁。sudo/pkexec 后沿用原始用户 UID，受控子脚本可继承
@@ -130,9 +258,27 @@ ui_miss() { local fmt="${1:-}"; shift 2>/dev/null || true; printf "${UI_C_YELLOW
 # ------------------------------------------------------------------------------
 ui_maintenance_lock_acquire() {
   local operation="${1:-系统维护}"
-  local lock_uid lock_file lock_home inherited_target expected_target
+  local lock_uid lock_file lock_home lock_dir inherited_target expected_target
 
-  lock_uid="${SUDO_UID:-${PKEXEC_UID:-$(id -u)}}"
+  lock_uid="${SUDO_UID:-${PKEXEC_UID:-}}"
+  # root 直接运行（root shell / systemd / 不带 sudo 前缀）时没有 SUDO_UID：若按
+  # id -u 取 0，root 与普通用户会各持一把锁、互不排斥（README 承诺的"同一把
+  # flock"就不成立）。这里尽量找出真正的操作者，找不到才退回当前 uid。
+  if [[ ! "$lock_uid" =~ ^[0-9]+$ ]]; then
+    if [[ "$(id -u)" -eq 0 ]]; then
+      if [[ -n "${SUDO_USER:-}" ]]; then
+        lock_uid="$(id -u "$SUDO_USER" 2>/dev/null || true)"
+      fi
+      if [[ ! "$lock_uid" =~ ^[0-9]+$ ]] && command -v logname >/dev/null 2>&1; then
+        local tty_user
+        tty_user="$(logname 2>/dev/null || true)"
+        if [[ -n "$tty_user" ]]; then
+          lock_uid="$(id -u "$tty_user" 2>/dev/null || true)"
+        fi
+      fi
+    fi
+    [[ "$lock_uid" =~ ^[0-9]+$ ]] || lock_uid="$(id -u)"
+  fi
   # 不能把可由普通用户创建的锁文件放在 sticky /tmp：root 经 sudo 重新执行时，
   # Linux 的 fs.protected_regular 会拒绝带 O_CREAT 的追加打开，导致高风险恢复
   # 在真正提权后反而无法取得同一把锁。默认改放到原用户 HOME 的缓存目录；
@@ -141,15 +287,26 @@ ui_maintenance_lock_acquire() {
     lock_file="$MAINTENANCE_LOCK_FILE"
   else
     lock_home="$HOME"
-    if [[ "${SUDO_UID:-}" =~ ^[0-9]+$ ]] && command -v getent >/dev/null 2>&1; then
-      lock_home="$(getent passwd "$lock_uid" 2>/dev/null | awk -F: 'NR == 1 {print $6}')"
+    if command -v getent >/dev/null 2>&1; then
+      local owner_home
+      owner_home="$(getent passwd "$lock_uid" 2>/dev/null | awk -F: 'NR == 1 {print $6}')"
+      if [[ -n "$owner_home" && -d "$owner_home" ]]; then
+        lock_home="$owner_home"
+      fi
     fi
     [[ -n "$lock_home" && -d "$lock_home" ]] || lock_home="$HOME"
-    lock_file="$lock_home/.cache/maintenance/maintenance-${lock_uid}.lock"
-    if ! mkdir -p "$(dirname "$lock_file")"; then
-      ui_err "无法创建维护锁目录：%s" "$(dirname "$lock_file")"
+    lock_dir="$lock_home/.cache/maintenance"
+    lock_file="$lock_dir/maintenance-${lock_uid}.lock"
+    if ! mkdir -p "$lock_dir"; then
+      ui_err "无法创建维护锁目录：%s" "$lock_dir"
       return 73
     fi
+    # root 先跑会在用户目录里留下 root:root 的目录/文件，之后普通用户打开会
+    # EACCES（退出码 73）。尽力把属主与权限校正回锁属主。
+    if [[ "$(id -u)" -eq 0 && "$lock_uid" != "0" ]]; then
+      chown "$lock_uid" "$lock_dir" 2>/dev/null || true
+    fi
+    chmod 700 "$lock_dir" 2>/dev/null || true
   fi
 
   if [[ "${MAINTENANCE_LOCK_HELD:-0}" == "1" \
@@ -172,6 +329,11 @@ ui_maintenance_lock_acquire() {
     ui_err "无法打开维护锁：%s" "$lock_file"
     return 73
   fi
+  # 锁文件本身也必须属于锁属主且不可被他人改写。
+  if [[ "$(id -u)" -eq 0 && "$lock_uid" != "0" ]]; then
+    chown "$lock_uid" "$lock_file" 2>/dev/null || true
+  fi
+  chmod 600 "$lock_file" 2>/dev/null || true
   if ! flock -n "$UI_MAINTENANCE_LOCK_FD"; then
     exec {UI_MAINTENANCE_LOCK_FD}>&-
     unset UI_MAINTENANCE_LOCK_FD
@@ -195,28 +357,51 @@ ui_maintenance_lock_release() {
 # ------------------------------------------------------------------------------
 # 终端宽度助手
 # ------------------------------------------------------------------------------
-ui_cols() {
+# 终端列数：进程内缓存一次 tput 结果（子 shell 会继承父进程已填好的缓存，
+# 因此同一次运行里的多次卡片渲染只 fork 一次 tput）。
+_UI_COLS_CACHE=""
+UI_COLS_RESULT=80
+_ui_cols_calc() {
+  if [[ "$_UI_COLS_CACHE" =~ ^[0-9]+$ ]]; then
+    UI_COLS_RESULT="$_UI_COLS_CACHE"
+    return 0
+  fi
   local c
   c="$(tput cols 2>/dev/null || true)"
   if [[ ! "$c" =~ ^[0-9]+$ ]]; then
     c=80
   fi
-  printf '%s' "$c"
+  _UI_COLS_CACHE="$c"
+  UI_COLS_RESULT="$c"
+}
+
+ui_cols() {
+  _ui_cols_calc
+  printf '%s' "$UI_COLS_RESULT"
 }
 
 # 共享内容宽度：按实时终端列数计算，不设桌面端最大宽度。
 # UI_EDGE_GAP 可调整右侧安全区（默认 2 列，用于避免终端自动换行）。
 # 极窄终端下绝不返回比当前终端更大的值。
-_ui_rule_width() {
+# 结果同时写入 UI_RULE_WIDTH_RESULT：脚本内部的卡片渲染直接读它，
+# 不再为每张卡片各开一个子 shell 去取一次宽度。
+UI_RULE_WIDTH_RESULT=78
+_ui_rule_width_get() {
   local cols gap w
-  cols="$(ui_cols)"
+  _ui_cols_calc
+  cols="$UI_COLS_RESULT"
   gap="${UI_EDGE_GAP:-2}"
   [[ "$gap" =~ ^[0-9]+$ ]] || gap=2
   (( gap >= cols )) && gap=0
   w=$(( cols - gap ))
   (( w < 1 )) && w=1
   (( w > cols )) && w=$cols
-  printf '%s' "$w"
+  UI_RULE_WIDTH_RESULT="$w"
+}
+
+_ui_rule_width() {
+  _ui_rule_width_get
+  printf '%s' "$UI_RULE_WIDTH_RESULT"
 }
 
 # ------------------------------------------------------------------------------
@@ -226,7 +411,8 @@ _ui_rule_width() {
 ui_hr() {
   local width="${1:-}"
   local i max_width
-  max_width=$(_ui_rule_width)
+  _ui_rule_width_get
+  max_width="$UI_RULE_WIDTH_RESULT"
   if [[ -z "$width" ]]; then
     width=$max_width
   fi
@@ -246,13 +432,12 @@ ui_hr() {
 ui_section() {
   local title="$1"
   local width fill i title_w
-  width=$(_ui_rule_width)
+  _ui_rule_width_get
+  width="$UI_RULE_WIDTH_RESULT"
 
-  # 估算标题显示宽度：非 ASCII 字节按占 2 列近似（中文场景足够用）。
-  local bytes chars
-  chars=${#title}
-  bytes=$(LC_ALL=C; echo -n "$title" | wc -c)
-  title_w=$(( (bytes - chars) / 2 + chars ))
+  # 标题宽度按显示列精确计算（CJK/emoji 计 2 列），不再用字节差估算并 fork wc。
+  _ui_dwidth_calc "$title"
+  title_w="$UI_DWIDTH_RESULT"
 
   # "╭─ " = 3 列，标题右侧留 1 空格
   fill=$(( width - 4 - title_w ))
@@ -293,35 +478,110 @@ ui_subsection() {
 #   剥离 ANSI CSI 序列；CJK/全角/emoji 计 2 列，组合记号计 0 列，其余 1 列。
 #   自解码 UTF-8，仅依赖 awk，无外部依赖。
 # ------------------------------------------------------------------------------
+# 纯 Bash 实现：printf %d 取码点 + 关联数组记忆化，避免每次调用都 fork 一个 awk。
+# 旧实现每次调用约 2.4ms，「查看快照」整屏 38 行 × 5 列要 190 次 fork（0.64 秒）。
+# 必须用 -gA：lib 可能被"函数内部的 source"加载（例如测试夹具），普通 declare
+# 会退化成该函数的局部变量，函数返回后数组消失，随后 ${arr[$key]} 会被当成算术
+# 下标并对中文字符串报"算术语法错误"，进而让调用方静默中断。
+_UI_DWIDTH_CACHE_DECLARED=1
+declare -gA _UI_DWIDTH_CACHE=()
+UI_DWIDTH_RESULT=0
+UI_STRIP_RESULT=""
+
+# 是否为纯 ASCII 可打印串（按字节判断，故临时切到 C locale）
+_ui_is_ascii() {
+  local LC_ALL=C
+  [[ "$1" != *[!\ -~]* ]]
+}
+
+# 剥离 ANSI CSI 序列，结果写入 UI_STRIP_RESULT（按字节处理，多字节内容原样保留）
+_ui_strip_ansi() {
+  local LC_ALL=C
+  local s="$1" out="" head tail params
+
+  while [[ "$s" == *$'\e'* ]]; do
+    head="${s%%$'\e'*}"
+    tail="${s#*$'\e'}"
+    if [[ "$tail" == '['* ]]; then
+      tail="${tail#\[}"
+      params="${tail%%[@-~]*}"
+      if [[ "$params" == "$tail" ]]; then
+        tail=""
+      else
+        tail="${tail:${#params}+1}"
+      fi
+    fi
+    out+="$head"
+    s="$tail"
+  done
+  UI_STRIP_RESULT="$out$s"
+}
+
+# 计算显示宽度，结果写入 UI_DWIDTH_RESULT（不经子 shell，缓存才留得住）
+_ui_dwidth_calc() {
+  local key="${1:-}" cached s w=0 n i ch code
+
+  # 兜底：若缓存数组不是"关联数组"（历史加载路径导致），重新声明为全局关联数组。
+  if [[ -z "${_UI_DWIDTH_CACHE_DECLARED:-}" ]]; then
+    _UI_DWIDTH_CACHE_DECLARED=1
+    declare -gA _UI_DWIDTH_CACHE=()
+  fi
+
+  # 非 UTF-8 环境（LC_ALL=C/POSIX）下 ${s:i:1} 会按字节切分，中文会被算成 3 列；
+  # 这里在本函数内临时强制 C.UTF-8，只影响宽度计算，不改调用方的 locale。
+  if (( _UI_NEEDS_UTF8 == 1 )); then
+    local LC_ALL=C.UTF-8
+  fi
+
+  # 空串直接为 0：关联数组不接受空下标。
+  if [[ -z "$key" ]]; then
+    UI_DWIDTH_RESULT=0
+    return 0
+  fi
+  cached="${_UI_DWIDTH_CACHE[$key]:-}"
+  if [[ -n "$cached" ]]; then
+    UI_DWIDTH_RESULT="$cached"
+    return 0
+  fi
+
+  if [[ "$key" == *$'\e'* ]]; then
+    _ui_strip_ansi "$key"
+    s="$UI_STRIP_RESULT"
+  else
+    s="$key"
+  fi
+
+  if _ui_is_ascii "$s"; then
+    w=${#s}
+  else
+    n=${#s}
+    for ((i = 0; i < n; i++)); do
+      ch="${s:i:1}"
+      printf -v code '%d' "'$ch"
+      if (( code == 0 || (code >= 0x300 && code <= 0x36F) )); then
+        continue
+      fi
+      if (( (code >= 0x1100 && code <= 0x115F) || (code >= 0x2E80 && code <= 0x303E) ||
+            (code >= 0x3041 && code <= 0x33FF) || (code >= 0x3400 && code <= 0x4DBF) ||
+            (code >= 0x4E00 && code <= 0x9FFF) || (code >= 0xA000 && code <= 0xA4CF) ||
+            (code >= 0xAC00 && code <= 0xD7A3) || (code >= 0xF900 && code <= 0xFAFF) ||
+            (code >= 0xFE30 && code <= 0xFE4F) || (code >= 0xFF00 && code <= 0xFF60) ||
+            (code >= 0xFFE0 && code <= 0xFFE6) || (code >= 0x1F300 && code <= 0x1FAFF) ||
+            (code >= 0x20000 && code <= 0x3FFFD) )); then
+        w=$(( w + 2 ))
+      else
+        w=$(( w + 1 ))
+      fi
+    done
+  fi
+
+  _UI_DWIDTH_CACHE["$key"]="$w"
+  UI_DWIDTH_RESULT="$w"
+}
+
 ui_dwidth() {
-  LC_ALL=C awk '
-    function cw(cp) {
-      if (cp == 0) return 0
-      if (cp >= 0x300 && cp <= 0x36F) return 0
-      if ((cp>=0x1100&&cp<=0x115F)||(cp>=0x2E80&&cp<=0x303E)||(cp>=0x3041&&cp<=0x33FF)||\
-          (cp>=0x3400&&cp<=0x4DBF)||(cp>=0x4E00&&cp<=0x9FFF)||(cp>=0xA000&&cp<=0xA4CF)||\
-          (cp>=0xAC00&&cp<=0xD7A3)||(cp>=0xF900&&cp<=0xFAFF)||(cp>=0xFE30&&cp<=0xFE4F)||\
-          (cp>=0xFF00&&cp<=0xFF60)||(cp>=0xFFE0&&cp<=0xFFE6)||(cp>=0x1F300&&cp<=0x1FAFF)||\
-          (cp>=0x20000&&cp<=0x3FFFD)) return 2
-      return 1
-    }
-    BEGIN { for (i=0;i<256;i++) ord[sprintf("%c",i)]=i; w=0; st=0; need=0; cp=0 }
-    {
-      n=length($0)
-      for (i=1;i<=n;i++) {
-        b=ord[substr($0,i,1)]
-        if (st==1) { if (b>=0x40 && b<=0x7E) st=0; continue }
-        if (st==2) { if (b==91) st=1; else st=0; continue }
-        if (b==27) { st=2; continue }
-        if (need>0) { cp=cp*64+(b-128); need--; if (need==0) w+=cw(cp); continue }
-        if (b<0x80) { w+=cw(b) }
-        else if (b>=0xC0 && b<0xE0) { cp=b-0xC0; need=1 }
-        else if (b>=0xE0 && b<0xF0) { cp=b-0xE0; need=2 }
-        else if (b>=0xF0) { cp=b-0xF0; need=3 }
-      }
-    }
-    END { print w }
-  ' <<< "$1"
+  _ui_dwidth_calc "${1:-}"
+  printf '%s\n' "$UI_DWIDTH_RESULT"
 }
 
 # ------------------------------------------------------------------------------
@@ -397,13 +657,14 @@ ui_wrap() {
 }
 
 # ui_pad STR WIDTH  → STR 右侧补空格至 WIDTH 显示列（不截断），用于列对齐
+# ui_pad STR WIDTH  → STR 右侧补空格至 WIDTH 显示列（不截断），用于列对齐
 ui_pad() {
-  local s="$1" width="$2" cur pad i
-  cur="$(ui_dwidth "$s")"
-  pad=$(( width - cur ))
+  local s="${1:-}" width="${2:-0}" pad
+
+  _ui_dwidth_calc "$s"
+  pad=$(( width - UI_DWIDTH_RESULT ))
   (( pad < 0 )) && pad=0
-  printf '%s' "$s"
-  for ((i = 0; i < pad; i++)); do printf ' '; done
+  printf '%s%*s' "$s" "$pad" ''
 }
 
 # ------------------------------------------------------------------------------
@@ -411,7 +672,8 @@ ui_pad() {
 # ------------------------------------------------------------------------------
 ui_banner() {
   local title="$1" sub="${2:-}" w i
-  w=$(_ui_rule_width)
+  _ui_rule_width_get
+  w="$UI_RULE_WIDTH_RESULT"
   printf '\n'
   printf "${UI_C_MAUVE}"; for ((i = 0; i < w; i++)); do printf '━'; done; printf "${UI_RESET}\n"
   if [[ -n "$sub" ]]; then
@@ -425,7 +687,8 @@ ui_banner() {
 # ui_panel_open "标题" ["图标"]  → 卡片开头
 ui_panel_open() {
   local title="$1" icon="${2:-}" w tw head used fill i
-  w=$(_ui_rule_width)
+  _ui_rule_width_get
+  w="$UI_RULE_WIDTH_RESULT"
   if [[ -n "$icon" ]]; then head="$icon  $title"; else head="$title"; fi
   tw="$(ui_dwidth "$head")"
   printf "\n${UI_C_LAVENDER}╭─ ${UI_C_MAUVE}${UI_BOLD}%s${UI_RESET} ${UI_C_LAVENDER}" "$head"
@@ -439,7 +702,8 @@ ui_panel_open() {
 # ui_panel_close  → 卡片结尾
 ui_panel_close() {
   local w i
-  w=$(_ui_rule_width)
+  _ui_rule_width_get
+  w="$UI_RULE_WIDTH_RESULT"
   printf "${UI_C_LAVENDER}╰"
   for ((i = 0; i < w - 1; i++)); do printf '─'; done
   printf "${UI_RESET}\n"
@@ -467,14 +731,16 @@ ui_panel_kv() {
 }
 
 # ui_panel_stat STATUS "文本"  → 徽章状态行，STATUS ∈ ok|warn|miss|err|info
-#   同时累计 UI_N_OK / UI_N_WARN / UI_N_MISS，供 ui_tally_summary 使用。
+#   同时累计 UI_N_OK / UI_N_WARN / UI_N_MISS / UI_N_ERR，供 ui_tally_summary 使用。
+#   err 是"查询失败/无法检查"，必须与"缺失（确实没有）"分开统计：旧实现把
+#   err 计进 UI_N_MISS，汇总行会把查询失败显示成"缺失"，违背"失败≠缺失"的约定。
 ui_panel_stat() {
   local status="$1" text="${2:-}" icon color
   case "$status" in
     ok)   icon="$UI_ICON_OK";   color="$UI_C_GREEN";    UI_N_OK=$(( ${UI_N_OK:-0} + 1 )) ;;
     warn) icon="$UI_ICON_WARN"; color="$UI_C_YELLOW";   UI_N_WARN=$(( ${UI_N_WARN:-0} + 1 )) ;;
     miss) icon="$UI_ICON_MISS"; color="$UI_C_YELLOW";   UI_N_MISS=$(( ${UI_N_MISS:-0} + 1 )) ;;
-    err)  icon="$UI_ICON_ERR";  color="$UI_C_RED";      UI_N_MISS=$(( ${UI_N_MISS:-0} + 1 )) ;;
+    err)  icon="$UI_ICON_ERR";  color="$UI_C_RED";      UI_N_ERR=$(( ${UI_N_ERR:-0} + 1 )) ;;
     *)    icon="$UI_ICON_INFO"; color="$UI_C_SAPPHIRE" ;;
   esac
   printf "${UI_C_LAVENDER}│${UI_RESET}  ${color}%s${UI_RESET} %s\n" "$icon" "$text"
@@ -490,16 +756,16 @@ ui_panel_raw() {
 }
 
 # 结果统计
-ui_tally_reset() { UI_N_OK=0; UI_N_WARN=0; UI_N_MISS=0; }
+ui_tally_reset() { UI_N_OK=0; UI_N_WARN=0; UI_N_MISS=0; UI_N_ERR=0; }
 ui_tally_summary() {
-  printf "\n  ${UI_C_GREEN}${UI_ICON_OK}${UI_RESET} %s 正常     ${UI_C_YELLOW}${UI_ICON_WARN}${UI_RESET} %s 注意     ${UI_C_YELLOW}${UI_ICON_MISS}${UI_RESET} %s 缺失\n" \
-    "${UI_N_OK:-0}" "${UI_N_WARN:-0}" "${UI_N_MISS:-0}"
+  printf "\n  ${UI_C_GREEN}${UI_ICON_OK}${UI_RESET} %s 正常     ${UI_C_YELLOW}${UI_ICON_WARN}${UI_RESET} %s 注意     ${UI_C_YELLOW}${UI_ICON_MISS}${UI_RESET} %s 缺失     ${UI_C_RED}${UI_ICON_ERR}${UI_RESET} %s 查询失败\n" \
+    "${UI_N_OK:-0}" "${UI_N_WARN:-0}" "${UI_N_MISS:-0}" "${UI_N_ERR:-0}"
 }
 
 # 检查脚本自动化状态：普通交互保持 0；--strict 下有警告或缺失即返回 1。
 ui_tally_status() {
   local strict="${1:-0}"
-  if [[ "$strict" == "1" ]] && (( ${UI_N_WARN:-0} > 0 || ${UI_N_MISS:-0} > 0 )); then
+  if [[ "$strict" == "1" ]] && (( ${UI_N_WARN:-0} > 0 || ${UI_N_MISS:-0} > 0 || ${UI_N_ERR:-0} > 0 )); then
     return 1
   fi
   return 0
@@ -517,7 +783,12 @@ ui_confirm() {
   local hint answer
   if [[ "$default" == "y" ]]; then hint="[Y/n]"; else hint="[y/N]"; fi
   printf "${UI_YELLOW}%s${UI_RESET} %s " "$prompt" "$hint"
-  read -r answer || true
+  # EOF / 读错误必须视为"未确认"：旧实现把它当成回车，于是 </dev/null 或管道
+  # 结束时会用默认值回答，默认 y 的高风险提示就被自动同意了。
+  if ! read -r answer; then
+    printf '\n' >&2
+    return 1
+  fi
   answer="${answer:-$default}"
   [[ "$answer" =~ ^[yY]$ ]]
 }
@@ -544,7 +815,8 @@ ui_wait_key() {
 
   [[ -t 0 ]] || return 0
 
-  w=$(_ui_rule_width)
+  _ui_rule_width_get
+  w="$UI_RULE_WIDTH_RESULT"
   hint_w="$(ui_dwidth "$hint")"
   left=$(( (w - 2 - hint_w) / 2 ))
   (( left < 0 )) && left=0
@@ -636,7 +908,7 @@ ui_status_line() {
   # CPU：1 分钟平均负载
   read -r load _ < /proc/loadavg 2>/dev/null || load="?"
 
-  # RAM：已用 / 总量（GiB，一位小数）
+  # RAM：已用 / 总量（GiB，一位小数）。纯 Bash 定点换算，不再为两个数字 fork 两次 awk。
   if [[ -r /proc/meminfo ]]; then
     local kb_total=0 kb_avail=0 k v
     while read -r k v _; do
@@ -646,9 +918,11 @@ ui_status_line() {
       esac
     done < /proc/meminfo
     if (( kb_total > 0 )); then
-      mem_total_gib=$(awk "BEGIN{printf \"%.1f\", $kb_total/1048576}")
-      mem_used_gib=$(awk "BEGIN{printf \"%.1f\", ($kb_total-$kb_avail)/1048576}")
-      mem_line="${mem_used_gib}/${mem_total_gib}G"
+      local total_tenths used_tenths
+      total_tenths=$(( (kb_total * 10 + 524288) / 1048576 ))
+      used_tenths=$(( ((kb_total - kb_avail) * 10 + 524288) / 1048576 ))
+      (( used_tenths < 0 )) && used_tenths=0
+      mem_line="$(( used_tenths / 10 )).$(( used_tenths % 10 ))/$(( total_tenths / 10 )).$(( total_tenths % 10 ))G"
     else
       mem_line="?"
     fi
@@ -656,14 +930,32 @@ ui_status_line() {
     mem_line="?"
   fi
 
-  # Disk：根分区使用率
-  disk="$(df -h --output=pcent / 2>/dev/null | tail -1 | tr -d ' %')"
+  # Disk：根分区使用率（Bash 解析 df 输出，省掉 tail / tr 两个进程）
+  disk=""
+  while IFS= read -r line; do
+    [[ "$line" == *% ]] && disk="$line"
+  done < <(df --output=pcent / 2>/dev/null)
+  disk="${disk//[ %]/}"
   [[ -n "$disk" ]] && disk="${disk}%" || disk="?"
 
-  # Net：默认路由网卡
-  iface="$(ip route show default 2>/dev/null | awk '/default/{print $5; exit}')"
+  # Net：默认路由网卡（Bash 解析 ip 输出，省掉 awk）
+  iface=""
+  local route_line route_parts i
+  route_line="$(ip route show default 2>/dev/null)" || route_line=""
+  route_line="${route_line%%$'\n'*}"
+  IFS=' ' read -r -a route_parts <<< "$route_line"
+  for ((i = 0; i < ${#route_parts[@]}; i++)); do
+    if [[ "${route_parts[i]}" == "dev" && $(( i + 1 )) -lt ${#route_parts[@]} ]]; then
+      iface="${route_parts[i + 1]}"
+      break
+    fi
+  done
   [[ -n "$iface" ]] || iface="离线"
 
+  # 时钟：bash 内建 printf 直接格式化时间，省掉 date 进程。
+  local clock
+  printf -v clock '%(%H:%M)T' -1 2>/dev/null || clock="--:--"
+
   # 图标：nf-oct-cpu / nf-fa-memory / nf-fa-hdd_o / nf-md-lan
-  printf ' %s  %s   %s   %s   %s' "$load" "$mem_line" "$disk" "$iface" "$(date '+%H:%M')"
+  printf ' %s  %s   %s   %s   %s' "$load" "$mem_line" "$disk" "$iface" "$clock"
 }

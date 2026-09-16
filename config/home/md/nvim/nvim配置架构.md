@@ -70,7 +70,7 @@ init.lua
 │       └── lang/
 │           ├── init.lua        ← 聚合入口
 │           ├── cpp.lua         ← clangd 扩展 + codelldb C/C++/Rust 调试
-│           ├── java.lua        ← nvim-jdtls + Java 调试
+│           ├── java.lua        ← nvim-jdtls + Java 测试/调试
 │           ├── go.lua          ← gopls + delve Go 调试
 │           └── rust.lua        ← rust_analyzer 扩展 + codelldb Rust 调试
 ```

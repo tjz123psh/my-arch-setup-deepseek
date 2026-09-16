@@ -200,7 +200,7 @@ while [[ $# -gt 0 ]]; do
   -c | --config)
     if [[ $# -lt 2 ]]; then
       notify_err "$MSG_NEEDS_ARG" "$1"
-      exit 1
+      exit 2
     fi
     OPT_CONFIG="$2"
     shift 2
@@ -224,7 +224,7 @@ while [[ $# -gt 0 ]]; do
   -d | --description)
     if [[ $# -lt 2 ]]; then
       notify_err "$MSG_NEEDS_ARG" "$1"
-      exit 1
+      exit 2
     fi
     OPT_DESC="$2"
     shift 2
@@ -232,7 +232,7 @@ while [[ $# -gt 0 ]]; do
   --snapshot-date)
     if [[ $# -lt 2 ]]; then
       notify_err "$MSG_NEEDS_ARG" "$1"
-      exit 1
+      exit 2
     fi
     TARGET_SNAPSHOT_DATE="$2"
     shift 2
@@ -240,7 +240,7 @@ while [[ $# -gt 0 ]]; do
   --snapshot-batch)
     if [[ $# -lt 2 ]]; then
       notify_err "$MSG_NEEDS_ARG" "$1"
-      exit 1
+      exit 2
     fi
     TARGET_SNAPSHOT_BATCH="$2"
     shift 2
@@ -252,16 +252,21 @@ while [[ $# -gt 0 ]]; do
   --native-root-rollback)
     if [[ $# -lt 2 ]]; then
       notify_err "$MSG_NEEDS_ARG" "$1"
-      exit 1
+      exit 2
     fi
     OPT_NATIVE_ROOT_ROLLBACK="$2"
     shift 2
     ;;
   -x | --debug) shift 1 ;;
-  -h | --help) shift 1 ;;
+  # 旧实现只在“--help 是唯一参数”时才打印帮助，quickload -x --help 会直接往下跑。
+  -h | --help)
+    print_help
+    exit 0
+    ;;
   *)
+    # 退出码 2 = 命令行参数错误，与 README 的退出码约定一致。
     notify_err "$MSG_UNKNOWN_OPT" "${1:-}"
-    exit 1
+    exit 2
     ;;
   esac
 done
@@ -284,10 +289,11 @@ fi
 # ==========================================
 MOUNT_DIR=""
 IS_SNAPSHOT_BOOT=0
-declare -A CONFIG_MAP
+declare -gA CONFIG_MAP
 CONFIG_COUNT=0
 SNAP_SEP=$'\037'
-FALLBACK_DESCS=("quicksave" "timeline" "Manual Snapshot")
+# 例行快照描述：仅用于 -l 列表过滤，不再用来“猜”默认恢复目标。
+ROUTINE_DESCS=("quicksave" "timeline" "Manual Snapshot")
 
 cleanup() {
   if [[ -n "${MOUNT_DIR:-}" && -d "${MOUNT_DIR:-}" ]]; then
@@ -425,7 +431,15 @@ list_snapshot_descriptions() {
         continue
       fi
       if [[ "$show_all" == 0 ]]; then
-        if [[ "$desc" == "quicksave" || "$desc" == "timeline" || "$desc" == "Manual Snapshot" ]]; then
+        # 只列“自定义描述”的快照：例行描述（见 ROUTINE_DESCS）在这里跳过。
+        local routine=0 rd
+        for rd in "${ROUTINE_DESCS[@]}"; do
+          if [[ "$desc" == "$rd" ]]; then
+            routine=1
+            break
+          fi
+        done
+        if (( routine == 1 )); then
           continue
         fi
       fi
@@ -458,11 +472,17 @@ BA_PREFLIGHT_DONE=0
 BA_PREFLIGHT_OUTPUT=""
 probe_btrfs_assistant() {
   local status=0 reason="btrfs-assistant -l 探测失败"
+  # 普通用户直接运行 btrfs-assistant 会段错误，以 root 运行则正常。
+  # 记录这次探测到底有没有拿到管理员权限，失败原因才不会张冠李戴。
+  local privileged=0
   local -a probe_cmd=(env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR LC_ALL=C btrfs-assistant -l)
 
-  if [[ $EUID -ne 0 && "${QUICKLOAD_TEST_MODE:-0}" != "1" ]]; then
+  if [[ $EUID -eq 0 || "${QUICKLOAD_TEST_MODE:-0}" == "1" ]]; then
+    privileged=1
+  else
     if command -v sudo >/dev/null 2>&1 && sudo -n true >/dev/null 2>&1; then
       probe_cmd=(sudo -n env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR LC_ALL=C btrfs-assistant -l)
+      privileged=1
     elif [[ -t 0 && -t 1 ]] && command -v sudo >/dev/null 2>&1; then
       ui_info "恢复前先验证 btrfs-assistant 后端，需要管理员权限。"
       if ! sudo -v; then
@@ -470,8 +490,10 @@ probe_btrfs_assistant() {
         return 1
       fi
       probe_cmd=(sudo -n env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR LC_ALL=C btrfs-assistant -l)
+      privileged=1
     elif command -v pkexec >/dev/null 2>&1; then
       probe_cmd=(pkexec /usr/bin/env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR LC_ALL=C btrfs-assistant -l)
+      privileged=1
     fi
   fi
 
@@ -483,8 +505,20 @@ probe_btrfs_assistant() {
   if [[ "$status" -ne 0 ]]; then
     case "$status" in
       124) reason="btrfs-assistant 探测超时（15 秒）" ;;
-      139) reason="btrfs-assistant 发生段错误" ;;
+      139)
+        if (( privileged == 1 )); then
+          reason="btrfs-assistant 以管理员权限运行仍然段错误"
+        else
+          # 别把“没拿到权限”写成“后端崩溃”：以 root 跑同一条命令是正常的。
+          reason="没能以管理员权限探测恢复后端；普通用户直接运行 btrfs-assistant 会段错误，请在终端里重新运行并输入密码"
+        fi
+        ;;
       126|127) reason="btrfs-assistant 无法执行" ;;
+      *)
+        if (( privileged == 0 )); then
+          reason="没能以管理员权限探测恢复后端，请在终端里重新运行并输入密码"
+        fi
+        ;;
     esac
     notify_err "$MSG_ERR_BA_PREFLIGHT" "$reason" "$status" "${BA_PREFLIGHT_OUTPUT:-无输出}"
     return 1
@@ -513,21 +547,112 @@ if [[ -n "$OPT_NATIVE_ROOT_ROLLBACK" ]]; then
   TARGET_DESC="原生 root 回退"
 elif [[ -n "$OPT_DESC" ]]; then
   TARGET_DESC="$OPT_DESC"
-else
-  for test_desc in "${FALLBACK_DESCS[@]}"; do
-    if [[ -n "${CONFIG_MAP["root"]:-}" ]]; then
-      test_conf="root"
+fi
+# 这里刻意不再按 FALLBACK_DESCS 猜一个描述：旧实现会选中“最后一个描述叫
+# quicksave 的快照”，于是 sysup 建的 quicksave-sysup 永远选不中，默认恢复
+# 可能把系统退回好几天前。真正的目标改到 execute_restore 里按时间解析。
+
+# 返回指定 ID 的“时间|描述”，供确认页展示确切的恢复目标。
+get_snap_row_by_id() {
+  local conf="$1" wanted="$2"
+  get_snapper_list_output "$conf" | awk -F "$SNAP_SEP" -v id="$wanted" '$1 == id { print $2 "|" $3; exit }'
+}
+
+# 自动挑选默认恢复目标（用户没给 -d / --snapshot-date / --snapshot-batch 时）。
+#   单个配置：直接取最新的快照。
+#   多个配置：取最新的一套“各配置都在”的批次；没有批次再退回最新快照的描述+时间。
+# 结果写入 TARGET_SNAPSHOT_BATCH 或 OPT_DESC + TARGET_SNAPSHOT_DATE。
+auto_resolve_default_target() {
+  local -a confs=("$@")
+  local primary="${confs[0]}"
+  local conf list_out sid date desc userdata batch complete i
+  local -A batch_seen=()
+  local -a primary_rows=()
+
+  list_out="$(get_snapper_list_output "$primary")" || return 1
+  while IFS="$SNAP_SEP" read -r sid date desc userdata; do
+    [[ "$sid" =~ ^[1-9][0-9]*$ ]] || continue
+    [[ -n "$desc" && "$desc" != "current" ]] || continue
+    primary_rows+=("$sid|$date|$desc|$(snapshot_batch_from_userdata "$userdata")")
+  done <<< "$list_out"
+  (( ${#primary_rows[@]} > 0 )) || return 1
+
+  if (( ${#confs[@]} == 1 )); then
+    IFS='|' read -r sid date desc batch <<< "${primary_rows[-1]}"
+    if [[ -n "$batch" ]]; then
+      TARGET_SNAPSHOT_BATCH="$batch"
     else
-      for test_conf in "${!CONFIG_MAP[@]}"; do break; done
+      OPT_DESC="$desc"
+      TARGET_SNAPSHOT_DATE="$date"
     fi
-    test_out=$(get_snapper_list_output "$test_conf")
-    if echo "$test_out" | awk -F "$SNAP_SEP" -v d="$test_desc" '$1 ~ /^[0-9]+$/ && $3 == d {found=1} END {exit !found}'; then
-      TARGET_DESC="$test_desc"
-      break
+    TARGET_DESC="$desc"
+    return 0
+  fi
+
+  for conf in "${confs[@]:1}"; do
+    list_out="$(get_snapper_list_output "$conf")" || return 1
+    while IFS="$SNAP_SEP" read -r sid date desc userdata; do
+      [[ "$sid" =~ ^[1-9][0-9]*$ ]] || continue
+      batch="$(snapshot_batch_from_userdata "$userdata")"
+      [[ -n "$batch" ]] || continue
+      batch_seen["$conf|$batch"]=1
+    done <<< "$list_out"
+  done
+
+  for (( i = ${#primary_rows[@]} - 1; i >= 0; i-- )); do
+    IFS='|' read -r sid date desc batch <<< "${primary_rows[$i]}"
+    [[ -n "$batch" ]] || continue
+    complete=1
+    for conf in "${confs[@]:1}"; do
+      [[ -n "${batch_seen["$conf|$batch"]:-}" ]] || { complete=0; break; }
+    done
+    if (( complete == 1 )); then
+      TARGET_SNAPSHOT_BATCH="$batch"
+      TARGET_DESC="$desc"
+      return 0
     fi
   done
-fi
-[[ -z "$TARGET_DESC" ]] && TARGET_DESC="quicksave"
+
+  # 没有成套批次（老快照）：用最新快照的描述+时间，各配置再按 ±120 秒对齐。
+  IFS='|' read -r sid date desc batch <<< "${primary_rows[-1]}"
+  OPT_DESC="$desc"
+  TARGET_SNAPSHOT_DATE="$date"
+  TARGET_DESC="$desc"
+  return 0
+}
+
+# 单个配置的目标快照 ID：批次优先，其次描述+时间，最后描述。
+resolve_snapshot_id_for_config() {
+  local conf="$1" scope="$2"
+
+  if [[ -n "$TARGET_SNAPSHOT_BATCH" ]]; then
+    get_snap_id_by_batch "$conf" "$TARGET_SNAPSHOT_BATCH"
+  elif [[ -n "$OPT_DESC" && -n "$TARGET_SNAPSHOT_DATE" ]]; then
+    if [[ "$scope" == "all" ]]; then
+      get_snap_id_by_desc_near_date "$conf" "$OPT_DESC" "$TARGET_SNAPSHOT_DATE"
+    else
+      get_snap_id_by_desc_date "$conf" "$OPT_DESC" "$TARGET_SNAPSHOT_DATE"
+    fi
+  elif [[ -n "$OPT_DESC" ]]; then
+    get_snap_id_by_desc "$conf" "$OPT_DESC"
+  fi
+}
+
+# 提权重入时带上已经解析好的确切目标：root 那一遍不会再重新“猜”一次。
+reexec_as_root_if_needed() {
+  local selected_action="$1"
+  local new_args=()
+
+  [[ $EUID -ne 0 && "${QUICKLOAD_TEST_MODE:-0}" != "1" ]] || return 0
+  new_args=("-n" "-c" "$selected_action")
+  [[ -n "$OPT_DESC" ]] && new_args+=("-d" "$OPT_DESC")
+  [[ -n "$TARGET_SNAPSHOT_DATE" ]] && new_args+=("--snapshot-date" "$TARGET_SNAPSHOT_DATE")
+  [[ -n "$TARGET_SNAPSHOT_BATCH" ]] && new_args+=("--snapshot-batch" "$TARGET_SNAPSHOT_BATCH")
+  [[ "$OPT_NATIVE_ROOT_FALLBACK" -eq 1 ]] && new_args+=("--native-root-fallback")
+  [[ -n "$OPT_NATIVE_ROOT_ROLLBACK" ]] && new_args+=("--native-root-rollback" "$OPT_NATIVE_ROOT_ROLLBACK")
+  [[ $OPT_DEBUG -eq 1 ]] && new_args+=("-x")
+  require_root "${new_args[@]}"
+}
 
 get_snap_id_by_desc() {
   local conf="$1"
@@ -1020,6 +1145,21 @@ cancel_to_parent() {
   exit 0
 }
 
+# 确认页必须写清楚“恢复到哪一个快照”：旧实现只显示范围和一个描述，
+# 用户输入 restore 时根本不知道会退回哪一天。
+print_restore_targets() {
+  local i
+
+  ui_panel_open "即将恢复" "$UI_ICON_INFO"
+  for ((i = 0; i < ${#RESOLVED_CONFS[@]}; i++)); do
+    ui_panel_kv "配置 ${RESOLVED_CONFS[$i]}" \
+      "#${RESOLVED_IDS[$i]}   ${RESOLVED_DATES[$i]}   ${RESOLVED_DESCS[$i]}"
+  done
+  [[ -n "$TARGET_SNAPSHOT_BATCH" ]] && ui_panel_kv "批次" "$TARGET_SNAPSHOT_BATCH"
+  ui_panel_stat warn "会用上述快照覆盖对应子卷的当前内容，并在完成后重启。"
+  ui_panel_close
+}
+
 execute_restore() {
   local selected_action="$1"
 
@@ -1028,44 +1168,22 @@ execute_restore() {
     cancel_to_parent
   fi
 
-  if [[ $OPT_NOCONFIRM -ne 1 ]]; then
-    local target_summary
-    if [[ -n "$OPT_NATIVE_ROOT_ROLLBACK" ]]; then
-      target_summary="原生 root 回退：把 /@quickload-pre-* 换回 /@；当前恢复 root 会保留为 /@quickload-rejected-*"
-      if ! ui_confirm_word "$target_summary。此操作会在完成后重启。" "rollback"; then
-        echo "$MSG_CANCEL"
-        cancel_to_parent
-      fi
-    else
-      target_summary="范围：$selected_action；快照：${TARGET_DESC:-自动选择最新可用项}"
-      [[ -n "$TARGET_SNAPSHOT_DATE" ]] && target_summary+="；时间：$TARGET_SNAPSHOT_DATE"
-      [[ -n "$TARGET_SNAPSHOT_BATCH" ]] && target_summary+="；批次：$TARGET_SNAPSHOT_BATCH"
-      if ! ui_confirm_word "$target_summary。恢复会覆盖对应文件并在完成后重启。" "restore"; then
-        echo "$MSG_CANCEL"
-        cancel_to_parent
-      fi
-    fi
-  fi
-
-  # 拦截提权点：如果仍是普通用户，携带决定好的目标参数重新唤醒自身 (此时触发密码)
-  if [[ $EUID -ne 0 && "${QUICKLOAD_TEST_MODE:-0}" != "1" ]]; then
-    local new_args=("-n" "-c" "$selected_action")
-    [[ -n "$TARGET_DESC" ]] && new_args+=("-d" "$TARGET_DESC")
-    [[ -n "$TARGET_SNAPSHOT_DATE" ]] && new_args+=("--snapshot-date" "$TARGET_SNAPSHOT_DATE")
-    [[ -n "$TARGET_SNAPSHOT_BATCH" ]] && new_args+=("--snapshot-batch" "$TARGET_SNAPSHOT_BATCH")
-    [[ "$OPT_NATIVE_ROOT_FALLBACK" -eq 1 ]] && new_args+=("--native-root-fallback")
-    [[ -n "$OPT_NATIVE_ROOT_ROLLBACK" ]] && new_args+=("--native-root-rollback" "$OPT_NATIVE_ROOT_ROLLBACK")
-    [[ $OPT_DEBUG -eq 1 ]] && new_args+=("-x")
-    require_root "${new_args[@]}"
-  fi
-
-  ui_maintenance_lock_acquire "快照恢复" || exit $?
-
+  # ---- 原生 root 回退：只交换两个顶级子卷，不查 Snapper ----
   if [[ -n "$OPT_NATIVE_ROOT_ROLLBACK" ]]; then
     if [[ "$selected_action" != "root" ]]; then
       notify_err "错误: 原生 root 回退仅支持 root 配置。"
       exit 2
     fi
+    if [[ $OPT_NOCONFIRM -ne 1 ]]; then
+      if ! ui_confirm_word \
+        "原生 root 回退：把 /@quickload-pre-* 换回 /@；当前恢复 root 会保留为 /@quickload-rejected-*。此操作会在完成后重启。" \
+        "rollback"; then
+        echo "$MSG_CANCEL"
+        cancel_to_parent
+      fi
+    fi
+    reexec_as_root_if_needed "$selected_action"
+    ui_maintenance_lock_acquire "快照恢复" || exit $?
     if native_root_rollback "$OPT_NATIVE_ROOT_ROLLBACK"; then
       exit 0
     else
@@ -1073,35 +1191,7 @@ execute_restore() {
     fi
   fi
 
-  if [[ "$OPT_NATIVE_ROOT_FALLBACK" -eq 1 ]]; then
-    if [[ "$selected_action" != "root" ]]; then
-      notify_err "错误: 原生恢复后端仅支持 root 配置。"
-      exit 2
-    fi
-    local native_snap_id=""
-    if [[ -n "$TARGET_SNAPSHOT_BATCH" ]]; then
-      native_snap_id=$(get_snap_id_by_batch root "$TARGET_SNAPSHOT_BATCH")
-    elif [[ -n "$OPT_DESC" && -n "$TARGET_SNAPSHOT_DATE" ]]; then
-      native_snap_id=$(get_snap_id_by_desc_date root "$OPT_DESC" "$TARGET_SNAPSHOT_DATE")
-    elif [[ -n "$OPT_DESC" ]]; then
-      native_snap_id=$(get_snap_id_by_desc root "$OPT_DESC")
-    else
-      for d in "${FALLBACK_DESCS[@]}"; do
-        native_snap_id=$(get_snap_id_by_desc root "$d")
-        [[ -n "$native_snap_id" ]] && break
-      done
-    fi
-    [[ -n "$native_snap_id" ]] || {
-      notify_err "$MSG_ERR_MATCH" "root" "${OPT_DESC:-Fallback序列}"
-      exit 1
-    }
-    if native_root_restore "$native_snap_id"; then
-      exit 0
-    else
-      exit $?
-    fi
-  fi
-
+  # ---- 目标配置 ----
   local configs_to_restore=()
   if [[ "$selected_action" == "all" ]]; then
     [[ -n "${CONFIG_MAP[home]:-}" ]] && configs_to_restore+=("home")
@@ -1118,69 +1208,43 @@ execute_restore() {
     configs_to_restore=("$selected_action")
   fi
 
-  # 预加载列表以减少进程呼叫开销。不要吞掉失败，否则 btrfs-assistant 崩溃会伪装成“匹配不到 ID”。
-  local ba_list_output="$BA_PREFLIGHT_OUTPUT"
-  if [[ "$BA_PREFLIGHT_DONE" -ne 1 ]]; then
-    notify_err "$MSG_ERR_BA_LIST" "恢复后端没有通过预检"
-    exit 1
+  # ---- 没有显式目标时按时间自动挑选（默认必须是最新的可恢复快照）----
+  if [[ -z "$TARGET_SNAPSHOT_BATCH" && -z "$OPT_DESC" ]]; then
+    if ! auto_resolve_default_target "${configs_to_restore[@]}"; then
+      notify_err "$MSG_ERR_MATCH" "${configs_to_restore[*]}" "自动选择最新快照"
+      exit 1
+    fi
   fi
-  local restore_ba_ids=()
-  local min_epoch=0 max_epoch=0 snap_date snap_epoch common_desc="" resolved_desc=""
+
+  # ---- 确认之前先把每个配置的确切快照解析出来 ----
+  RESOLVED_CONFS=()
+  RESOLVED_IDS=()
+  RESOLVED_DATES=()
+  RESOLVED_DESCS=()
+  local conf snap_id snap_row snap_date snap_desc snap_epoch
+  local min_epoch=0 max_epoch=0 common_desc=""
 
   for conf in "${configs_to_restore[@]}"; do
-    local snap_id=""
-    resolved_desc="${OPT_DESC:-}"
-    if [[ -n "$TARGET_SNAPSHOT_BATCH" ]]; then
-      snap_id=$(get_snap_id_by_batch "$conf" "$TARGET_SNAPSHOT_BATCH")
-    elif [[ -n "$OPT_DESC" && -n "$TARGET_SNAPSHOT_DATE" ]]; then
-      if [[ "$selected_action" == "all" ]]; then
-        snap_id=$(get_snap_id_by_desc_near_date "$conf" "$OPT_DESC" "$TARGET_SNAPSHOT_DATE")
-      else
-        snap_id=$(get_snap_id_by_desc_date "$conf" "$OPT_DESC" "$TARGET_SNAPSHOT_DATE")
-      fi
-    elif [[ -n "$OPT_DESC" ]]; then
-      snap_id=$(get_snap_id_by_desc "$conf" "$OPT_DESC")
-    else
-      for d in "${FALLBACK_DESCS[@]}"; do
-        snap_id=$(get_snap_id_by_desc "$conf" "$d")
-        if [[ -n "$snap_id" ]]; then
-          resolved_desc="$d"
-          break
-        fi
-      done
-    fi
-
+    snap_id="$(resolve_snapshot_id_for_config "$conf" "$selected_action")"
     if [[ -z "$snap_id" ]]; then
-      notify_err "$MSG_ERR_MATCH" "$conf" "${OPT_DESC:-Fallback序列}"
+      notify_err "$MSG_ERR_MATCH" "$conf" "${OPT_DESC:-最新快照}"
       exit 1
     fi
-
-    local mnt="${CONFIG_MAP[$conf]}"
-    local base_subvol
-    base_subvol=$(get_btrfs_subvol_name "$mnt")
-
-    local ba_id
-    local ba_matches=()
-    mapfile -t ba_matches < <(
-      awk -v subv="$base_subvol" -v sid="$snap_id" \
-        '$1 ~ /^[0-9]+$/ && $2 == subv && $3 == sid {print $1}' <<< "$ba_list_output"
-    )
-    if [[ "${#ba_matches[@]}" -ne 1 ]]; then
-      notify_err "${MSG_ERR_BA}配置 [%s] 快照 #%s 匹配到 %s 个恢复 ID，要求恰好 1 个。\n" \
-        "$conf" "$snap_id" "${#ba_matches[@]}"
-      exit 1
-    fi
-    ba_id="${ba_matches[0]}"
-    restore_ba_ids+=("$ba_id")
+    snap_row="$(get_snap_row_by_id "$conf" "$snap_id")"
+    snap_date="${snap_row%%|*}"
+    snap_desc="${snap_row#*|}"
+    RESOLVED_CONFS+=("$conf")
+    RESOLVED_IDS+=("$snap_id")
+    RESOLVED_DATES+=("${snap_date:-未知时间}")
+    RESOLVED_DESCS+=("${snap_desc:-无描述}")
 
     if [[ "$selected_action" == "all" && -z "$TARGET_SNAPSHOT_BATCH" ]]; then
       if [[ -z "$common_desc" ]]; then
-        common_desc="$resolved_desc"
-      elif [[ "$resolved_desc" != "$common_desc" ]]; then
-        notify_err "错误: 旧快照描述不一致（%s / %s），已拒绝全部还原。" "$common_desc" "$resolved_desc"
+        common_desc="$snap_desc"
+      elif [[ "$snap_desc" != "$common_desc" ]]; then
+        notify_err "错误: 旧快照描述不一致（%s / %s），已拒绝全部还原。" "$common_desc" "$snap_desc"
         exit 1
       fi
-      snap_date="$(get_snap_date_by_id "$conf" "$snap_id")"
       snap_epoch="$(date -d "$snap_date" +%s 2>/dev/null || true)"
       if [[ ! "$snap_epoch" =~ ^[0-9]+$ ]]; then
         notify_err "错误: 无法解析配置 [%s] 快照 #%s 的时间。" "$conf" "$snap_id"
@@ -1197,6 +1261,60 @@ execute_restore() {
     exit 1
   fi
 
+  # ---- 确认（显示确切的配置 / ID / 时间 / 描述 / 批次）----
+  if [[ $OPT_NOCONFIRM -ne 1 ]]; then
+    print_restore_targets
+    if ! ui_confirm_word "确认恢复以上快照？" "restore"; then
+      echo "$MSG_CANCEL"
+      cancel_to_parent
+    fi
+  fi
+
+  # 拦截提权点：如果仍是普通用户，携带已解析好的目标重新唤醒自身（此时触发密码）
+  reexec_as_root_if_needed "$selected_action"
+
+  ui_maintenance_lock_acquire "快照恢复" || exit $?
+
+  # ---- 原生 root 恢复后端 ----
+  if [[ "$OPT_NATIVE_ROOT_FALLBACK" -eq 1 ]]; then
+    if [[ "$selected_action" != "root" ]]; then
+      notify_err "错误: 原生恢复后端仅支持 root 配置。"
+      exit 2
+    fi
+    if native_root_restore "${RESOLVED_IDS[0]}"; then
+      exit 0
+    else
+      exit $?
+    fi
+  fi
+
+  # 预加载列表以减少进程呼叫开销。不要吞掉失败，否则 btrfs-assistant 崩溃会伪装成“匹配不到 ID”。
+  local ba_list_output="$BA_PREFLIGHT_OUTPUT"
+  if [[ "$BA_PREFLIGHT_DONE" -ne 1 ]]; then
+    notify_err "$MSG_ERR_BA_LIST" "恢复后端没有通过预检"
+    exit 1
+  fi
+
+  local restore_ba_ids=()
+  local i base_subvol ba_id
+  for ((i = 0; i < ${#RESOLVED_CONFS[@]}; i++)); do
+    conf="${RESOLVED_CONFS[$i]}"
+    snap_id="${RESOLVED_IDS[$i]}"
+    base_subvol="$(get_btrfs_subvol_name "${CONFIG_MAP[$conf]}")"
+
+    local ba_matches=()
+    mapfile -t ba_matches < <(
+      awk -v subv="$base_subvol" -v sid="$snap_id" \
+        '$1 ~ /^[0-9]+$/ && $2 == subv && $3 == sid {print $1}' <<< "$ba_list_output"
+    )
+    if [[ "${#ba_matches[@]}" -ne 1 ]]; then
+      notify_err "${MSG_ERR_BA}配置 [%s] 快照 #%s 匹配到 %s 个恢复 ID，要求恰好 1 个。\n" \
+        "$conf" "$snap_id" "${#ba_matches[@]}"
+      exit 1
+    fi
+    restore_ba_ids+=("${ba_matches[0]}")
+  done
+
   local completed_ba_ids=()
   for ba_id in "${restore_ba_ids[@]}"; do
     printf "$MSG_RESTORE_DOING" "$ba_id"
@@ -1210,8 +1328,28 @@ execute_restore() {
   done
 
   notify_ok "======================================\n$MSG_NOTIFY_SUCC_BODY\n======================================"
-  sleep 3
-  reboot
+  reboot_with_countdown
+}
+
+# 旧实现是 sleep 3 后直接 reboot，既没有提示也没有反悔的机会，
+# 而且这里的 reboot 失败会被静默吞掉（原生路径是检查了的）。
+reboot_with_countdown() {
+  local seconds=5 i
+
+  [[ "${QUICKLOAD_TEST_MODE:-0}" == "1" ]] && seconds=0
+  if [[ -t 1 ]]; then
+    for ((i = seconds; i > 0; i--)); do
+      printf '\r  恢复完成，%s 秒后重启（Ctrl+C 可取消并留在当前系统检查）...' "$i"
+      sleep 1
+    done
+    (( seconds > 0 )) && printf '\n'
+  elif (( seconds > 0 )); then
+    sleep "$seconds"
+  fi
+  if ! reboot; then
+    notify_err "恢复已完成，但自动重启失败；请手动重启以进入恢复后的系统。"
+    exit 1
+  fi
 }
 
 if [[ $OPT_NOCONFIRM -eq 1 || -n "$OPT_CONFIG" ]]; then
@@ -1228,7 +1366,7 @@ fi
 # ==========================================
 ui_banner "恢复快照" "quickload · Btrfs 快照回档"
 
-declare -A CHOICE_MAP
+declare -gA CHOICE_MAP
 
 while true; do
   MENU_TITLE="$MSG_TITLE"

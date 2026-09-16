@@ -14,28 +14,28 @@
   },
   "charts": {
     "network_download": "#9ecafc",
-    "network_upload": "#164974",
+    "network_upload": "#154974",
     "network_line": "#bac8db",
-    "cpu_core_low": "#164974",
+    "cpu_core_low": "#154974",
     "cpu_core_medium": "#9ecafc",
     "cpu_core_high": "#d5bee5",
     "disk_read": "#9ecafc",
-    "disk_write": "#164974"
+    "disk_write": "#154974"
   },
   "progress_bars": {
-    "memory_low": "#164974",
+    "memory_low": "#154974",
     "memory_medium": "#9ecafc",
     "memory_high": "#d5bee5",
-    "disk_low": "#164974",
+    "disk_low": "#154974",
     "disk_medium": "#9ecafc",
     "disk_high": "#d5bee5",
-    "cpu_low": "#164974",
+    "cpu_low": "#154974",
     "cpu_medium": "#9ecafc",
     "cpu_high": "#d5bee5",
     "progress_background": "#1d2024"
   },
   "temperature": {
-    "cold": "#164974",
+    "cold": "#154974",
     "warm": "#9ecafc",
     "hot": "#d5bee5",
     "danger": "#ffb4ab"

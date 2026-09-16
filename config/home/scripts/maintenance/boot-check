@@ -8,16 +8,22 @@ UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
 ok()   { ui_panel_stat ok   "$*"; }
 warn() { ui_panel_stat warn "$*"; }
 miss() { ui_panel_stat miss "$*"; }
+err()  { ui_panel_stat err  "$*"; }
 info() { ui_panel_stat info "$*"; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 SUDO_READ=()
 BOOT_QUERY_FAILED=0
+READ_ACCESS_SKIPPED=0
 PACKAGE_ROWS=""
 
 request_read_access() {
   [[ "$EUID" -eq 0 ]] && return 0
-  [[ -t 0 && -t 1 ]] || return 0
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    # 非交互环境无法提权：必须显式标注，避免"没检查"被读成"检查过没问题"。
+    READ_ACCESS_SKIPPED=1
+    return 0
+  fi
   if ! have sudo; then
     ui_err "完整引导检查需要 sudo，但当前没有 sudo 命令"
     return 1
@@ -83,7 +89,7 @@ check_unit() {
     *) enabled="" ;;
   esac
   if [[ -z "$state" || -z "$enabled" ]]; then
-    warn "$unit 状态查询失败（active=$state_rc, enabled=$enabled_rc）"
+    err "$unit 状态查询失败（active=$state_rc, enabled=$enabled_rc）"
     BOOT_QUERY_FAILED=1
     return
   fi
@@ -96,7 +102,7 @@ check_unit() {
 }
 
 main() {
-  local strict=0 file_rc=0 query_output="" query_rc=0
+  local strict=0 file_rc=0 query_output="" query_rc=0 missing_cmd=0
   if (( $# > 1 )); then
     ui_err "参数过多；用法: boot-check [--strict]"
     return 2
@@ -115,6 +121,10 @@ main() {
   ui_panel_line "核对 UEFI、GRUB 配置、EFI 启动项和 Btrfs 快照引导链路。"
   ui_panel_line "只读取状态，不会运行 grub-install、grub-mkconfig，也不会改启动顺序。"
   ui_panel_line "sudo 仅用于读取普通用户看不到的 /boot/grub 和固件启动信息。"
+  if [[ "$READ_ACCESS_SKIPPED" -eq 1 ]]; then
+    # 只标注不判定：真正的"读不到"由下面的 err/查询失败决定 rc，避免完整可读的非交互运行被误判
+    info "本次未做完整检查：非交互环境已跳过 sudo 提权，受保护文件可能未覆盖"
+  fi
 
   panel "启动模式 / 挂载点" ""
   if [[ -d /sys/firmware/efi ]]; then
@@ -131,7 +141,7 @@ main() {
       query_rc=0
       mount_output="$(findmnt -no TARGET,SOURCE,FSTYPE --target "$mountpoint" 2>&1)" || query_rc=$?
       if [[ "$query_rc" -ne 0 ]]; then
-        warn "findmnt 查询失败: $mountpoint（退出码 $query_rc）"
+        err "findmnt 查询失败: $mountpoint（退出码 $query_rc）"
         BOOT_QUERY_FAILED=1
       elif [[ -n "$mount_output" ]]; then
         query_output+="$mount_output"$'\n'
@@ -141,6 +151,7 @@ main() {
   else
     miss "findmnt — 建议安装 util-linux"
     BOOT_QUERY_FAILED=1
+    missing_cmd=1
   fi
 
   if have lsblk; then
@@ -149,29 +160,35 @@ main() {
     if [[ "$query_rc" -eq 0 ]]; then
       printf '%s\n' "$query_output" | ui_panel_raw
     else
-      warn "lsblk 查询失败（退出码 $query_rc）"
+      err "lsblk 查询失败（退出码 $query_rc）"
       [[ -z "$query_output" ]] || printf '%s\n' "$query_output" | ui_panel_raw
       BOOT_QUERY_FAILED=1
     fi
   else
     miss "lsblk — 建议安装 util-linux"
     BOOT_QUERY_FAILED=1
+    missing_cmd=1
   fi
 
   panel "引导相关包" ""
-  query_rc=0
-  PACKAGE_ROWS="$(pacman -Qq 2>&1)" || query_rc=$?
-  if [[ "$query_rc" -ne 0 ]]; then
-    ui_panel_stat err "pacman 已安装包查询失败（退出码 $query_rc）"
-    [[ -z "$PACKAGE_ROWS" ]] || printf '%s\n' "$PACKAGE_ROWS" | ui_panel_raw
-    BOOT_QUERY_FAILED=1
+  if ! have pacman; then
+    miss "缺少 pacman，无法检查引导相关包"
+    missing_cmd=1
   else
-    check_pkg grub "GRUB 引导器"
-    check_pkg efibootmgr "UEFI 启动项管理"
-    check_pkg os-prober "探测 Windows 启动项"
-    check_pkg grub-btrfs "把 Btrfs 快照加入 GRUB"
-    check_pkg snapper "快照管理"
-    check_pkg btrfs-progs "Btrfs 工具"
+    query_rc=0
+    PACKAGE_ROWS="$(pacman -Qq 2>&1)" || query_rc=$?
+    if [[ "$query_rc" -ne 0 ]]; then
+      ui_panel_stat err "pacman 已安装包查询失败（退出码 $query_rc）"
+      [[ -z "$PACKAGE_ROWS" ]] || printf '%s\n' "$PACKAGE_ROWS" | ui_panel_raw
+      BOOT_QUERY_FAILED=1
+    else
+      check_pkg grub "GRUB 引导器"
+      check_pkg efibootmgr "UEFI 启动项管理"
+      check_pkg os-prober "探测 Windows 启动项"
+      check_pkg grub-btrfs "把 Btrfs 快照加入 GRUB"
+      check_pkg snapper "快照管理"
+      check_pkg btrfs-progs "Btrfs 工具"
+    fi
   fi
 
   panel "GRUB 文件 / os-prober" ""
@@ -180,7 +197,7 @@ main() {
   case "$file_rc" in
     0) ok "/boot/grub/grub.cfg 存在" ;;
     1) miss "/boot/grub/grub.cfg 不存在" ;;
-    *) warn "/boot/grub/grub.cfg 查询失败或无读取权限"; BOOT_QUERY_FAILED=1 ;;
+    *) err "/boot/grub/grub.cfg 查询失败或无读取权限"; BOOT_QUERY_FAILED=1 ;;
   esac
 
   file_rc=0
@@ -188,7 +205,7 @@ main() {
   case "$file_rc" in
     0) ok "/boot/grub/grub-btrfs.cfg 存在" ;;
     1) warn "/boot/grub/grub-btrfs.cfg 不存在；可能还没有生成快照菜单" ;;
-    *) warn "/boot/grub/grub-btrfs.cfg 查询失败或无读取权限"; BOOT_QUERY_FAILED=1 ;;
+    *) err "/boot/grub/grub-btrfs.cfg 查询失败或无读取权限"; BOOT_QUERY_FAILED=1 ;;
   esac
 
   file_rc=0
@@ -202,13 +219,13 @@ main() {
     elif [[ "$query_rc" -eq 1 ]]; then
       warn "未看到 GRUB_DISABLE_OS_PROBER=false；Windows 菜单可能不会自动出现"
     else
-      warn "/etc/default/grub 读取失败（退出码 $query_rc）"
+      err "/etc/default/grub 读取失败（退出码 $query_rc）"
       BOOT_QUERY_FAILED=1
     fi
   elif [[ "$file_rc" -eq 1 ]]; then
     miss "/etc/default/grub 不存在"
   else
-    warn "/etc/default/grub 查询失败或无读取权限"
+    err "/etc/default/grub 查询失败或无读取权限"
     BOOT_QUERY_FAILED=1
   fi
 
@@ -221,7 +238,7 @@ main() {
       # 这里只保留 Tab 前的可读标签，隐藏几百字符的十六进制路径。
       printf '%s\n' "$efi_out" | awk -F '\t' '{print $1}' | ui_panel_raw
     else
-      warn "efibootmgr 读取失败（退出码 $efi_rc）"
+      err "efibootmgr 读取失败（退出码 $efi_rc）"
       [[ -z "$efi_out" ]] || printf '%s\n' "$efi_out" | sed -n '1,4p' | ui_panel_raw
       BOOT_QUERY_FAILED=1
     fi
@@ -240,7 +257,7 @@ main() {
         | sed -E 's/^[[:space:]]+//' \
         | ui_panel_raw || true
     else
-      warn "bootctl 状态查询失败（退出码 $bootctl_rc）"
+      err "bootctl 状态查询失败（退出码 $bootctl_rc）"
       [[ -z "$bootctl_out" ]] || printf '%s\n' "$bootctl_out" | sed -n '1,4p' | ui_panel_raw
       BOOT_QUERY_FAILED=1
     fi
@@ -252,7 +269,7 @@ main() {
     query_rc=0
     root_fstype="$(findmnt -no FSTYPE / 2>&1)" || query_rc=$?
     if [[ "$query_rc" -ne 0 ]]; then
-      warn "根文件系统类型查询失败（退出码 $query_rc）"
+      err "根文件系统类型查询失败（退出码 $query_rc）"
       BOOT_QUERY_FAILED=1
     elif [[ "$root_fstype" == "btrfs" ]]; then
       ok "/ 是 Btrfs"
@@ -267,7 +284,7 @@ main() {
     if [[ "$query_rc" -eq 0 ]]; then
       printf '%s\n' "$query_output" | ui_panel_raw
     else
-      warn "snapper list-configs 读取失败（退出码 $query_rc）"
+      err "snapper list-configs 读取失败（退出码 $query_rc）"
       [[ -z "$query_output" ]] || printf '%s\n' "$query_output" | ui_panel_raw
       BOOT_QUERY_FAILED=1
     fi
@@ -275,10 +292,15 @@ main() {
     miss "snapper 命令不存在"
   fi
 
-  check_unit grub-btrfsd.service
-  check_unit snapper-timeline.timer
-  check_unit snapper-cleanup.timer
-  check_unit btrfs-scrub@-.timer
+  if have systemctl; then
+    check_unit grub-btrfsd.service
+    check_unit snapper-timeline.timer
+    check_unit snapper-cleanup.timer
+    check_unit btrfs-scrub@-.timer
+  else
+    miss "缺少 systemctl，无法检查引导相关单元"
+    missing_cmd=1
+  fi
 
   panel "建议复核命令" ""
   info "刷新 GRUB: sudo grub-mkconfig -o /boot/grub/grub.cfg"
@@ -287,6 +309,8 @@ main() {
 
   panel_end
   ui_tally_summary
+  # 缺命令（127）优先；查询失败即使没有 --strict 也必须非零。
+  [[ "$missing_cmd" -eq 0 ]] || return 127
   [[ "$BOOT_QUERY_FAILED" -eq 0 ]] || return 1
   ui_tally_status "$strict"
 }

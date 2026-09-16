@@ -15,7 +15,9 @@
   来宾脚本目录为 `/home/pang/scripts/maintenance`。
 - Arch 安装 ISO 是用户原有安装介质，**没有删除**；以后若需重新演练，应新建一台完全隔离的 VM，
   从本文件的历史场景重新执行，不能把旧测试状态当作备份。
-- 本轮源码和当时来宾均已运行 `MAINTENANCE_NO_NOTIFY=1 tests/run`，结果为 **44/44 通过**。
+- 本轮源码和当时来宾均已运行 `MAINTENANCE_NO_NOTIFY=1 tests/run`，当时结果为 **44/44 通过**。
+- 补充（2026-09-10，主机上只读运行）：套件已增长到 **59 个用例**，当前源码在本机
+  `MAINTENANCE_NO_NOTIFY=1 tests/run` → **59/59 通过**；破坏性场景仍必须回到一次性 VM 演练。
 
 > 清理状态：域定义、快照元数据、两块测试盘、未注册 overlay、libvirt 日志、仓库测试夹具和
 > `/tmp` 测试输出均已删除。用户原有 Arch 安装 ISO 被明确保留。

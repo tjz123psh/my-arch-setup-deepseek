@@ -53,14 +53,14 @@ while [[ $# -gt 0 ]]; do
   all | --all) CLEAN_ALL=true && shift ;;
   --yes | -y) SKIP_CONFIRM=true && shift ;;
   --help | -h) usage; exit 0 ;;
-  *) echo "未知参数: $1"; usage; exit 1 ;;
+  *) printf '未知参数: %s\n' "$1" >&2; usage >&2; exit 2 ;;
   esac
 done
 
 # ------------------------------
 # 3. 文案（纯中文）
 # ------------------------------
-declare -A MSG
+declare -gA MSG
 MSG[DESC_TITLE]="本脚本将执行以下清理操作："
 MSG[DESC_1]="1. 删除孤儿软件包与无主 debug 符号包"
 MSG[DESC_2]="2. 清理软件包缓存 (仅保留已安装版本)"
@@ -71,7 +71,7 @@ MSG[DESC_6]="6. 按 Snapper 配额清理旧 Btrfs 快照"
 
 MSG[DESC_ALL_1]="* [深度清理] 完全清空所有软件包与 AUR 缓存，清完后无法从本地缓存降级"
 MSG[DESC_ALL_2]="* [深度清理] 清空 Screenshots 截图目录和 wf-recorder/shorin 录屏目录"
-MSG[DESC_ALL_3]="* [深度清理] 删除所有 Btrfs 快照 (保留 Before 节点)"
+MSG[DESC_ALL_3]="* [深度清理] 删除历史 Btrfs 快照 (保留 Before 节点和最近一套回滚快照)"
 MSG[DESC_ALL_4]="* [深度清理] 检查 btrfs-assistant 风格的恢复备份子卷；来源不明时保留"
 
 MSG[ASK_CONFIRM]="是否继续执行清理？"
@@ -160,6 +160,12 @@ else
 fi
 
 if [[ "$SKIP_CONFIRM" == false ]]; then
+  # 非交互环境（管道/自动化）回答不了确认问题：必须显式 --yes，否则按用法错误
+  # 返回 2，不能让调用方把"什么都没做"当成清理成功。
+  if [[ ! -t 0 ]]; then
+    printf '%s\n' "非交互环境不会自动确认；请显式使用 --yes（本次未做任何修改）。" >&2
+    exit 2
+  fi
   ui_panel_open "清理内容"
   ui_panel_line "${MSG[DESC_1]}"
   ui_panel_line "${MSG[DESC_2]}"
@@ -197,24 +203,16 @@ ui_maintenance_lock_acquire "系统清理" || exit $?
 _info "${MSG[HELPER_USE]}" "$PKG_MNGR"
 CLEAN_FAILED=0
 SNAP_SEP=$'\037'
+# 深度清理扫描批次用的临时文件；并入既有 EXIT 清理链，不单独设 trap
+# （本脚本后面还会重设 EXIT trap，单独设会被覆盖）。
+SNAP_BATCH_SCAN=""
+cleanup_scan_file() {
+  [[ -n "${SNAP_BATCH_SCAN:-}" ]] && rm -f -- "$SNAP_BATCH_SCAN" 2>/dev/null || true
+}
 
-# Keep Sudo Alive
-if sudo -v; then
-  (
-    # 后台保活绝不能继承维护锁，否则主脚本退出后孤儿 sleep 会继续持锁，
-    # 导致紧接着运行 quicksave 被误判为“另一项维护正在运行”。
-    if [[ "${UI_MAINTENANCE_LOCK_FD:-}" =~ ^[0-9]+$ ]]; then
-      exec {UI_MAINTENANCE_LOCK_FD}>&-
-    fi
-    while true; do sudo -n true; sleep 60; done
-  ) </dev/null >/dev/null 2>&1 &
-  SUDO_PID=$!
-  stop_sudo_keepalive() {
-    pkill -TERM -P "$SUDO_PID" 2>/dev/null || true
-    kill "$SUDO_PID" 2>/dev/null || true
-    wait "$SUDO_PID" 2>/dev/null || true
-  }
-  trap stop_sudo_keepalive EXIT
+# Keep Sudo Alive（实现见 lib/ui.sh，与 sysup 共用同一份）
+if ui_sudo_keepalive_start; then
+  trap 'ui_sudo_keepalive_stop; cleanup_scan_file' EXIT
 else
   _error "sudo 授权失败。"
 fi
@@ -432,17 +430,97 @@ if [[ "$ROOT_FSTYPE" == "btrfs" ]] && command -v btrfs >/dev/null 2>&1; then
         CLEAN_FAILED=1
       fi
 
+      # 保留最近一套 quicksave 批次：那是系统更新出问题时唯一能整套回退的点，
+      # 旧实现会把它和普通历史快照一起删光。批次 ID 以 UTC 时间戳开头，
+      # 字典序最大的就是最新的一套。
+      # 两个安全前提：
+      #   1) 批次扫描必须成功。旧实现把扫描包在 || true 里，查询失败时
+      #      keep_batch 变空 -> 保留条件短路 -> 连最近回滚点一起删。
+      #   2) "最近一套"必须在每个 snapper 配置里都存在。只对 root 跑过
+      #      quicksave 会留下半套批次，quickload 拒绝半套恢复；保留半套反而
+      #      会删掉真正成套的旧批次。
+      keep_batch=""
+      batch_total=0
+      snap_scan_failed=0
+      SNAP_BATCH_SCAN="$(mktemp 2>/dev/null)" || SNAP_BATCH_SCAN=""
+      if [[ -z "$SNAP_BATCH_SCAN" ]]; then
+        _warn "无法创建快照批次扫描文件，本次不删除任何快照。"
+        snap_scan_failed=1
+      else
+        while IFS="$SNAP_SEP" read -r conf _subvolume; do
+          [[ "$conf" == "config" || -z "$conf" ]] && continue
+          snap_batch_rows=""
+          if ! snap_batch_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" -c "$conf" list --columns number,userdata 2>/dev/null)"; then
+            _warn "回滚批次扫描失败：[$conf]，本次不删除任何快照。"
+            snap_scan_failed=1
+            break
+          fi
+          # 每个配置先落一行标记，保证"成套"判定覆盖到没有快照的配置
+          printf '%s%s%s\n' "$conf" "$SNAP_SEP" "__CONF__"
+          while IFS= read -r batch_row; do
+            if [[ -n "$batch_row" ]]; then
+              printf '%s%s%s\n' "$conf" "$SNAP_SEP" "$batch_row"
+            fi
+          done <<< "$snap_batch_rows"
+        done <<< "$snap_config_rows" > "$SNAP_BATCH_SCAN"
+
+        batch_total="$(awk -F "$SNAP_SEP" '
+          {
+            cfgs[$1] = 1
+            if (match($3, /maintenance_batch=[^,]+/)) {
+              b = substr($3, RSTART + 18, RLENGTH - 18)
+              if (b != "") batches[b] = 1
+            }
+          }
+          END { n = 0; for (b in batches) n++; print n }
+        ' "$SNAP_BATCH_SCAN" 2>/dev/null || printf '0')"
+        batch_total="${batch_total:-0}"
+        # 取"每个配置里都存在"的最新批次（而不是全局最新批次）：半套批次
+        # 无法用于成套恢复，不能作为保留对象顶掉成套的旧批次。
+        keep_batch="$(awk -F "$SNAP_SEP" '
+          {
+            cfgs[$1] = 1
+            if (match($3, /maintenance_batch=[^,]+/)) {
+              b = substr($3, RSTART + 18, RLENGTH - 18)
+              if (b != "") { seen[$1 SUBSEP b] = 1; batches[b] = 1 }
+            }
+          }
+          END {
+            best = ""
+            for (b in batches) {
+              complete = 1
+              for (c in cfgs) { if (!((c SUBSEP b) in seen)) { complete = 0; break } }
+              if (complete && b > best) best = b
+            }
+            if (best != "") print best
+          }
+        ' "$SNAP_BATCH_SCAN" 2>/dev/null || true)"
+        rm -f -- "$SNAP_BATCH_SCAN"
+        SNAP_BATCH_SCAN=""
+      fi
+      if [[ "$snap_scan_failed" -ne 0 ]]; then
+        _warn "回滚批次扫描失败，已跳过深度快照清理（未执行任何删除）。"
+        CLEAN_FAILED=1
+      elif [[ -n "$keep_batch" ]]; then
+        _info "将保留最近一套回滚快照（批次 $keep_batch）。"
+      elif [[ "${batch_total:-0}" -gt 0 ]]; then
+        _warn "没有找到每个配置都具备的成套回滚批次，本次保留全部维护批次快照。"
+      fi
+
       while IFS="$SNAP_SEP" read -r conf _subvolume; do
         [[ "$conf" == "config" || -z "$conf" ]] && continue
+        [[ "$snap_scan_failed" -ne 0 ]] && continue
         snap_config_count=$((snap_config_count + 1))
         snap_rows=""
-        if ! snap_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" -c "$conf" list --columns number,description 2>/dev/null)"; then
+        snap_delete_ids=()
+        snap_delete_descs=()
+        if ! snap_rows="$(sudo snapper --csvout --separator "$SNAP_SEP" -c "$conf" list --columns number,description,userdata 2>/dev/null)"; then
           _warn "快照列表查询失败：[$conf]"
           snap_delete_failed=1
           continue
         fi
 
-        while IFS="$SNAP_SEP" read -r snap_id snap_desc; do
+        while IFS="$SNAP_SEP" read -r snap_id snap_desc snap_userdata; do
           [[ ! "$snap_id" =~ ^[0-9]+$ ]] && continue
           # 0 永远是指向当前系统的节点，绝不能删除
           [[ "$snap_id" == "0" ]] && continue
@@ -452,19 +530,53 @@ if [[ "$ROOT_FSTYPE" == "btrfs" ]] && command -v btrfs >/dev/null 2>&1; then
             continue
           fi
 
-          # 调用原生 snapper delete 批量移除符合条件的废弃快照并打印炫酷日志
-          if sudo snapper -c "$conf" delete "$snap_id" >/dev/null 2>&1; then
-            # 兼容空描述的情况，防止日志错位
-            [[ -z "$snap_desc" ]] && snap_desc="N/A"
-            _item "已删除快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "$snap_id" 4) ${UI_DIM}$snap_desc${UI_RESET}"
+          # 最近一套 quicksave/quicksave-sysup 批次同样保留
+          if [[ -n "$keep_batch" && "$snap_userdata" == *"maintenance_batch=$keep_batch"* ]]; then
+            _item "保留快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "$snap_id" 4) ${UI_DIM}${snap_desc:-N/A}（最近回滚点）${UI_RESET}"
+            continue
+          fi
+
+          # 没有成套批次时保守处理：所有带维护批次的快照都保留，避免删掉
+          # 不成套但仍是唯一回滚点的数据。
+          if [[ "$snap_scan_failed" -eq 0 && -z "$keep_batch" && "${batch_total:-0}" -gt 0 \
+                && "$snap_userdata" == *"maintenance_batch="* ]]; then
+            _item "保留快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "$snap_id" 4) ${UI_DIM}${snap_desc:-N/A}（无成套回滚点，保守保留）${UI_RESET}"
+            continue
+          fi
+
+          # 收集待删除 ID：snapper delete 支持一次传多个 ID，收集后按配置批量删除
+          snap_delete_ids+=("$snap_id")
+          if [[ -z "$snap_desc" ]]; then
+            snap_delete_descs+=("N/A")
           else
-            snap_delete_failed=1
-            _warn "快照删除失败：[$conf] ID $snap_id"
+            snap_delete_descs+=("$snap_desc")
           fi
         done <<< "$snap_rows"
 
+        if (( ${#snap_delete_ids[@]} > 0 )); then
+          snap_del_err=""
+          if ! snap_del_err="$(sudo snapper -c "$conf" delete "${snap_delete_ids[@]}" 2>&1)"; then
+            # 批量删除失败时逐条重试，隔离失败项并保留可诊断的错误输出
+            _warn "批量删除未成功（[$conf]）：$(printf '%s' "$snap_del_err" | head -n 1)"
+            for snap_idx in "${!snap_delete_ids[@]}"; do
+              if sudo snapper -c "$conf" delete "${snap_delete_ids[$snap_idx]}" >/dev/null 2>&1; then
+                _item "已删除快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "${snap_delete_ids[$snap_idx]}" 4) ${UI_DIM}${snap_delete_descs[$snap_idx]}${UI_RESET}"
+              else
+                snap_delete_failed=1
+                _warn "快照删除失败：[$conf] ID ${snap_delete_ids[$snap_idx]}"
+              fi
+            done
+          else
+            for snap_idx in "${!snap_delete_ids[@]}"; do
+              _item "已删除快照" "$(ui_pad "[$conf]" 8) ID $(ui_pad "${snap_delete_ids[$snap_idx]}" 4) ${UI_DIM}${snap_delete_descs[$snap_idx]}${UI_RESET}"
+            done
+          fi
+        fi
+
       done <<< "$snap_config_rows"
-      if [[ "$snap_config_count" -eq 0 ]]; then
+      if [[ "$snap_scan_failed" -ne 0 ]]; then
+        : # 批次扫描失败：上面已告警并置 CLEAN_FAILED，本次不删除任何快照
+      elif [[ "$snap_config_count" -eq 0 ]]; then
         _warn "没有读取到 Snapper 配置，未清理快照。"
         CLEAN_FAILED=1
       elif [[ "$snap_delete_failed" -eq 0 ]]; then
@@ -526,7 +638,7 @@ if [[ "$ROOT_FSTYPE" == "btrfs" ]] && command -v btrfs >/dev/null 2>&1; then
     [[ -n "${BTRFS_ENUM_ERROR_FILE:-}" ]] && rm -f -- "$BTRFS_ENUM_ERROR_FILE" 2>/dev/null || true
     rmdir "$MNT_DIR" >/dev/null 2>&1 || true
   }
-  trap 'cleanup_btrfs_mount; stop_sudo_keepalive' EXIT
+  trap 'cleanup_btrfs_mount; ui_sudo_keepalive_stop; cleanup_scan_file' EXIT
 
   if sudo mount -t btrfs -o subvolid=5 "$BTRFS_ROOT_DEV" "$MNT_DIR" 2>/dev/null; then
     BTRFS_CLEAN_MOUNTED=1

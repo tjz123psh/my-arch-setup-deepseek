@@ -18,6 +18,10 @@ local ok_go, go = pcall(require, "plugins.lang.go")
 if not ok_go then
   go = {}
 end
+local ok_springboot, springboot = pcall(require, "plugins.lang.springboot")
+if not ok_springboot then
+  springboot = {}
+end
 local ok_rust, rust = pcall(require, "plugins.lang.rust")
 if not ok_rust then
   rust = {}
@@ -30,6 +34,9 @@ for _, spec in ipairs(java) do
   table.insert(specs, spec)
 end
 for _, spec in ipairs(go) do
+  table.insert(specs, spec)
+end
+for _, spec in ipairs(springboot) do
   table.insert(specs, spec)
 end
 for _, spec in ipairs(rust) do

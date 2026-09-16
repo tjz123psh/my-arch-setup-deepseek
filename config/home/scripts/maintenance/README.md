@@ -6,8 +6,14 @@
 term-menu
 ```
 
-修改系统状态的脚本共享同一把 `flock` 维护锁。检查类脚本默认适合交互查看；支持
-`--strict` 的脚本会在发现警告、缺失或查询失败时返回非零，便于自动化判断。
+修改系统状态的脚本共享同一把 `flock` 维护锁；锁文件放在操作者 HOME 的
+`~/.cache/maintenance/`，经 `sudo` 运行时沿用原用户，root 直接运行时也会尽量识别
+真正的操作者，避免"root 一把、用户一把"而互不排斥。
+
+检查类脚本遵循同一条约定：**「无法检查」不等于「健康」**。查询失败（工具报错、权限
+不足、超时）一律返回非零并在输出里写明原因，绝不静默成 `0`；「确实没有/缺失」用缺失
+文案，只有 `--strict` 才影响退出码。「发现问题」「确实缺失」「查询失败」在汇总行分开
+统计（正常 / 注意 / 缺失 / 查询失败）。
 
 ## 主要功能
 
@@ -17,6 +23,74 @@ term-menu
 - 检查：`hw-doctor`、`storage-health`、`btrfs-scrub`、`gpu-check`、
   `check-battery`、`boot-check`、`pacnew-check`、`log-check`、`terminal-tools`
 - 迁移：`migration-pack`、`offsite-backup`、`backup-restore`
+
+## 待更新列表与刷新
+
+`checkallupdates` 并行查询 Pacman、AUR 和 Flatpak，缓存有效期 1 小时：
+
+- 打开列表**不阻塞**。缓存过期时先显示上一次的结果，刷新在后台进行，完成后原地替换；
+  列表边框标签实时显示数据时间：`待更新列表 · 12 分钟前` / `· 正在刷新` / `· 刚刚更新`。
+- `Ctrl+R` 强制刷新全部来源。刷新期间旧列表保持可见，不会闪成空白。
+- 每个来源单独计时和记录状态。某个来源查询失败（例如离线时的 Flatpak）不会连累另外两个
+  来源被反复重查，下次只补查失败的那个。
+- 每个来源的查询都有超时（默认 90 秒），超时会指明是哪个来源、可能的原因，不会无限挂起。
+- 在列表里更新单个 AUR/Flatpak 应用或整组 Pacman 包之后，只重查受影响的来源。
+- 刷新期间被 Esc、Ctrl+C 或关窗中断时，会收掉后台查询进程并清理临时文件；已经查完的
+  来源仍然会正常落盘、并立刻打上自己的时间戳，不会白跑。
+- **刷新失败不会被说成成功**：来源状态只有在数据落盘成功后才写 `ok`；某一来源失败时
+  保留它上一次成功列表（不会用空文件覆盖），失败轮次不打最新时间戳、`--refresh` 返回非 0。
+- 等待另一轮刷新的锁超时（`UPDATE_LOCK_WAIT`）时**取消本次刷新并明确提示**，不会无视锁
+  并发查询、互相覆盖缓存。
+- `log-check` 默认只打印到终端、不写文件；需要留档时用 `log-check --save[=路径]` 生成
+  Markdown 报告。
+
+机器可读入口（供自动化和 fzf 使用，不需要交互终端）：
+
+```bash
+checkallupdates --refresh        # 刷新全部来源并输出机器字段列表
+checkallupdates --refresh-stale  # 只刷新已经过期的来源
+```
+
+超时可在 `~/.config/maintenance/config` 里调整：`UPDATE_QUERY_TIMEOUT`（单个来源的查询
+超时秒数，默认 90）、`UPDATE_LOCK_WAIT`（等待另一个刷新完成的上限秒数，默认 300）。
+临时排障也可用环境变量 `CHECKALLUPDATES_QUERY_TIMEOUT` / `CHECKALLUPDATES_LOCK_WAIT` 覆盖。
+
+## 系统升级与镜像源
+
+`sysup` 的顺序是：显示 Arch 新闻 → 你确认 → 才请求管理员权限 → 取得维护锁后依次执行
+快照、镜像源检查、数据库与密钥环、软件包升级、Flatpak、GRUB、更新后检查（共 7 步）。
+在确认前取消不会要求输入密码。新闻抓取同时限制连接时间和总时长，源不通时转为
+"是否忽略新闻强制更新"，不会一直挂着。
+
+`mirror-update` 调用 reflector 时带并发测速和连接/下载超时，避免一批慢镜像把刷新拖成
+几分钟；线程数由配置项 `MIRROR_THREADS` 控制（默认 5，上限 32），也可用同名环境变量临时覆盖。
+
+## 快照与恢复
+
+`quicksave` 会给所有 Snapper 配置（通常是 root 和 home）创建**同一批次**的快照，批次 ID
+写在 `maintenance_batch` userdata 里；`quickload` 依靠它成套恢复。`sysup` 在升级前会自动
+创建一套描述为 `quicksave-sysup` 的快照。
+
+恢复目标的选择规则：
+
+- 不带 `-d` 时，`quickload` 选择**最新的**可恢复快照：多个配置一起恢复时取最新的一套
+  完整批次，单个配置则取该配置最新的快照。旧实现是"按描述猜"，会选中最后一个描述叫
+  `quicksave` 的快照，于是 `sysup` 建的 `quicksave-sysup` 永远选不中，默认恢复可能把系统
+  退回好几天前。
+- 确认页会列出**每个配置的快照 ID、时间、描述和批次**，确认词仍是 `restore`；不看清楚
+  恢复到哪一个时间点就无法继续。
+- 恢复成功后有 5 秒可中断的重启倒计时，Ctrl+C 可以留在当前系统先检查；自动重启失败会
+  明确报错，不再被静默吞掉。
+- 仍可用 `-d`、`--snapshot-date`、`--snapshot-batch` 精确指定，或在菜单里用「选择快照」
+  逐条挑选。
+
+删除与清理的护栏：
+
+- 菜单里的「删除快照」如果选中的快照属于某个批次、而另一侧还在，会明确提示"删掉这一半
+  后成套恢复会失效"，再要求输入 `delete`。
+- 批量删除只调用一次 `quicksave`，由 `snapper` 一次删完，不再每个 ID 起一个进程。
+- `clean all` 除了保留 `before*` 节点，还会**保留最近一套 `maintenance_batch` 快照**，
+  也就是最近一次更新前的回滚点，并在输出里说明保留了哪些。
 
 ## 迁移配置档（v2）
 
@@ -106,6 +180,11 @@ backup-restore --source /run/media/$USER/BACKUP --set latest --apply-home
 
 ### btrfs-assistant 不可用时的 root 恢复
 
+注意：`btrfs-assistant` **以普通用户直接运行会段错误，以 root 运行正常**（本机实测：
+用户态 exit 139 core dumped，root 下 `-l` 正常返回 34 条恢复条目）。所以 `quickload` 的
+后端预检必须先拿到管理员权限；在终端里交互运行时它会请求密码。如果预检没能提权，
+脚本会说明"没能以管理员权限探测恢复后端"，而不是谎报后端崩溃。
+
 `quickload` 默认仍使用 btrfs-assistant；如果它段错误或无法启动，默认会安全停止，绝不
 猜测恢复 ID。对于常见的顶级 `@` root 子卷布局，可以在确认目标快照后显式使用原生 Btrfs
 后端：
@@ -175,6 +254,9 @@ BACKUP_ON_CALENDAR=weekly
 BACKUP_RANDOM_DELAY=1h
 MIRROR_BACKUP_KEEP=5
 MIRROR_MAX_AGE_DAYS=30
+MIRROR_THREADS=5
+UPDATE_QUERY_TIMEOUT=90
+UPDATE_LOCK_WAIT=300
 ROOT_MIN_FREE_MIB=5120
 BOOT_MIN_FREE_MIB=200
 JOURNAL_RETENTION=2weeks
@@ -245,13 +327,17 @@ Fish 块，并准确恢复这些旧值；若状态文件不在，脚本只移除
 
 ## 退出码
 
-- `0`：操作成功，或普通交互检查已完成
-- `1`：操作失败；`--strict` 下也表示发现警告、缺失或查询失败
-- `2`：命令行参数错误，或非交互高风险操作缺少明确确认
+- `0`：操作完成，且没有发现需要处理的问题
+- `1`：① 无法得出结论（查询失败、工具报错、权限不足、超时）——即使没有 `--strict`；
+  ② `--strict` 下发现警告或缺失；③ 操作本身失败
+- `2`：命令行参数错误；非交互环境执行高风险操作又没有 `--yes`（不会自动确认）
 - `10`：子工具请求返回父菜单
 - `75`：另一项维护操作持有共享锁
-- `127`：缺少执行该功能所需的命令
+- `127`：缺少执行该功能所需的命令（会打印缺哪个命令）
 - `130`：Ctrl+C 中断，或菜单子工具用 Esc/取消请求立即返回父菜单
+
+`term-menu` 里运行叶子子工具期间按 Ctrl+C 只打断本次操作并回到父菜单；主菜单里 fzf
+被中断（130）按取消处理，fzf 真报错（≥2）会以同样状态退出，不再折叠成 `0`。
 
 ## 开发检查
 
@@ -262,4 +348,9 @@ MAINTENANCE_NO_NOTIFY=1 tests/run
 ```
 
 `tests/run` 使用临时目录和命令桩测试更新、清理、快照、迁移、恢复和存储状态，不会
-执行真实系统升级、快照恢复、深度清理或磁盘 scrub。
+执行真实系统升级、快照恢复、深度清理或磁盘 scrub。端到端用例会隔离 `HOME`，`test_syntax`
+会跳过 `review*/` 归档目录。只跑其中一部分可以使用正则过滤：
+
+```bash
+TESTS_FILTER='snapshot|lock' MAINTENANCE_NO_NOTIFY=1 tests/run
+```

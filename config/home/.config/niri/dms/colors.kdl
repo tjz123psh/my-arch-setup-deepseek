@@ -33,7 +33,7 @@ layout {
 
 recent-windows {
     highlight {
-        active-color   "#164974"
+        active-color   "#154974"
         urgent-color   "#ffb4ab"
     }
 }

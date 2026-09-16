@@ -26,7 +26,8 @@ test_syntax() {
   local file
   while IFS= read -r file; do
     bash -n "$file"
-  done < <(find "$ROOT" -maxdepth 2 -type f \( -perm -u+x -o -name '*.sh' \) ! -path '*/.git/*' | sort)
+  done < <(find "$ROOT" -maxdepth 2 -type f \( -perm -u+x -o -name '*.sh' \) \
+    ! -path '*/.git/*' ! -path "$ROOT/review/*" ! -path "$ROOT/review1/*" | sort)
   pass 'all shell files pass bash -n'
 }
 
@@ -56,6 +57,27 @@ test_config_parser() {
     maintenance_config_get BACKUP_TARGET >/dev/null
   '
   [[ ! -e "$marker" ]] || fail 'config parser must never execute value contents'
+
+  printf 'MIRROR_THREADS=8\nUPDATE_QUERY_TIMEOUT=45\nUPDATE_LOCK_WAIT=120\n' > "$file"
+  local tunables
+  tunables="$(HOME="$home" ROOT="$ROOT" bash -c '
+    source "$ROOT/lib/config.sh"
+    maintenance_config_load
+    printf "%s|%s|%s" \
+      "$(maintenance_config_get MIRROR_THREADS 5)" \
+      "$(maintenance_config_get UPDATE_QUERY_TIMEOUT 90)" \
+      "$(maintenance_config_get UPDATE_LOCK_WAIT 300)"
+  ')"
+  [[ "$tunables" == '8|45|120' ]] \
+    || fail 'config parser must accept the update/mirror tunables'
+
+  printf 'MIRROR_THREADS=99\n' > "$file"
+  local threads_rc=0
+  HOME="$home" ROOT="$ROOT" bash -c '
+    source "$ROOT/lib/config.sh"
+    maintenance_config_load
+  ' >/dev/null 2>&1 || threads_rc=$?
+  [[ "$threads_rc" -ne 0 ]] || fail 'config parser must reject an out-of-range MIRROR_THREADS'
 
   printf 'UNKNOWN_SETTING=1\n' > "$file"
   local invalid_rc=0
@@ -138,6 +160,86 @@ test_flatpak_online_query() {
   pass 'Flatpak updates are queried online by default'
 }
 
+test_update_source_scoped_refresh() {
+  local dir="$TMP_DIR/update-scope"
+  mkdir -p "$dir"
+
+  local result
+  result="$(ROOT="$ROOT" DIR="$dir" bash -c '
+    source "$ROOT/checkallupdates"
+    CACHE_DIR="$DIR"
+    CACHE_REPO="$DIR/repo"
+    CACHE_AUR="$DIR/aur"
+    CACHE_FLATPAK="$DIR/flatpak"
+    CACHE_STATUS="$DIR/status"
+    CACHE_STAMP="$DIR/stamp"
+    marks="$DIR/marks"
+    check_cmd() { [[ "$1" == checkupdates || "$1" == fakeroot || "$1" == flatpak || "$1" == flock ]]; }
+    checkupdates() { printf "pacman\n" >> "$marks"; printf "foo 1 -> 2\n"; }
+    aur_helper() { printf "paru\n"; }
+    paru() { printf "aur\n" >> "$marks"; printf "bar 1 -> 2\n"; }
+    flatpak() { printf "flatpak\n" >> "$marks"; return 1; }
+    queried() { sort "$marks" | tr "\n" ","; }
+    : > "$marks"; refresh_update_cache >/dev/null 2>&1 || true; first="$(queried)"
+    : > "$marks"; refresh_update_cache stale >/dev/null 2>&1 || true; second="$(queried)"
+    : > "$marks"; refresh_update_cache pacman >/dev/null 2>&1 || true; third="$(queried)"
+    printf "%s|%s|%s|%s" "$first" "$second" "$third" "$(tr "\t" ":" < "$CACHE_STATUS" | tr "\n" ";")"
+  ')"
+
+  [[ "${result%%|*}" == 'aur,flatpak,pacman,' ]] \
+    || fail 'the first update refresh must query every source'
+  assert_contains "$result" '|flatpak,|' \
+    'a stale refresh must retry only the source that is actually stale'
+  assert_contains "$result" '|pacman,|' \
+    'a source-scoped refresh must query only that source'
+  assert_contains "$result" 'pacman:ok:;aur:ok:;flatpak:error:' \
+    'sources that were skipped must keep their previously cached status'
+  pass 'update refresh only queries the sources it actually needs'
+}
+
+test_update_refresh_cleans_temp_files() {
+  local dir="$TMP_DIR/update-temp"
+  mkdir -p "$dir"
+
+  local result
+  result="$(ROOT="$ROOT" DIR="$dir" bash -c '
+    source "$ROOT/checkallupdates"
+    CACHE_DIR="$DIR"
+    CACHE_REPO="$DIR/repo"
+    CACHE_AUR="$DIR/aur"
+    CACHE_FLATPAK="$DIR/flatpak"
+    CACHE_STATUS="$DIR/status"
+    CACHE_STAMP="$DIR/stamp"
+    check_cmd() { [[ "$1" == checkupdates || "$1" == fakeroot || "$1" == flock ]]; }
+    checkupdates() { printf "foo 1 -> 2\n"; }
+    aur_helper() { return 0; }
+    refresh_update_cache >/dev/null 2>&1 || true
+    left="$(ls "$DIR" | grep -cE "^(repo|aur|flatpak|status|error)\.[A-Za-z0-9]{6}$" || true)"
+    orphan="$(mktemp "$DIR/repo.XXXXXX")"
+    _CAU_TMPFILES+=("$orphan")
+    _CAU_MAIN_PID="${BASHPID:-$$}"
+    _cau_cleanup
+    if [[ -e "$orphan" ]]; then printf "%s|leaked" "$left"; else printf "%s|cleaned" "$left"; fi
+  ')"
+
+  [[ "$result" == '0|cleaned' ]] \
+    || fail 'update refresh must leave no mktemp files and must clean them when interrupted'
+  pass 'update refresh cleans up its own temporary files'
+}
+
+test_menu_tools_resolve_from_script_dir() {
+  local result
+  result="$(ROOT="$ROOT" bash -c '
+    source "$ROOT/term-menu"
+    printf "%s|%s|" "$(resolve_tool checkallupdates)" "$(resolve_tool no-such-maintenance-tool || true)"
+    run_tool no-such-maintenance-tool >/dev/null 2>&1 || printf "%s" "$?"
+  ')"
+
+  [[ "$result" == "$ROOT/checkallupdates||127" ]] \
+    || fail 'menu tools must resolve from the script directory and report missing commands'
+  pass 'menu resolves its leaf tools from its own directory'
+}
+
 test_update_escape_contract() {
   local child standalone parent
   child="$(ROOT="$ROOT" bash -c '
@@ -176,6 +278,60 @@ test_update_escape_contract() {
   [[ "$no_tty_output" != *'inappropriate ioctl'* ]] \
     || fail 'checkallupdates must not leak fzf ioctl errors in noninteractive mode'
   pass 'all leaf-tool Esc/return statuses redraw the parent menu directly'
+}
+
+# 其余菜单测试都用命令桩，这条是唯一在真实伪终端里跑完整链路的：
+# fzf 真渲染、真按键、真执行一个叶子工具、真返回菜单。
+test_menu_end_to_end_in_pty() {
+  if ! command -v script >/dev/null 2>&1; then
+    pass 'pty menu drive skipped: util-linux script is unavailable'
+    return 0
+  fi
+
+  local drive="$TMP_DIR/pty-drive.sh"
+  local capture="$TMP_DIR/pty-capture.txt"
+  local bin="$TMP_DIR/pty-bin"
+  mkdir -p "$bin"
+  # 拒绝提权：检查脚本会走“无法检查”分支，既不会卡在密码提示上，
+  # 也顺带验证结果页对只读检查的措辞。
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 1' > "$bin/sudo"
+  chmod +x "$bin/sudo"
+  # 端到端用例必须隔离 HOME：叶子工具（如 log-check）会往 HOME 写报告，
+  # 旧夹具直接用真实 $HOME，每跑一次套件就留下一个 log-check-*.md。
+  local pty_home="$TMP_DIR/pty-home"
+  mkdir -p "$pty_home"
+  cat > "$drive" <<EOF
+stty rows 45 cols 130 2>/dev/null
+export PATH="$bin:\$PATH"
+export MAINTENANCE_NO_NOTIFY=1
+export HOME="$pty_home"
+export XDG_CONFIG_HOME="$pty_home/.config"
+export XDG_CACHE_HOME="$pty_home/.cache"
+export XDG_STATE_HOME="$pty_home/.local/state"
+mkdir -p "\$XDG_CONFIG_HOME" "\$XDG_CACHE_HOME" "\$XDG_STATE_HOME" 2>/dev/null
+cd "$ROOT"
+./term-menu
+EOF
+
+  local esc
+  esc="$(printf '\033')"
+  # 按键之间必须留间隔：连打时 fzf 可能在过滤生效前就接受了当前行。
+  {
+    sleep 2.5
+    printf '0'; sleep 0.4; printf '4'; sleep 0.8; printf '\r'; sleep 2.5
+    printf '1'; sleep 0.4; printf '0'; sleep 0.8; printf '\r'; sleep 4
+    printf ' '; sleep 1.5
+    printf '%s' "$esc"; sleep 1
+    printf '%s' "$esc"; sleep 1.5
+  } | timeout 60s script -q -c "bash $drive" /dev/null > "$capture" 2>&1 || true
+
+  grep -aq '维护菜单' "$capture" \
+    || fail 'pty menu drive must render the main menu'
+  grep -aq '系统检查' "$capture" \
+    || fail 'pty menu drive must navigate into the check submenu'
+  grep -aq '按任意键返回菜单' "$capture" \
+    || fail 'pty menu drive must run a leaf tool and show its result footer'
+  pass 'menu renders, navigates and runs a leaf tool through a real pseudo-terminal'
 }
 
 test_menu_navigation_contract() {
@@ -332,6 +488,32 @@ test_all_child_menus_retain_last_item() {
   pass 'every term-menu child menu retains its last executed item'
 }
 
+test_ui_display_width_and_tmp_registry() {
+  local out
+  out="$(ROOT="$ROOT" TMP="$TMP_DIR" bash -c '
+    source "$ROOT/lib/ui.sh"
+    esc="$(printf "\033")"
+    plain="$(ui_dwidth "红色")"
+    colored="$(ui_dwidth "${esc}[1;31m红色${esc}[0m")"
+    padded="$(ui_pad "中" 6)"
+    f1="$TMP/ui-tmp-1"
+    f2="$TMP/ui-tmp-2"
+    : > "$f1"
+    : > "$f2"
+    ui_tmp_register "$f1" "$f2"
+    ui_tmp_discard "$f1"
+    ui_tmp_cleanup
+    printf "%s|%s|%s|%s|%s|%s|%s|%s" \
+      "$(ui_dwidth "")" "$(ui_dwidth "abc")" "$(ui_dwidth "中文")" \
+      "$(ui_dwidth "中文abc")" "$plain" "$colored" "${#padded}" \
+      "$([[ -e "$f1" || -e "$f2" ]] && printf leaked || printf cleaned)"
+  ')"
+
+  [[ "$out" == '0|3|4|7|4|4|5|cleaned' ]] \
+    || fail "display width or temp registry regressed: $out"
+  pass 'display width strips ANSI, counts CJK as two columns and temp files are cleaned'
+}
+
 test_long_operations_report_progress() {
   local file text
   declare -A progress_expected=(
@@ -401,7 +583,17 @@ test_migration_valid_status() {
   local payload="$TMP_DIR/migration-payload"
   mkdir -p "$dir" "$payload"
   printf 'fixture\n' > "$payload/example.txt"
-  tar -czf "$dir/pang-arch-configs.tar.gz" -C "$payload" example.txt
+  # v1 关键内容校验现在是硬失败项：夹具要造出与真实迁移包一致的结构
+  printf '<html>fixture</html>\n' > "$payload/pkg-deps.html"
+  mkdir -p "$payload/scripts" "$payload/md" "$payload/.config/fish" \
+    "$payload/.config/niri" "$payload/.config/opencode"
+  printf '#!/bin/sh\n' > "$payload/scripts/fixture.sh"
+  printf 'fixture doc\n' > "$payload/md/fixture.md"
+  printf 'set -gx FIXTURE 1\n' > "$payload/.config/fish/config.fish"
+  printf 'output fixture\n' > "$payload/.config/niri/config.kdl"
+  printf '{}\n' > "$payload/.config/opencode/opencode.json"
+  tar -czf "$dir/pang-arch-configs.tar.gz" -C "$payload" \
+    example.txt pkg-deps.html scripts md .config
   printf 'bash\n' > "$dir/pkglist-explicit.txt"
   : > "$dir/pkglist-foreign.txt"
   : > "$dir/system-enabled-units.txt"
@@ -539,8 +731,16 @@ STUB
     || fail 'default v2 profile must not silently omit configuration dependencies'
   tar --zstd -tf "$default_dest/payload/home-config.tar.zst" | grep -Fqx '.ssh/id_fixture' \
     || fail 'default v2 profile must include the approved SSH material'
-  tar --zstd -tf "$default_dest/payload/home-config.tar.zst" | grep -Fqx 'Projects/project.txt' \
-    || fail 'default v2 profile must include Projects'
+  if ! tar --zstd -tf "$default_dest/payload/home-config.tar.zst" | grep -Fqx 'Projects/project.txt'; then
+    # 这条断言曾出现过一次无法复现的失败：失败时把实际清单和落盘状态打出来，
+    # 下次再飘就有证据可查，而不是只留一句 not ok。
+    printf 'default v2 payload listing:\n' >&2
+    tar --zstd -tf "$default_dest/payload/home-config.tar.zst" 2>&1 | head -40 >&2
+    printf 'snapshot home Projects:\n' >&2
+    ls -la "$snapshot_home/Projects" >&2 2>&1 || true
+    df -h /tmp | tail -1 >&2
+    fail 'default v2 profile must include Projects'
+  fi
   tar --zstd -tf "$default_dest/payload/home-config.tar.zst" | grep -Fqx 'Pictures/背景图片/fixture.png' \
     || fail 'default v2 profile must include requested background images'
   [[ ! -s "$default_dest/secrets/references.tsv" ]] \
@@ -782,6 +982,142 @@ STUB
   PATH="$bin:$PATH" "$ROOT/quicksave" -c root --list >/dev/null 2>&1 || status=$?
   [[ "$status" -ne 0 ]] || fail 'quicksave list must fail when snapshot listing fails'
   pass 'quicksave delete-all stops safely when snapshot listing fails'
+}
+
+test_quickload_defaults_to_newest_snapshot() {
+  local bin="$TMP_DIR/quickload-newest-bin"
+  local log="$TMP_DIR/quickload-newest.log"
+  mkdir -p "$bin"
+  cat > "$bin/snapper" <<'STUB'
+#!/usr/bin/env bash
+conf=''
+prev=''
+for arg in "$@"; do
+  [[ "$prev" == '-c' ]] && conf="$arg"
+  prev="$arg"
+done
+if [[ " $* " == *' list-configs '* ]]; then
+  printf 'config\037subvolume\nhome\037/home\nroot\037/\n'
+elif [[ " $* " == *' list '* ]]; then
+  printf 'number\037date\037description\037userdata\n'
+  if [[ "$conf" == 'home' ]]; then
+    printf '58\0372026-08-27 04:22:01\037quicksave\037maintenance_batch=old58\n'
+    printf '121\0372026-09-01 20:35:32\037quicksave-sysup\037maintenance_batch=new120\n'
+  else
+    printf '58\0372026-08-27 04:22:01\037quicksave\037maintenance_batch=old58\n'
+    printf '119\0372026-09-01 20:00:09\037timeline\037\n'
+    printf '120\0372026-09-01 20:35:31\037quicksave-sysup\037maintenance_batch=new120\n'
+  fi
+fi
+STUB
+  cat > "$bin/findmnt" <<'STUB'
+#!/usr/bin/env bash
+if [[ " $* " == *' FSTYPE '* ]]; then
+  printf 'btrfs\n'
+elif [[ "${*: -1}" == '/home' ]]; then
+  printf '/dev/test[/@home]\n'
+else
+  printf '/dev/test[/@]\n'
+fi
+STUB
+  cat > "$bin/btrfs-assistant" <<'STUB'
+#!/usr/bin/env bash
+if [[ "${1:-}" == '-l' ]]; then
+  printf '1 @ 58\n2 @home 58\n3 @ 119\n4 @ 120\n5 @home 121\n'
+else
+  printf 'restore %s\n' "$2" >> "$QUICKLOAD_TEST_LOG"
+fi
+STUB
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/btrfs"
+  printf '%s\n' '#!/usr/bin/env bash' 'printf "reboot\\n" >> "$QUICKLOAD_TEST_LOG"' > "$bin/reboot"
+  chmod +x "$bin"/*
+
+  : > "$log"
+  QUICKLOAD_TEST_MODE=1 QUICKLOAD_TEST_LOG="$log" PATH="$bin:$PATH" \
+    MAINTENANCE_LOCK_FILE="$TMP_DIR/quickload-newest-all.lock" \
+    "$ROOT/quickload" -n -c all >/dev/null 2>&1
+  [[ "$(< "$log")" == $'restore 5\nrestore 4\nreboot' ]] \
+    || fail 'default restore must use the newest complete batch, not the newest "quicksave" description'
+
+  : > "$log"
+  QUICKLOAD_TEST_MODE=1 QUICKLOAD_TEST_LOG="$log" PATH="$bin:$PATH" \
+    MAINTENANCE_LOCK_FILE="$TMP_DIR/quickload-newest-root.lock" \
+    "$ROOT/quickload" -n -c root >/dev/null 2>&1
+  [[ "$(< "$log")" == $'restore 4\nreboot' ]] \
+    || fail 'a single-config default restore must use that config newest snapshot'
+
+  : > "$log"
+  QUICKLOAD_TEST_MODE=1 QUICKLOAD_TEST_LOG="$log" PATH="$bin:$PATH" \
+    MAINTENANCE_LOCK_FILE="$TMP_DIR/quickload-explicit.lock" \
+    "$ROOT/quickload" -n -c all -d quicksave >/dev/null 2>&1
+  [[ "$(< "$log")" == $'restore 2\nrestore 1\nreboot' ]] \
+    || fail 'an explicit description must still select that description'
+  pass 'quickload defaults to the newest restorable snapshot'
+}
+
+test_term_snapshot_delete_guards() {
+  local bin="$TMP_DIR/term-del-bin"
+  local fzf_input="$TMP_DIR/term-del-fzf-input"
+  mkdir -p "$bin"
+  cat > "$bin/fzf" <<'STUB'
+#!/usr/bin/env bash
+cat > "$TERM_DEL_FZF_INPUT"
+printf '%s\n' "$TERM_DEL_FZF_RESULT"
+STUB
+  chmod +x "$bin/fzf"
+
+  local output
+  output="$(ROOT="$ROOT" PATH="$bin:$PATH" TERM_DEL_FZF_INPUT="$fzf_input" \
+    TERM_DEL_FZF_RESULT=$'120\t2026-09-01 20:35\tquicksave-sysup' \
+    MAINTENANCE_LOCK_FILE="$TMP_DIR/term-del.lock" bash -c '
+      source "$ROOT/term-menu"
+      snapper() {
+        case " $* " in
+          *" list-configs "*) printf "config\037subvolume\nroot\037/\nhome\037/home\n" ;;
+          *" list --columns number,date,description "*)
+            printf "number\037date\037description\n120\0372026-09-01 20:35:31\037quicksave-sysup\n" ;;
+          *" list --columns number,userdata "*)
+            printf "number\037userdata\n120\037maintenance_batch=b9\n" ;;
+        esac
+      }
+      quicksave() { printf "quicksave %s\n" "$*"; return 0; }
+      choose_menu() { printf "01\troot\troot\tdesc\n"; }
+      printf "delete\n" | delete_snapshot
+    ' 2>&1)"
+
+  [[ "$(wc -l < "$fzf_input")" == "$(grep -c . "$fzf_input")" ]] \
+    || fail 'the snapshot delete list must not feed fzf a trailing empty entry'
+  assert_contains "$output" '成套快照批次' \
+    'deleting half of a paired batch must warn that set restore will break'
+  assert_contains "$output" 'quicksave -c root -del 120 --yes' \
+    'batched snapshot deletion must run one quicksave call for all IDs'
+  pass 'snapshot deletion warns about paired batches and batches its calls'
+}
+
+test_quicksave_deletes_ids_in_one_call() {
+  local bin="$TMP_DIR/quicksave-multi-bin"
+  local log="$TMP_DIR/quicksave-multi.log"
+  mkdir -p "$bin"
+  cat > "$bin/snapper" <<'STUB'
+#!/usr/bin/env bash
+case " $* " in
+  *' list-configs '*) printf 'config\037subvolume\nroot\037/\n' ;;
+  *' get-config '*) exit 0 ;;
+  *' delete '*) printf 'delete %s\n' "$*" >> "$MULTI_TEST_LOG" ;;
+  *) exit 0 ;;
+esac
+STUB
+  printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$bin/btrfs"
+  chmod +x "$bin"/*
+
+  : > "$log"
+  MULTI_TEST_LOG="$log" PATH="$bin:$PATH" \
+    MAINTENANCE_LOCK_FILE="$TMP_DIR/quicksave-multi.lock" \
+    "$ROOT/quicksave" -c root -del 5 -del 7 --yes >/dev/null 2>&1
+  [[ "$(wc -l < "$log")" -eq 1 ]] \
+    || fail 'quicksave must delete multiple IDs in a single snapper call'
+  assert_contains "$(< "$log")" 'delete 5 7' 'quicksave must pass every requested ID to snapper'
+  pass 'quicksave deletes multiple snapshot IDs in one call'
 }
 
 test_quickload_resolution_and_failure() {
@@ -1376,7 +1712,8 @@ if [[ " $* " == *' FSTYPE '* ]]; then
   [[ "$last" == "$HOME" ]] && printf 'btrfs\n' || printf 'ext4\n'
 elif [[ " $* " == *' TARGET '* && "$last" == "$HOME" ]]; then
   printf '%s\n' "$HOME"
-elif [[ "$last" == '/' ]]; then
+elif [[ "$last" == '/' || "$last" == "$HOME" ]]; then
+  # HOME 与 / 同盘：同盘比较现在把 HOME 所在盘也算进去，夹具要显式声明
   printf '/dev/rootp1\n'
 else
   printf '/dev/backupp1\n'
@@ -1535,7 +1872,7 @@ test_offsite_check_is_read_only() {
   cat > "$bin/findmnt" <<'STUB'
 #!/usr/bin/env bash
 if [[ " $* " == *' FSTYPE '* ]]; then printf 'ext4\n'
-elif [[ "${*: -1}" == '/' ]]; then printf '/dev/rootp1\n'
+elif [[ "${*: -1}" == '/' || "${*: -1}" == "$HOME" ]]; then printf '/dev/rootp1\n'
 else printf '/dev/backupp1\n'; fi
 STUB
   cat > "$bin/lsblk" <<'STUB'
@@ -1756,7 +2093,17 @@ test_migration_output_and_checksum_guards() {
   local payload="$TMP_DIR/migration-checksum-payload"
   mkdir -p "$dir" "$payload"
   printf 'fixture\n' > "$payload/example.txt"
-  tar -czf "$dir/pang-arch-configs.tar.gz" -C "$payload" example.txt
+  # 同 test_migration_valid_status：补齐 v1 关键内容
+  printf '<html>fixture</html>\n' > "$payload/pkg-deps.html"
+  mkdir -p "$payload/scripts" "$payload/md" "$payload/.config/fish" \
+    "$payload/.config/niri" "$payload/.config/opencode"
+  printf '#!/bin/sh\n' > "$payload/scripts/fixture.sh"
+  printf 'fixture doc\n' > "$payload/md/fixture.md"
+  printf 'set -gx FIXTURE 1\n' > "$payload/.config/fish/config.fish"
+  printf 'output fixture\n' > "$payload/.config/niri/config.kdl"
+  printf '{}\n' > "$payload/.config/opencode/opencode.json"
+  tar -czf "$dir/pang-arch-configs.tar.gz" -C "$payload" \
+    example.txt pkg-deps.html scripts md .config
   printf 'bash\n' > "$dir/pkglist-explicit.txt"
   : > "$dir/pkglist-foreign.txt"
   : > "$dir/system-enabled-units.txt"
@@ -2085,9 +2432,18 @@ STUB
     || fail 'an explicitly failed grub-mkconfig must fail post-update-check without strict mode'
   if [[ "$EUID" -ne 0 ]]; then
     local grub_unreadable_rc=0 grub_unreadable_output
+    # 自建"确实读不到"的夹具：以前用 /root/maintenance-unreadable-grub.cfg，前提是
+    # 测试用户不能穿越 /root；本机 /root 带 ACL（greeter 组可进入）时前提不成立，
+    # 文件只是"不存在"，测试会误判。这里用 000 权限的文件，不依赖系统目录权限。
+    # grub_file_state 只有在"文件读不到 + 父目录不可穿越"时才判 2（无法读取）；
+    # profile 目录本身置 000 才能稳定得到"不可读取"而不是"缺失"。
+    local unreadable_dir="$TMP_DIR/post-update-unreadable"
+    mkdir -p "$unreadable_dir"
+    chmod 000 "$unreadable_dir"
     grub_unreadable_output="$(PATH="$bin:$PATH" POST_UPDATE_MODULES_DIR="$modules" \
-      POST_UPDATE_GRUB_CFG=/root/maintenance-unreadable-grub.cfg POST_SUDO_UNAVAILABLE=1 \
+      POST_UPDATE_GRUB_CFG="$unreadable_dir/grub.cfg" POST_SUDO_UNAVAILABLE=1 \
       "$ROOT/post-update-check" 2>&1)" || grub_unreadable_rc=$?
+    chmod 700 "$unreadable_dir"
     [[ "$grub_unreadable_rc" -ne 0 ]] \
       || fail 'post-update check must fail when GRUB cannot be read'
     assert_contains "$grub_unreadable_output" 'GRUB 状态未完成验证' \
@@ -2122,6 +2478,17 @@ STUB
 #!/usr/bin/env bash
 case " $* " in
   *' list-configs '*) printf 'config\037subvolume\nroot\037/\nhome\037/home\n' ;;
+  *' list --columns number,description,userdata '*)
+    printf 'number\037description\037userdata\n'
+    printf '0\037current\037\n'
+    printf '9\037quicksave\037maintenance_batch=20260101T000000.0-1\n'
+    printf '11\037quicksave-sysup\037maintenance_batch=20260901T000000.0-2\n'
+    ;;
+  *' list --columns number,userdata '*)
+    printf 'number\037userdata\n'
+    printf '9\037maintenance_batch=20260101T000000.0-1\n'
+    printf '11\037maintenance_batch=20260901T000000.0-2\n'
+    ;;
   *' list --columns number,description '*) printf 'number\037description\n0\037current\n9\037quicksave\n' ;;
   *' delete '*) printf 'delete %s\n' "$*" >> "$CLEAN_TEST_LOG" ;;
   *' cleanup '*) exit 0 ;;
@@ -2182,6 +2549,11 @@ STUB
   [[ "$status" -eq 1 ]] || fail 'clean must return nonzero when one or more steps fail'
   assert_contains "$output" '至少一个步骤失败' 'clean reports partial failure in final summary'
   assert_contains "$(< "$log")" 'delete' 'clean parses CSV snapshots and attempts selected deletion'
+  assert_contains "$(< "$log")" 'delete 9' 'clean deletes ordinary historical snapshots'
+  [[ "$(< "$log")" != *'delete 11'* ]] \
+    || fail 'deep clean must keep the newest maintenance rollback batch'
+  assert_contains "$output" '最近回滚点' \
+    'deep clean must say which snapshots it kept as the rollback point'
   assert_contains "$output" '已全部保留' \
     'clean must retain backup-like subvolumes without trusted provenance'
   [[ "$(< "$log")" != *'btrfs-delete '* ]] \
@@ -2327,7 +2699,19 @@ test_backup_restore_plan_and_apply_guards() {
   printf 'backup\n' > "$home_payload/.config/app.conf"
   printf 'new\n' > "$home_payload/new.txt"
   printf 'config\n' > "$migration_payload/config.txt"
-  tar -czf "$migration/pang-arch-configs.tar.gz" -C "$migration_payload" config.txt
+  # 与 test_migration_valid_status 同理：v1 关键内容现在是硬失败项，
+  # 而 backup-restore 会对集合里的迁移包跑 --verify。
+  printf '<html>fixture</html>\n' > "$migration_payload/pkg-deps.html"
+  mkdir -p "$migration_payload/scripts" "$migration_payload/md" \
+    "$migration_payload/.config/fish" "$migration_payload/.config/niri" \
+    "$migration_payload/.config/opencode"
+  printf '#!/bin/sh\n' > "$migration_payload/scripts/fixture.sh"
+  printf 'fixture doc\n' > "$migration_payload/md/fixture.md"
+  printf 'set -gx FIXTURE 1\n' > "$migration_payload/.config/fish/config.fish"
+  printf 'output fixture\n' > "$migration_payload/.config/niri/config.kdl"
+  printf '{}\n' > "$migration_payload/.config/opencode/opencode.json"
+  tar -czf "$migration/pang-arch-configs.tar.gz" -C "$migration_payload" \
+    config.txt pkg-deps.html scripts md .config
   printf 'bash\nnano\n' > "$migration/pkglist-explicit.txt"
   printf 'aur-fixture\n' > "$migration/pkglist-foreign.txt"
   printf 'fixture.service enabled disabled\n' > "$migration/system-enabled-units.txt"
@@ -2695,55 +3079,77 @@ STUB
 }
 
 printf 'TAP version 13\n'
-test_syntax
-test_config_parser
-test_update_query_failure
-test_update_dependency_failure
-test_flatpak_online_query
-test_update_escape_contract
-test_menu_navigation_contract
-test_all_fzf_selectors_cycle
-test_all_child_menus_retain_last_item
-test_long_operations_report_progress
-test_rich_new_feature_previews
-test_migration_failure_status
-test_migration_valid_status
-test_migration_manifest_completeness
-test_migration_v2_profile_plan_and_snapshot_source
-test_migration_payload_terminal_sudo_fallback
-test_log_query_failure
-test_maintenance_lock
-test_maintenance_lock_inheritance
-test_maintenance_lock_spoof_rejected
-test_quicksave_batch_transaction
-test_quicksave_delete_query_failure
-test_quickload_resolution_and_failure
-test_native_root_fallback_rolls_back_publish_failure
-test_quickload_snapshot_query_failure
-test_strict_check_status
-test_diagnostic_query_failures
-test_privileged_read_prompts
-test_gpu_compact_health_summary
-test_offsite_rejects_same_disk
-test_offsite_full_cycle
-test_offsite_check_is_read_only
-test_offsite_schedule_units
-test_migration_output_and_checksum_guards
-test_mirror_backup_retention
-test_mirror_update_full_cycle
-test_sysup_full_cycle_and_abort
-test_post_update_health_status
-test_clean_csv_and_failure_status
-test_cache_clean_scope
-test_cache_clean_partial_failure_status
-test_snapper_csv_discovery
-test_manual_snapshot_ids
-test_term_snapshot_delete_releases_lock
-test_term_snapshot_query_failures
-test_backup_restore_plan_and_apply_guards
-test_btrfs_scrub_management
-test_storage_health_strict_status
-test_terminal_tools_lifecycle
-test_cli_argument_contracts
-test_audit_mode_suppresses_notifications
+# 用例清单：可用 TESTS_FILTER（bash 正则）只跑其中一部分，例如
+#   TESTS_FILTER='snapshot|lock' MAINTENANCE_NO_NOTIFY=1 bash tests/run
+# 不设置时与原来一致（全跑）；TAP 计划按实际执行的用例数输出。
+_run_selected() {
+  local name="$1"
+  if [[ -n "${TESTS_FILTER:-}" ]] && [[ ! "$name" =~ $TESTS_FILTER ]]; then
+    return 0
+  fi
+  "$name"
+}
+
+for _test_name in \
+  test_syntax \
+  test_config_parser \
+  test_update_query_failure \
+  test_update_dependency_failure \
+  test_flatpak_online_query \
+  test_update_source_scoped_refresh \
+  test_update_refresh_cleans_temp_files \
+  test_menu_tools_resolve_from_script_dir \
+  test_update_escape_contract \
+  test_menu_navigation_contract \
+  test_menu_end_to_end_in_pty \
+  test_all_fzf_selectors_cycle \
+  test_all_child_menus_retain_last_item \
+  test_ui_display_width_and_tmp_registry \
+  test_long_operations_report_progress \
+  test_rich_new_feature_previews \
+  test_migration_failure_status \
+  test_migration_valid_status \
+  test_migration_manifest_completeness \
+  test_migration_v2_profile_plan_and_snapshot_source \
+  test_migration_payload_terminal_sudo_fallback \
+  test_log_query_failure \
+  test_maintenance_lock \
+  test_maintenance_lock_inheritance \
+  test_maintenance_lock_spoof_rejected \
+  test_quicksave_batch_transaction \
+  test_quicksave_delete_query_failure \
+  test_quickload_defaults_to_newest_snapshot \
+  test_quickload_resolution_and_failure \
+  test_term_snapshot_delete_guards \
+  test_quicksave_deletes_ids_in_one_call \
+  test_native_root_fallback_rolls_back_publish_failure \
+  test_quickload_snapshot_query_failure \
+  test_strict_check_status \
+  test_diagnostic_query_failures \
+  test_privileged_read_prompts \
+  test_gpu_compact_health_summary \
+  test_offsite_rejects_same_disk \
+  test_offsite_full_cycle \
+  test_offsite_check_is_read_only \
+  test_offsite_schedule_units \
+  test_migration_output_and_checksum_guards \
+  test_mirror_backup_retention \
+  test_mirror_update_full_cycle \
+  test_sysup_full_cycle_and_abort \
+  test_post_update_health_status \
+  test_clean_csv_and_failure_status \
+  test_cache_clean_scope \
+  test_cache_clean_partial_failure_status \
+  test_snapper_csv_discovery \
+  test_manual_snapshot_ids \
+  test_term_snapshot_delete_releases_lock \
+  test_term_snapshot_query_failures \
+  test_backup_restore_plan_and_apply_guards \
+  test_btrfs_scrub_management \
+  test_storage_health_strict_status \
+  test_terminal_tools_lifecycle \
+  test_cli_argument_contracts \
+  test_audit_mode_suppresses_notifications; do
+  _run_selected "$_test_name"
+done
 printf '1..%d\n' "$TESTS_RUN"

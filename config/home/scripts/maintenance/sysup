@@ -33,6 +33,19 @@ SYSUP_ROOT_MIN_MIB="$(maintenance_config_get ROOT_MIN_FREE_MIB 5120)"
 SYSUP_BOOT_MIN_MIB="$(maintenance_config_get BOOT_MIN_FREE_MIB 200)"
 SYSUP_MIRROR_MAX_AGE_DAYS="$(maintenance_config_get MIRROR_MAX_AGE_DAYS 30 SYSUP_MIRROR_MAX_AGE_DAYS)"
 
+# 这三个值随后会进入 $(( )) 求值。即使环境变量覆盖绕过了配置文件校验，
+# 也要在这里挡住非整数：bash 算术会把非法下标里的 $(...) 展开成命令。
+for _sysup_num_var in SYSUP_ROOT_MIN_MIB SYSUP_BOOT_MIN_MIB SYSUP_MIRROR_MAX_AGE_DAYS; do
+  [[ "${!_sysup_num_var}" =~ ^[1-9][0-9]*$ ]] && continue
+  ui_warn "%s 必须是正整数（当前值：%s），已改用默认值。" "$_sysup_num_var" "${!_sysup_num_var}"
+  case "$_sysup_num_var" in
+    SYSUP_ROOT_MIN_MIB) SYSUP_ROOT_MIN_MIB=5120 ;;
+    SYSUP_BOOT_MIN_MIB) SYSUP_BOOT_MIN_MIB=200 ;;
+    *) SYSUP_MIRROR_MAX_AGE_DAYS=30 ;;
+  esac
+done
+unset _sysup_num_var
+
 # 兼容脚本内既有 H_* / TAG_* 引用
 H_YELLOW="$UI_YELLOW"; H_BLUE="$UI_BLUE"; H_CYAN="$UI_CYAN"
 TAG_INFO="[消息]"; TAG_WARN="[注意]"
@@ -57,16 +70,31 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
   -l | --list) SHOW_LIST=1; shift 1 ;;
   -y | --yes) ASSUME_YES=1; shift 1 ;;
-  --news-source) [[ -n "${2:-}" ]] && NEWS_SOURCE="$2" && shift 2 || exit 1 ;;
-  --count) [[ -n "${2:-}" ]] && COUNT_LIMIT="$2" && shift 2 || exit 1 ;;
+  --news-source)
+    if [[ -z "${2:-}" ]]; then
+      printf '错误: --news-source 缺少参数。\n' >&2
+      exit 2
+    fi
+    NEWS_SOURCE="$2"
+    shift 2
+    ;;
+  --count)
+    if [[ -z "${2:-}" ]]; then
+      printf '错误: --count 缺少参数。\n' >&2
+      exit 2
+    fi
+    COUNT_LIMIT="$2"
+    shift 2
+    ;;
   --help | -h)
     usage
     exit 0
     ;;
   *)
-    printf "未知参数: %s\n" "$1"
-    usage
-    exit 1
+    # 退出码 2 = 命令行参数错误，与 README 的退出码约定保持一致。
+    printf '未知参数: %s\n' "$1" >&2
+    usage >&2
+    exit 2
     ;;
   esac
 done
@@ -86,17 +114,18 @@ fi
 # ------------------------------
 # 4. 文案（纯中文）
 # ------------------------------
-declare -A MSG
+declare -gA MSG
 MSG[SYNCING_DATA]="⏳ 正在同步最新软件库数据，请稍候..."
 
 MSG[INTRO_HEADER]="Arch Linux 系统更新助手"
-MSG[INTRO_DESC]="本脚本将执行以下操作："
-MSG[INTRO_1]="1. 获取最新 Arch Linux 新闻"
+MSG[INTRO_DESC]="先看最新 Arch Linux 新闻，你确认后才会请求管理员权限并依次执行："
+MSG[INTRO_1]="1. 创建 Btrfs 快照（可用时）"
 MSG[INTRO_2]="2. 检查镜像源时效并按需更新"
 MSG[INTRO_3]="3. 同步软件数据库并更新 GPG 密钥环"
 MSG[INTRO_4]="4. 升级系统软件包 (交互模式防冲突)"
 MSG[INTRO_5]="5. 更新 Flatpak 应用"
 MSG[INTRO_6]="6. 重新生成 GRUB 配置文件"
+MSG[INTRO_7]="7. 更新后只读健康检查"
 
 MSG[REQ_SUDO]="正在请求管理员权限以更新系统..."
 MSG[SUDO_FAIL]="需要管理员权限才能更新系统。已退出。"
@@ -113,19 +142,19 @@ MSG[FORCE_ASK]="是否忽略新闻强制更新？[y/N] "
 MSG[FORCING]="正在强制更新..."
 MSG[EXIT]="安全退出。"
 
-MSG[SNAP]="[0/6] 正在创建 Btrfs 快照..."
-MSG[STEP_MIRROR]="[1/6] 检查镜像源时效性..."
-MSG[STEP_1]="[2/6] 同步数据库并更新密钥环..."
+MSG[SNAP]="[1/7] 正在创建 Btrfs 快照..."
+MSG[STEP_MIRROR]="[2/7] 检查镜像源时效性..."
+MSG[STEP_1]="[3/7] 同步数据库并更新密钥环..."
 MSG[KEYRING_OK]="数据库与密钥环已同步。"
 MSG[KEYRING_WARN]="数据库或密钥环更新失败；为避免不完整事务，已停止系统更新。"
-MSG[STEP_2]="[3/6] 正在升级系统..."
-MSG[STEP_3]="[4/6] 检查 Flatpak 更新..."
+MSG[STEP_2]="[4/7] 正在升级系统..."
+MSG[STEP_3]="[5/7] 检查 Flatpak 更新..."
 MSG[FLATPAK_OK]="Flatpak 更新完成。"
 MSG[FLATPAK_WARN]="Flatpak 更新失败；主系统升级不受影响，可稍后单独重试。"
-MSG[STEP_4]="[5/6] 更新 GRUB 配置..."
+MSG[STEP_4]="[6/7] 更新 GRUB 配置..."
 MSG[GRUB_OK]="GRUB 更新成功。"
 MSG[GRUB_FAIL]="GRUB 更新失败。"
-MSG[STEP_POST]="[6/6] 正在执行更新后只读检查..."
+MSG[STEP_POST]="[7/7] 正在执行更新后只读检查..."
 MSG[DONE]="系统更新流程已完成。请检查上方是否有警告；内核或驱动更新后建议重启。"
 
 MSG[MIR_OLD]="镜像源已 %s 天未更新 (>30天)。是否更新？[Y/n]"
@@ -164,7 +193,11 @@ fi
 # ------------------------------
 # 6. Intro & Request Privileges
 # ------------------------------
-clear
+# clear 在 TERM 未设置或为 dumb、以及非 TTY 时会返回非 0；旧实现让 set -e
+# 直接终止，文档化的 --yes 非交互入口因此完全不可用。这里退化成尽力而为。
+if [[ -t 1 ]]; then
+  clear 2>/dev/null || true
+fi
 ui_banner "系统升级" "sysup · 官方仓库 / AUR / Flatpak / GRUB"
 printf "%s\n" "${MSG[INTRO_DESC]}"
 printf "  %s\n" "${MSG[INTRO_1]}"
@@ -172,24 +205,22 @@ printf "  %s\n" "${MSG[INTRO_2]}"
 printf "  %s\n" "${MSG[INTRO_3]}"
 printf "  %s\n" "${MSG[INTRO_4]}"
 printf "  %s\n" "${MSG[INTRO_5]}"
-printf "  %s\n\n" "${MSG[INTRO_6]}"
+printf "  %s\n" "${MSG[INTRO_6]}"
+printf "  %s\n\n" "${MSG[INTRO_7]}"
 
-_log "${MSG[REQ_SUDO]}"
-if ! sudo -v; then
-  _error "${MSG[SUDO_FAIL]}"
-fi
+# 旧实现在这里就把密码问了：用户还没看到新闻、也还没确认要不要更新，
+# 就得先输一次密码；取消更新等于白输。现在推迟到确认之后、真正开始
+# 写系统之前才请求，并且拿不到锁时根本不会问。
+# 保活实现在 lib/ui.sh，与 clean 共用同一份（它会在子进程里关掉维护锁描述符，
+# 避免主脚本退出后孤儿 sleep 继续持有维护锁）。
+request_sudo() {
+  [[ -z "${UI_SUDO_KEEPALIVE_PID:-}" ]] || return 0
 
-while true; do
-  sudo -n true
-  sleep 60
-done </dev/null >/dev/null 2>&1 &
-SUDO_PID=$!
-stop_sudo_keepalive() {
-  pkill -TERM -P "$SUDO_PID" 2>/dev/null || true
-  kill "$SUDO_PID" 2>/dev/null || true
-  wait "$SUDO_PID" 2>/dev/null || true
+  if ! ui_sudo_keepalive_start "${MSG[REQ_SUDO]}"; then
+    _error "${MSG[SUDO_FAIL]}"
+  fi
+  trap ui_sudo_keepalive_stop EXIT
 }
-trap stop_sudo_keepalive EXIT
 
 # ------------------------------
 # 7. Check AUR Helper
@@ -310,6 +341,7 @@ perform_update() {
   local refresh_cmd=""
 
   ui_maintenance_lock_acquire "系统更新" || return $?
+  request_sudo
   preflight_update
   if [[ -x "$SCRIPT_DIR/quicksave" ]]; then
     quicksave_cmd="$SCRIPT_DIR/quicksave"
@@ -476,7 +508,9 @@ else
   NEWS_URL="https://archlinux.org/feeds/news/"
 fi
 
-if curl -sS -L --connect-timeout 15 -A "Mozilla/5.0" "$NEWS_URL" |
+# --connect-timeout 只管建连：源在传输阶段卡住时旧写法会无限期挂着，
+# 补一个总时长上限，拿不到新闻就走“是否忽略新闻强制更新”的既有分支。
+if curl -sS -L --connect-timeout 10 --max-time 25 -A "Mozilla/5.0" "$NEWS_URL" |
   python -c "$PYTHON_SCRIPT" "$COUNT_LIMIT" "${MSG[NEWS_HEADER]}"; then
 
   if [[ "$ASSUME_YES" -eq 1 ]]; then

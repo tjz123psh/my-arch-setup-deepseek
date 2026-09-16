@@ -5,13 +5,15 @@ UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
 # shellcheck source=lib/ui.sh
 . "$UI_LIB"
 
-# 卡片状态包装：进卡片内的徽章行，并累计统计
+# 卡片状态包装：进卡片内的徽章行，并累计统计（err = 查询失败，与"缺失"分开计数）
 ok()   { ui_panel_stat ok   "$*"; }
 warn() { ui_panel_stat warn "$*"; }
 miss() { ui_panel_stat miss "$*"; }
+err()  { ui_panel_stat err  "$*"; }
 info() { ui_panel_stat info "$*"; }
 
 HW_QUERY_FAILED=0
+HW_MISSING_CMD=0
 PACKAGE_ROWS=""
 PACKAGE_QUERY_OK=0
 SERVICE_STATE=""
@@ -19,6 +21,35 @@ SERVICE_STATE_RC=0
 
 have() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# ------------------------------------------------------------------------------
+# 子进程削减：ui_panel_raw 每次调用都会 fork 一个 expand（本脚本一次检查 7 次）。
+# 这里只在本脚本内覆盖为 bash 版按 8 列制表位展开 Tab，输出格式与库一致；
+# 终端宽度缓存已由 lib/ui.sh 统一处理，不再重复覆盖 ui_cols。
+# ------------------------------------------------------------------------------
+ui_panel_raw() {
+  local line out i ch col n pad
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$line" == *$'\t'* ]]; then
+      out=""; col=0
+      for ((i = 0; i < ${#line}; i++)); do
+        ch="${line:i:1}"
+        if [[ "$ch" == $'\t' ]]; then
+          n=$(( 8 - col % 8 ))
+          printf -v pad '%*s' "$n" ''
+          out+="$pad"
+          col=$(( col + n ))
+        else
+          out+="$ch"
+          col=$(( col + 1 ))
+        fi
+      done
+      printf "${UI_C_LAVENDER}│${UI_RESET}  %s\n" "$out"
+    else
+      printf "${UI_C_LAVENDER}│${UI_RESET}  %s\n" "$line"
+    fi
+  done
 }
 
 pkg_installed() {
@@ -48,7 +79,7 @@ run_cmd() {
     if [[ "$rc" -eq 0 ]]; then
       [[ -z "$output" ]] || printf '%s\n' "$output" | ui_panel_raw
     else
-      warn "$cmd 查询失败（退出码 $rc）"
+      err "$cmd 查询失败（退出码 $rc）"
       [[ -z "$output" ]] || printf '%s\n' "$output" | ui_panel_raw
       HW_QUERY_FAILED=1
     fi
@@ -82,6 +113,29 @@ check_cmd() {
   fi
 }
 
+# systemd 单元状态缓存：main 用两次批量 systemctl 预取（system/user 各一次），
+# 各 check_* 直接复用，避免每个单元各起一个进程（11 → 3 次）。
+declare -gA SERVICE_STATE_CACHE=()
+
+prefetch_service_states() {
+  local scope="$1"
+  shift
+  (($# > 0)) || return 0
+  local out="" i
+  local -a units=("$@") lines=()
+  if [[ "$scope" == "user" ]]; then
+    out="$(systemctl --user is-active "${units[@]}" 2>&1)" || true
+  else
+    out="$(systemctl is-active "${units[@]}" 2>&1)" || true
+  fi
+  mapfile -t lines <<< "$out"
+  # 行数与单元数不一致（例如 systemd 不可达）时不缓存，逐条查询兜底。
+  ((${#lines[@]} == ${#units[@]})) || return 0
+  for i in "${!units[@]}"; do
+    SERVICE_STATE_CACHE["$scope:${units[$i]}"]="${lines[$i]}"
+  done
+}
+
 query_service_state() {
   local unit="$1" scope="${2:-system}"
   SERVICE_STATE=""
@@ -91,7 +145,9 @@ query_service_state() {
     HW_QUERY_FAILED=1
     return 1
   fi
-  if [[ "$scope" == "user" ]]; then
+  if [[ -n "${SERVICE_STATE_CACHE[$scope:$unit]:-}" ]]; then
+    SERVICE_STATE="${SERVICE_STATE_CACHE[$scope:$unit]}"
+  elif [[ "$scope" == "user" ]]; then
     SERVICE_STATE="$(systemctl --user is-active "$unit" 2>&1)" || SERVICE_STATE_RC=$?
   else
     SERVICE_STATE="$(systemctl is-active "$unit" 2>&1)" || SERVICE_STATE_RC=$?
@@ -108,7 +164,7 @@ check_service() {
   local scope="${2:-system}"
   local label="${3:-$unit}"
   if ! query_service_state "$unit" "$scope"; then
-    warn "$label 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    err "$label 状态查询失败（退出码 $SERVICE_STATE_RC）"
     [[ -z "$SERVICE_STATE" ]] || printf '%s\n' "$SERVICE_STATE" | ui_panel_raw
     return
   fi
@@ -129,7 +185,7 @@ dms_session_running() {
 
 check_dms() {
   if ! query_service_state dms.service user; then
-    warn "DMS 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    err "DMS 状态查询失败（退出码 $SERVICE_STATE_RC）"
     [[ -z "$SERVICE_STATE" ]] || printf '%s\n' "$SERVICE_STATE" | ui_panel_raw
     return
   fi
@@ -159,7 +215,7 @@ check_dms() {
 
 check_tuned() {
   if ! query_service_state tuned.service system; then
-    warn "tuned 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    err "tuned 状态查询失败（退出码 $SERVICE_STATE_RC）"
     return
   fi
   case "$SERVICE_STATE" in
@@ -170,7 +226,7 @@ check_tuned() {
 
 check_vmtoolsd() {
   if ! query_service_state vmtoolsd.service system; then
-    warn "vmtoolsd 状态查询失败（退出码 $SERVICE_STATE_RC）"
+    err "vmtoolsd 状态查询失败（退出码 $SERVICE_STATE_RC）"
     return
   fi
   case "$SERVICE_STATE" in
@@ -188,7 +244,7 @@ check_display_manager() {
     unit="display-manager.service"
   fi
   if ! query_service_state "$unit" system; then
-    warn "显示管理器状态查询失败（退出码 $SERVICE_STATE_RC）"
+    err "显示管理器状态查询失败（退出码 $SERVICE_STATE_RC）"
     return
   fi
   case "$SERVICE_STATE" in
@@ -243,12 +299,21 @@ main() {
     ui_panel_kv "架构" "$(uname -m 2>/dev/null || printf '?')"
     ui_panel_kv "主机名" "$(uname -n 2>/dev/null || printf '?')"
   fi
+  if have systemctl; then
+    prefetch_service_states system NetworkManager.service power-profiles-daemon.service \
+      tuned.service bluetooth.service vmtoolsd.service
+    prefetch_service_states user pipewire.service pipewire-pulse.service \
+      wireplumber.service dms.service dsearch.service
+  else
+    miss "缺少 systemctl（systemd），无法检查服务状态"
+    HW_MISSING_CMD=1
+  fi
   if have timedatectl; then
     local tz ntp timedate_rc=0
     tz="$(timedatectl show -p Timezone --value 2>&1)" || timedate_rc=$?
     ntp="$(timedatectl show -p NTPSynchronized --value 2>&1)" || timedate_rc=$?
     if [[ "$timedate_rc" -ne 0 ]]; then
-      warn "timedatectl 查询失败（退出码 $timedate_rc）"
+      err "timedatectl 查询失败（退出码 $timedate_rc）"
       HW_QUERY_FAILED=1
     else
       [[ -n "$tz" ]] && ui_panel_kv "时区" "$tz"
@@ -258,8 +323,11 @@ main() {
       esac
     fi
   fi
-  if [[ "$package_rc" -ne 0 ]]; then
-    warn "pacman 软件包数据库查询失败（退出码 $package_rc）"
+  if [[ "$package_rc" -eq 127 ]]; then
+    miss "缺少 pacman，无法检查软件包"
+    HW_MISSING_CMD=1
+  elif [[ "$package_rc" -ne 0 ]]; then
+    err "pacman 软件包数据库查询失败（退出码 $package_rc）"
     [[ -z "$PACKAGE_ROWS" ]] || printf '%s\n' "$PACKAGE_ROWS" | ui_panel_raw
     HW_QUERY_FAILED=1
   fi
@@ -273,20 +341,22 @@ main() {
     [[ -n "$cpu_model" ]] && ui_panel_kv "型号" "$cpu_model"
     [[ -n "$cpu_vendor" ]] && ui_panel_kv "厂商" "$cpu_vendor"
     [[ -n "$cpu_count" ]] && ui_panel_kv "逻辑核心" "$cpu_count"
+    # 厂商判断只在 lscpu 成功时做；失败时上面已经报告，避免二次误报"无法判断"。
+    if grep -qi amd <<< "$lscpu_out"; then
+      check_pkg amd-ucode "AMD CPU 微码"
+    elif grep -qi intel <<< "$lscpu_out"; then
+      check_pkg intel-ucode "Intel CPU 微码"
+    else
+      warn "无法判断 CPU 厂商"
+    fi
   elif [[ "$lscpu_rc" -eq 127 ]]; then
     miss "缺少 lscpu"
     HW_QUERY_FAILED=1
+    HW_MISSING_CMD=1
   else
-    warn "lscpu 查询失败（退出码 $lscpu_rc）"
+    err "lscpu 查询失败（退出码 $lscpu_rc）"
     [[ -z "$lscpu_out" ]] || printf '%s\n' "$lscpu_out" | ui_panel_raw
     HW_QUERY_FAILED=1
-  fi
-  if grep -qi amd <<< "$lscpu_out"; then
-    check_pkg amd-ucode "AMD CPU 微码"
-  elif grep -qi intel <<< "$lscpu_out"; then
-    check_pkg intel-ucode "Intel CPU 微码"
-  else
-    warn "无法判断 CPU 厂商"
   fi
 
   panel "图形 / GPU" ""
@@ -300,8 +370,9 @@ main() {
   elif [[ "$lspci_rc" -eq 127 ]]; then
     miss "lspci — 建议安装 pciutils"
     HW_QUERY_FAILED=1
+    HW_MISSING_CMD=1
   else
-    warn "lspci 查询失败（退出码 $lspci_rc）"
+    err "lspci 查询失败（退出码 $lspci_rc）"
     [[ -z "$lspci_out" ]] || printf '%s\n' "$lspci_out" | ui_panel_raw
     HW_QUERY_FAILED=1
   fi
@@ -312,15 +383,16 @@ main() {
   elif [[ "$lsmod_rc" -eq 127 ]]; then
     miss "缺少 lsmod，建议安装 kmod"
     HW_QUERY_FAILED=1
+    HW_MISSING_CMD=1
   else
-    warn "lsmod 查询失败（退出码 $lsmod_rc）"
+    err "lsmod 查询失败（退出码 $lsmod_rc）"
     [[ -z "$lsmod_out" ]] || printf '%s\n' "$lsmod_out" | ui_panel_raw
     HW_QUERY_FAILED=1
   fi
   check_pkg mesa "AMD/Intel 图形用户态驱动"
   check_pkg mesa-utils "glxinfo 检查工具"
   check_pkg vulkan-tools "vulkaninfo 检查工具"
-  if grep -qi nvidia <<< "$lspci_out"; then
+  if [[ "$lspci_rc" -eq 0 ]] && grep -qi nvidia <<< "$lspci_out"; then
     check_pkg nvidia-utils "NVIDIA 用户态工具"
     check_pkg nvidia-prime "prime-run 混合显卡启动脚本"
   fi
@@ -354,7 +426,7 @@ main() {
     local wpctl_out wpctl_rc=0
     wpctl_out="$(wpctl status 2>&1)" || wpctl_rc=$?
     if [[ "$wpctl_rc" -ne 0 ]]; then
-      warn "wpctl 查询失败（退出码 $wpctl_rc）"
+      err "wpctl 查询失败（退出码 $wpctl_rc）"
       [[ -z "$wpctl_out" ]] || printf '%s\n' "$wpctl_out" | ui_panel_raw
       HW_QUERY_FAILED=1
     else
@@ -379,7 +451,12 @@ main() {
 
   panel "存储 / Btrfs / 快照" ""
   # 精简列：去掉最宽的 UUID/FSVER 噪声，保留类型/标签/占用/挂载点，避免卡片右侧溢出
-  run_cmd lsblk -o NAME,FSTYPE,LABEL,SIZE,FSUSE%,MOUNTPOINTS
+  if have lsblk; then
+    run_cmd lsblk -o NAME,FSTYPE,LABEL,SIZE,FSUSE%,MOUNTPOINTS
+  else
+    miss "缺少 lsblk，无法查看块设备"
+    HW_MISSING_CMD=1
+  fi
   if have findmnt; then
     # 精简列：默认 OPTIONS 列可达 130 列会撑破卡片，只留挂载点/设备/类型/占用
     mount_rows="$(printf '%-12s %-28s %-8s %8s %5s\n' TARGET SOURCE FSTYPE SIZE USE%)"
@@ -392,7 +469,7 @@ main() {
       if [[ "$mount_rc" -eq 0 ]]; then
         mount_rows+=$'\n'"$mount_output"
       else
-        warn "findmnt 查询失败: $mountpoint（退出码 $mount_rc）"
+        err "findmnt 查询失败: $mountpoint（退出码 $mount_rc）"
         HW_QUERY_FAILED=1
       fi
     done
@@ -400,6 +477,7 @@ main() {
   else
     miss "缺少 findmnt"
     HW_QUERY_FAILED=1
+    HW_MISSING_CMD=1
   fi
   if have snapper; then
     run_cmd snapper list-configs
@@ -432,6 +510,8 @@ main() {
 
   panel_end
   ui_tally_summary
+  # 缺命令（127）优先；查询失败即使没有 --strict 也必须非零。
+  [[ "$HW_MISSING_CMD" -eq 0 ]] || return 127
   [[ "$HW_QUERY_FAILED" -eq 0 ]] || return 1
   ui_tally_status "$strict"
 }

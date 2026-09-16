@@ -22,6 +22,15 @@ case "${1:-}" in
   *) ui_err "未知参数: %s" "$1"; exit 2 ;;
 esac
 
+# 退出码契约：0=检查完成；1=无法得出结论（查询失败）；2=用法错误；
+# 127=缺少必需命令。必需的查询命令缺失时不能静默成功，必须报出缺哪一个。
+for cmd in lsblk jq smartctl df findmnt btrfs; do
+  command -v "$cmd" >/dev/null 2>&1 || { ui_err "缺少必需命令: %s" "$cmd"; exit 127; }
+done
+
+# 查询失败（无法检查）与"确实没有"必须分开：前者即使没有 --strict 也返回 1。
+QUERY_FAILED=0
+
 ui_tally_reset
 ui_banner "存储健康" "storage-health · SMART / NVMe / Btrfs"
 ui_panel_open "怎么看这份结果"
@@ -41,45 +50,58 @@ elif [[ -t 0 ]] && command -v sudo >/dev/null 2>&1; then
   if sudo -v; then SUDO=(sudo); fi
 fi
 
-smart_value() {
-  local json="$1" filter="$2"
-  jq -r "$filter // empty" <<< "$json" 2>/dev/null || true
-}
-
 check_smart_device() {
   local dev="$1" fallback_model="$2" fallback_size="$3"
   local json="" rc=0 model serial health temp used media critical hours exit_status
-  local ata_errors smart_query_failed=0 smart_messages
+  local ata_errors="" ata_table="" fields="" fields_rc=0
+  local smart_query_failed=0 smart_messages
 
   ui_panel_open "$dev" "${fallback_model:-物理磁盘} · ${fallback_size:-大小未知}"
-  if ! command -v smartctl >/dev/null 2>&1; then
-    ui_panel_stat miss "缺少 smartctl（smartmontools），无法读取 SMART"
-    ui_panel_close
-    return
-  fi
   json="$("${SUDO[@]}" smartctl -a -j "$dev" 2>&1)" || rc=$?
-  if ! jq -e . >/dev/null 2>&1 <<< "$json"; then
+  # 一次 jq 取全部字段：旧实现每个字段重启一个 jq 重新解析同一份 JSON，
+  # 多盘时线性放大。has()/type 判断取代 '// empty'：jq 的 '//' 把布尔 false
+  # 也当成缺失，导致 .smart_status.passed=false 取成空串、SMART 失败分支成为死代码。
+  fields="$(jq -r '
+    def s: if . == null then "" else tostring end;
+    ([((.model_name? // .model_family? // .scsi_model_name? // null) | s),
+      ((.serial_number? // null) | s),
+      ((.smart_status? // null
+        | if type == "object" then (if has("passed") then .passed else null end) else null end) | s),
+      ((.temperature?.current? // null) | s),
+      ((.nvme_smart_health_information_log?.percentage_used? // null) | s),
+      ((.nvme_smart_health_information_log?.media_errors? // null) | s),
+      ((.nvme_smart_health_information_log?.critical_warning? // null) | s),
+      ((.power_on_time?.hours? // null) | s),
+      ((.smartctl?.exit_status? // null) | s),
+      (if ((try (.ata_smart_attributes.table? | type) catch "none") // "none") == "array"
+       then "1" else "" end)
+     ] | @tsv),
+    (try ([.ata_smart_attributes.table[]?
+      | select(.id == 5 or .id == 187 or .id == 188 or .id == 197 or .id == 198)
+      | select((.raw.value // 0) > 0)
+      | "\(.name)=\(.raw.value)"] | join("\n")) catch "")
+  ' <<< "$json" 2>/dev/null)" || fields_rc=$?
+  if ((fields_rc != 0)); then
     ui_panel_stat warn "SMART 查询失败（退出码 $rc）"
+    QUERY_FAILED=1
     printf '%s\n' "$json" | sed -n '1,4p' | ui_panel_raw
     ui_panel_close
     return
   fi
-
-  model="$(smart_value "$json" '.model_name // .model_family // .scsi_model_name')"
-  serial="$(smart_value "$json" '.serial_number')"
-  health="$(smart_value "$json" '.smart_status.passed')"
-  temp="$(smart_value "$json" '.temperature.current')"
-  used="$(smart_value "$json" '.nvme_smart_health_information_log.percentage_used')"
-  media="$(smart_value "$json" '.nvme_smart_health_information_log.media_errors')"
-  critical="$(smart_value "$json" '.nvme_smart_health_information_log.critical_warning')"
-  hours="$(smart_value "$json" '.power_on_time.hours')"
-  exit_status="$(smart_value "$json" '.smartctl.exit_status')"
+  ata_errors=""
+  if [[ "$fields" == *$'\n'* ]]; then
+    ata_errors="${fields#*$'\n'}"
+    ata_errors="${ata_errors%$'\n'}"
+  fi
+  IFS=$'\t' read -r model serial health temp used media critical hours exit_status ata_table \
+    <<< "${fields%%$'\n'*}"
   [[ -n "$model" ]] && ui_panel_kv "型号" "$model"
   [[ -n "$serial" ]] && ui_panel_kv "序列号" "$serial"
   [[ -n "$hours" ]] && ui_panel_kv "通电时间" "${hours} 小时"
 
   if [[ "$exit_status" =~ ^[0-9]+$ ]] && ((exit_status & 7)); then
     smart_query_failed=1
+    QUERY_FAILED=1
     ui_panel_stat warn "SMART 数据读取失败，需要管理员权限或设备不支持 SMART"
     smart_messages="$(jq -r '.smartctl.messages[]?.string // empty' <<< "$json" 2>/dev/null || true)"
     [[ -z "$smart_messages" ]] || printf '%s\n' "$smart_messages" | ui_panel_raw
@@ -108,15 +130,10 @@ check_smart_device() {
     ui_panel_stat err "NVMe critical_warning 非零: $critical"
   fi
 
-  ata_errors="$(jq -r '
-    [.ata_smart_attributes.table[]?
-      | select(.id == 5 or .id == 187 or .id == 188 or .id == 197 or .id == 198)
-      | select((.raw.value // 0) > 0)
-      | "\(.name)=\(.raw.value)"] | .[]' <<< "$json" 2>/dev/null || true)"
   if [[ -n "$ata_errors" ]]; then
     ui_panel_stat warn "ATA 关键错误属性存在非零值"
     printf '%s\n' "$ata_errors" | ui_panel_raw
-  elif jq -e '.ata_smart_attributes.table? != null' >/dev/null 2>&1 <<< "$json"; then
+  elif [[ "$ata_table" == "1" ]]; then
     ui_panel_stat ok "ATA 重映射/待处理/不可校正等关键属性为 0"
   fi
 
@@ -135,130 +152,168 @@ check_smart_device() {
 
 ui_section "物理磁盘 SMART"
 ui_working "正在读取 SMART/NVMe 健康数据"
-if ! command -v lsblk >/dev/null 2>&1 || ! command -v jq >/dev/null 2>&1; then
+LSBLK_JSON="$(lsblk -J -b -d -o PATH,TYPE,MODEL,SIZE 2>/dev/null || true)"
+if ! jq -e . >/dev/null 2>&1 <<< "$LSBLK_JSON"; then
   ui_panel_open "SMART 枚举"
-  command -v lsblk >/dev/null 2>&1 || ui_panel_stat miss "缺少 lsblk（util-linux）"
-  command -v jq >/dev/null 2>&1 || ui_panel_stat miss "缺少 jq，无法解析 lsblk/smartctl JSON"
+  ui_panel_stat warn "lsblk JSON 查询失败"
+  QUERY_FAILED=1
   ui_panel_close
 else
-  LSBLK_JSON="$(lsblk -J -b -d -o PATH,TYPE,MODEL,SIZE 2>/dev/null || true)"
-  if ! jq -e . >/dev/null 2>&1 <<< "$LSBLK_JSON"; then
+  mapfile -t DISK_ROWS < <(jq -r '.blockdevices[]?
+    | select(.type == "disk")
+    | select((.path | test("^/dev/(zram|loop|ram)[0-9]*$")) | not)
+    | [.path, (.model // ""), ((.size // 0) | tostring)]
+    | join("\u001f")' <<< "$LSBLK_JSON")
+  if ((${#DISK_ROWS[@]} == 0)); then
     ui_panel_open "SMART 枚举"
-    ui_panel_stat warn "lsblk JSON 查询失败"
+    ui_panel_stat warn "没有枚举到物理磁盘"
     ui_panel_close
   else
-    mapfile -t DISK_ROWS < <(jq -r '.blockdevices[]?
-      | select(.type == "disk")
-      | select((.path | test("^/dev/(zram|loop|ram)[0-9]*$")) | not)
-      | [.path, (.model // ""), ((.size // 0) | tostring)]
-      | join("\u001f")' <<< "$LSBLK_JSON")
-    if ((${#DISK_ROWS[@]} == 0)); then
-      ui_panel_open "SMART 枚举"
-      ui_panel_stat warn "没有枚举到物理磁盘"
-      ui_panel_close
-    else
-      for row in "${DISK_ROWS[@]}"; do
-        IFS=$'\037' read -r dev model size_bytes <<< "$row"
-        if [[ "$size_bytes" =~ ^[0-9]+$ ]]; then
-          size_text="$(awk -v bytes="$size_bytes" 'BEGIN {printf "%.1f GiB", bytes / 1073741824}')"
-        else
-          size_text="大小未知"
-        fi
-        check_smart_device "$dev" "$model" "$size_text"
-      done
-    fi
+    for row in "${DISK_ROWS[@]}"; do
+      IFS=$'\037' read -r dev model size_bytes <<< "$row"
+      if [[ "$size_bytes" =~ ^[0-9]+$ ]]; then
+        size_text="$(awk -v bytes="$size_bytes" 'BEGIN {printf "%.1f GiB", bytes / 1073741824}')"
+      else
+        size_text="大小未知"
+      fi
+      check_smart_device "$dev" "$model" "$size_text"
+    done
   fi
 fi
 
 ui_section "文件系统空间"
 ui_panel_open "已挂载持久文件系统"
-if DF_OUT="$(df -P -x tmpfs -x devtmpfs 2>&1)"; then
+# --output 的 target 是最后一列：read 把行尾整段（可含空格）交给 mountpoint，
+# 不再用 awk 取 $6，/run/media/x/My Passport 这类挂载点不会被截断。
+if DF_OUT="$(df --output=pcent,target -x tmpfs -x devtmpfs 2>&1)"; then
   while read -r percent mountpoint; do
-    [[ "$percent" =~ ^[0-9]+$ ]] || continue
+    percent="${percent%\%}"
+    [[ "$percent" =~ ^[0-9]+$ && -n "$mountpoint" ]] || continue
     if ((percent >= 95)); then ui_panel_stat err "$mountpoint 已使用 ${percent}%"
     elif ((percent >= 85)); then ui_panel_stat warn "$mountpoint 已使用 ${percent}%"
     else ui_panel_stat ok "$mountpoint 已使用 ${percent}%"; fi
-  done < <(awk 'NR > 1 {gsub(/%/, "", $5); print $5, $6}' <<< "$DF_OUT")
+  done <<< "$DF_OUT"
 else
   ui_panel_stat warn "df 查询失败"
+  QUERY_FAILED=1
   printf '%s\n' "$DF_OUT" | ui_panel_raw
 fi
 ui_panel_close
 
+# findmnt 取数：-P 输出 TARGET="..." SOURCE="..."，含空格的挂载点整段在引号里；
+# -r 会把空格等转义成 \x20。转义串一旦被原样交给 btrfs/systemd-escape，该文件
+# 系统会整段误报查询失败，所以必须先还原再配对，不能按空白切分。
+mnt_unescape() {
+  printf '%b' "$1"
+}
+
+mnt_pair_value() {
+  local line="$1" key="$2" re
+  re="(^|[[:space:]])${key}=\"([^\"]*)\""
+  [[ "$line" =~ $re ]] || return 0
+  mnt_unescape "${BASH_REMATCH[2]}"
+}
+
+# 每行输出 TARGET\x1fSOURCE，供调用方按行读取。
+mount_pair() {
+  local line="$1" target="" source=""
+  if [[ "$line" == *'TARGET="'* ]]; then
+    target="$(mnt_pair_value "$line" TARGET)"
+    source="$(mnt_pair_value "$line" SOURCE)"
+  else
+    # 兼容只支持 -r 的 findmnt：-r 已把空白转义，行内不会有属于路径的空白。
+    read -r target source <<< "$line"
+  fi
+  [[ -n "$target" && -n "$source" ]] || return 1
+  printf '%s\x1f%s\n' "$(mnt_unescape "$target")" "$(mnt_unescape "$source")"
+}
+
 ui_section "Btrfs"
 ui_working "正在读取 Btrfs 错误计数、scrub 历史和定时器状态"
-if ! command -v btrfs >/dev/null 2>&1 || ! command -v findmnt >/dev/null 2>&1; then
+declare -A SEEN_BTRFS=()
+BTRFS_COUNT=0
+BTRFS_MOUNTS=""
+mounts_rc=0
+BTRFS_MOUNTS="$(findmnt -P -t btrfs -o TARGET,SOURCE 2>&1)" || mounts_rc=$?
+if ((mounts_rc == 0)) && [[ "$BTRFS_MOUNTS" != *'TARGET="'* ]]; then
+  # -P 成功却没有任何键值对：兼容不支持 -P 的旧 findmnt/测试桩，用 -r 再取一次。
+  BTRFS_MOUNTS="$(findmnt -rn -t btrfs -o TARGET,SOURCE 2>&1)" || mounts_rc=$?
+fi
+# findmnt 的退出码 1 表示"没有匹配项"：那是本机没有挂载 Btrfs，不是查询失败。
+if ((mounts_rc != 0)) && { ((mounts_rc != 1)) || [[ -n "$BTRFS_MOUNTS" ]]; }; then
   ui_panel_open "Btrfs 检查"
-  command -v btrfs >/dev/null 2>&1 || ui_panel_stat miss "缺少 btrfs 命令"
-  command -v findmnt >/dev/null 2>&1 || ui_panel_stat miss "缺少 findmnt"
+  ui_panel_stat warn "Btrfs 挂载查询失败"
+  QUERY_FAILED=1
+  [[ -z "$BTRFS_MOUNTS" ]] || printf '%s\n' "$BTRFS_MOUNTS" | ui_panel_raw
   ui_panel_close
 else
-  declare -A SEEN_BTRFS=()
-  BTRFS_COUNT=0
-  BTRFS_MOUNTS=""
-  if ! BTRFS_MOUNTS="$(findmnt -rn -t btrfs -o TARGET,SOURCE 2>&1)"; then
-    ui_panel_open "Btrfs 检查"
-    ui_panel_stat warn "Btrfs 挂载查询失败"
-    [[ -z "$BTRFS_MOUNTS" ]] || printf '%s\n' "$BTRFS_MOUNTS" | ui_panel_raw
-    ui_panel_close
-  else
-    while read -r target source; do
-      [[ -n "$target" && -n "$source" ]] || continue
-      device="${source%%\[*}"
-      [[ -z "${SEEN_BTRFS[$device]:-}" ]] || continue
-      SEEN_BTRFS[$device]=1
-      BTRFS_COUNT=$((BTRFS_COUNT + 1))
-      ui_panel_open "$target" "$device"
-      stats_rc=0
-      stats="$(LC_ALL=C btrfs device stats -c "$target" 2>&1)" || stats_rc=$?
-      nonzero_stats="$(awk '$NF ~ /^[0-9]+$/ && $NF != 0 {print}' <<< "$stats")"
-      if [[ -n "$nonzero_stats" ]]; then
-        ui_panel_stat warn "Btrfs device stats 存在非零错误"
-        printf '%s\n' "$nonzero_stats" | ui_panel_raw
-      elif [[ "$stats_rc" -eq 0 ]]; then
-        ui_panel_stat ok "Btrfs device stats 全部为 0"
-      else
-        ui_panel_stat warn "Btrfs device stats 查询失败"
-        [[ -z "$stats" ]] || printf '%s\n' "$stats" | ui_panel_raw
-      fi
-
-      scrub_rc=0
-      # scrub 的历史结果通常位于 /var/lib/btrfs；普通用户可以读取 device
-      # stats，却可能没有读取历史状态文件的权限。沿用上方 SMART 已取得的
-      # 只读 sudo，避免把权限不足误报成“scrub 查询失败”。
-      scrub="$(LC_ALL=C "${SUDO[@]}" btrfs scrub status -R "$target" 2>&1)" || scrub_rc=$?
-      if [[ "$scrub_rc" -ne 0 ]]; then
-        ui_panel_stat warn "scrub 状态查询失败"
-        [[ -z "$scrub" ]] || printf '%s\n' "$scrub" | ui_panel_raw
-      elif grep -q 'no stats available' <<< "$scrub"; then
-        ui_panel_stat info "尚未完成过 scrub；首次定时执行后会显示结果（当前不是故障）"
-      elif grep -Eq 'uncorrectable_errors:[[:space:]]*[1-9]|read_errors:[[:space:]]*[1-9]|csum_errors:[[:space:]]*[1-9]|verify_errors:[[:space:]]*[1-9]' <<< "$scrub"; then
-        ui_panel_stat warn "上次 scrub 检出了错误"
-      else
-        ui_panel_stat ok "上次 scrub 未报告关键错误"
-      fi
-      if command -v systemd-escape >/dev/null 2>&1; then
-        instance="$(systemd-escape --path "$target")"
-        timer_rc=0
-        timer_state="$(systemctl is-enabled "btrfs-scrub@${instance}.timer" 2>&1)" || timer_rc=$?
-        case "$timer_state" in
-          enabled) ui_panel_stat ok "每月 scrub timer 已启用" ;;
-          disabled) ui_panel_stat warn "每月 scrub timer 未启用" ;;
-          *)
-            ui_panel_stat warn "每月 scrub timer 状态查询失败（退出码 $timer_rc）"
-            [[ -z "$timer_state" ]] || printf '%s\n' "$timer_state" | ui_panel_raw
-            ;;
-        esac
-      fi
-      ui_panel_close
-    done <<< "$BTRFS_MOUNTS"
-    if [[ "$BTRFS_COUNT" -eq 0 ]]; then
-      ui_panel_open "Btrfs 检查"
-      ui_panel_stat info "当前没有已挂载的 Btrfs 文件系统"
-      ui_panel_close
+  while IFS= read -r mount_line; do
+    [[ -n "$mount_line" ]] || continue
+    pair="$(mount_pair "$mount_line")" || continue
+    IFS=$'\x1f' read -r target source <<< "$pair"
+    device="${source%%\[*}"
+    [[ -z "${SEEN_BTRFS[$device]:-}" ]] || continue
+    SEEN_BTRFS[$device]=1
+    BTRFS_COUNT=$((BTRFS_COUNT + 1))
+    ui_panel_open "$target" "$device"
+    stats_rc=0
+    stats="$(LC_ALL=C btrfs device stats -c "$target" 2>&1)" || stats_rc=$?
+    nonzero_stats="$(awk '$NF ~ /^[0-9]+$/ && $NF != 0 {print}' <<< "$stats")"
+    if [[ -n "$nonzero_stats" ]]; then
+      ui_panel_stat warn "Btrfs device stats 存在非零错误"
+      printf '%s\n' "$nonzero_stats" | ui_panel_raw
+    elif [[ "$stats_rc" -eq 0 ]]; then
+      ui_panel_stat ok "Btrfs device stats 全部为 0"
+    else
+      ui_panel_stat warn "Btrfs device stats 查询失败"
+      QUERY_FAILED=1
+      [[ -z "$stats" ]] || printf '%s\n' "$stats" | ui_panel_raw
     fi
+
+    scrub_rc=0
+    # scrub 的历史结果通常位于 /var/lib/btrfs；普通用户可以读取 device
+    # stats，却可能没有读取历史状态文件的权限。沿用上方 SMART 已取得的
+    # 只读 sudo，避免把权限不足误报成“scrub 查询失败”。
+    scrub="$(LC_ALL=C "${SUDO[@]}" btrfs scrub status -R "$target" 2>&1)" || scrub_rc=$?
+    if [[ "$scrub_rc" -ne 0 ]]; then
+      ui_panel_stat warn "scrub 状态查询失败"
+      QUERY_FAILED=1
+      [[ -z "$scrub" ]] || printf '%s\n' "$scrub" | ui_panel_raw
+    elif grep -q 'no stats available' <<< "$scrub"; then
+      ui_panel_stat info "尚未完成过 scrub；首次定时执行后会显示结果（当前不是故障）"
+    elif grep -Eq 'uncorrectable_errors:[[:space:]]*[1-9]|read_errors:[[:space:]]*[1-9]|csum_errors:[[:space:]]*[1-9]|verify_errors:[[:space:]]*[1-9]' <<< "$scrub"; then
+      ui_panel_stat warn "上次 scrub 检出了错误"
+    else
+      ui_panel_stat ok "上次 scrub 未报告关键错误"
+    fi
+    if command -v systemd-escape >/dev/null 2>&1; then
+      instance="$(systemd-escape --path "$target")"
+      timer_rc=0
+      timer_state="$(systemctl is-enabled "btrfs-scrub@${instance}.timer" 2>&1)" || timer_rc=$?
+      case "$timer_state" in
+        enabled|enabled-runtime) ui_panel_stat ok "每月 scrub timer 已启用" ;;
+        disabled) ui_panel_stat warn "每月 scrub timer 未启用" ;;
+        # masked/static 等是 is-enabled 的合法状态（返回码为 1），不是查询失败。
+        masked|masked-runtime|static|indirect|generated|alias|linked|linked-runtime|transient|not-found|bad)
+          ui_panel_stat warn "每月 scrub timer 未启用（$timer_state）" ;;
+        *)
+          ui_panel_stat warn "每月 scrub timer 状态查询失败（退出码 $timer_rc）"
+          QUERY_FAILED=1
+          [[ -z "$timer_state" ]] || printf '%s\n' "$timer_state" | ui_panel_raw
+          ;;
+      esac
+    fi
+    ui_panel_close
+  done <<< "$BTRFS_MOUNTS"
+  if [[ "$BTRFS_COUNT" -eq 0 ]]; then
+    ui_panel_open "Btrfs 检查"
+    ui_panel_stat info "当前没有已挂载的 Btrfs 文件系统"
+    ui_panel_close
   fi
 fi
 
 ui_tally_summary
-ui_tally_status "$STRICT"
+ui_tally_status "$STRICT" || exit 1
+# 查询失败（无法检查）与"确实没有"不同：没有 --strict 时也必须返回 1。
+(( QUERY_FAILED == 0 )) || exit 1
+exit 0

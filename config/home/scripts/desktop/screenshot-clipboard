@@ -1,0 +1,30 @@
+#!/bin/bash
+# screenshot-clipboard — 截图并复制到剪贴板（niri 内置截图动作只保存文件，不写剪贴板）
+# 用法：
+#   screenshot-clipboard           截取当前输出并复制到剪贴板
+#   screenshot-clipboard window    截取当前窗口并复制到剪贴板
+#   screenshot-clipboard screen    截取整个屏幕并复制到剪贴板
+set -uo pipefail
+
+case "${1:-}" in
+    window) ACTION="screenshot-window" ;;
+    screen) ACTION="screenshot-screen" ;;
+    *)      ACTION="screenshot" ;;
+esac
+
+OUT="/tmp/qq-screenshot-$(date +%s).png"
+
+# niri 动作保存截图后返回；等待文件落盘（最多 5 秒）
+niri msg action "$ACTION" --path "$OUT" >/dev/null 2>&1
+for _ in $(seq 1 50); do
+    [ -f "$OUT" ] && break
+    sleep 0.1
+done
+
+if [ -f "$OUT" ] && [ -s "$OUT" ]; then
+    wl-copy --type image/png < "$OUT"
+    rm -f "$OUT"
+else
+    notify-send "screenshot-clipboard" "截图失败：未生成文件" 2>/dev/null
+    exit 1
+fi

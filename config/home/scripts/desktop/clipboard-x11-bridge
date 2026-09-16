@@ -1,0 +1,59 @@
+#!/bin/bash
+# clipboard-x11-bridge — 把 Wayland 剪贴板镜像到 X11 侧（QQ/微信等 X11 应用粘贴用）。
+# v2（轮询版）：wl-paste --watch 版本实测会静默失效 + 与 satellite 的镜像回环互相干扰，
+# 改为 300ms 轮询 + 内容指纹(cksum)去重：自身写入被 satellite 回显时指纹相同，跳过，不会自循环；
+# 空内容不占位（防止写空 xclip 抢走所有权毒化剪贴板）。
+# v3：1) 自举 DISPLAY/WAYLAND_DISPLAY。本服务可能先于 niri 导入环境变量启动，缺变量时
+#        wl-paste/xclip 会全部静默失败，服务显示 active 却从不镜像（2026-09-10 实测复现）。
+#        systemd 261 的 show-environment 不接受变量名参数（Too many arguments），只能全量过滤。
+#     2) 指纹未变时若 X11 侧已无人持有（owner 被杀/消失），自动重建，不必等下一条复制。
+#        只判有无 owner、不比对内容：X11 应用（QQ 等）自己复制的内容也可能与 Wayland 不同，不能覆盖。
+set -uo pipefail
+
+while :; do
+    env_out=$(systemctl --user show-environment 2>/dev/null)
+    [ -z "${DISPLAY:-}" ] && export DISPLAY=$(printf '%s\n' "$env_out" | sed -n 's/^DISPLAY=//p')
+    [ -z "${WAYLAND_DISPLAY:-}" ] && export WAYLAND_DISPLAY=$(printf '%s\n' "$env_out" | sed -n 's/^WAYLAND_DISPLAY=//p')
+    [ -n "${DISPLAY:-}" ] && [ -n "${WAYLAND_DISPLAY:-}" ] && break
+    sleep 1
+done
+
+last=""
+
+while true; do
+    mimes=$(wl-paste -l 2>/dev/null)
+
+    if [ -n "$mimes" ]; then
+        if printf '%s' "$mimes" | grep -q 'image/'; then
+            mime=$(printf '%s' "$mimes" | grep -oE 'image/[a-z0-9.+-]+' | head -1)
+            target="$mime"
+        else
+            if printf '%s' "$mimes" | grep -q 'text/plain;charset=utf-8'; then
+                mime="text/plain;charset=utf-8"
+            elif printf '%s' "$mimes" | grep -q 'text/plain'; then
+                mime="text/plain"
+            else
+                mime=$(printf '%s' "$mimes" | grep -oE 'UTF8_STRING|STRING|TEXT' | head -1)
+            fi
+            target="UTF8_STRING"
+        fi
+
+        if [ -n "$mime" ] && [ -n "$target" ]; then
+            h=$(wl-paste --type "$mime" 2>/dev/null | cksum)
+            size=$(printf '%s' "$h" | awk '{print $2}')
+            if [ "${size:-0}" -gt 0 ]; then
+                stale=0
+                if [ "$h" != "$last" ]; then
+                    stale=1
+                elif ! xclip -selection clipboard -t TARGETS -o >/dev/null 2>&1; then
+                    stale=1
+                fi
+                if [ "$stale" = 1 ]; then
+                    last="$h"
+                    wl-paste --type "$mime" 2>/dev/null | xclip -selection clipboard -t "$target" -i >/dev/null 2>&1 &
+                fi
+            fi
+        fi
+    fi
+    sleep 0.3
+done

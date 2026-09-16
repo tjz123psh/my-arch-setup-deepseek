@@ -646,7 +646,7 @@ const $4e63e094b4590b2b$var$pluginInstance = {
     platform: "酷我(独家音源)",
     author: "竹佀＆玥然OvO",
     version: "4",
-    srcUrl: "https://raw.gitcode.com/Crystim/mfp/raw/main/%E9%85%B7%E6%88%91_%E7%AB%B9%E7%8E%A5.js",
+    srcUrl: "",
     cacheControl: "no-cache",
     hints: {
         importMusicSheet: [

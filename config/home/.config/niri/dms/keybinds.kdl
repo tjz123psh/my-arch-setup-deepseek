@@ -137,14 +137,14 @@ binds {
     // pin-last 只是把已有剪贴板图钉到桌面、不产生新截图，故不上膛。
 
     // Alt+Print: 截取当前窗口
-    Alt+Print hotkey-overlay-title="截取窗口" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot-window"; }
-    Alt+XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot-window"; }
+    Alt+Print hotkey-overlay-title="截取窗口" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard window"; }
+    Alt+XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard window"; }
     // Ctrl+Print: 截取整个屏幕
-    Ctrl+Print hotkey-overlay-title="截取屏幕" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot-screen"; }
-    Ctrl+XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot-screen"; }
+    Ctrl+Print hotkey-overlay-title="截取屏幕" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard screen"; }
+    Ctrl+XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard screen"; }
     // Print: 截图（可框选区域，打开截图 UI）
-    Print hotkey-overlay-title="截图" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot"; }
-    XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; niri msg action screenshot"; }
+    Print hotkey-overlay-title="截图" { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard"; }
+    XF86Launch1 { spawn-sh "/home/pang/scripts/desktop/screenshot-sound arm; /home/pang/scripts/desktop/screenshot-clipboard"; }
 
     // --- vellum 增强截图工具（Super+Print 系列，不覆盖上面的 niri 原生截图） ---
     // Super+Print: 框选截图，选区下方出工具栏（确认/OCR/翻译/涂鸦/Pin/长截图）

@@ -4,8 +4,16 @@
 -- ============================================
 
 -- 如果 lazy.nvim 还没安装，自动用 git 下载
+-- 用入口文件判断是否完整：clone 被中断会留下只有 .git 的空目录，
+-- 只检查目录存在会跳过重新克隆，导致 require("lazy") 失败
+-- 注意：新版 lazy.nvim 入口是 lua/lazy/init.lua，老版本是 lua/lazy.lua，都检查
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.uv.fs_stat(lazypath) then
+local entry_ok = vim.uv.fs_stat(lazypath .. "/lua/lazy/init.lua")
+  or vim.uv.fs_stat(lazypath .. "/lua/lazy.lua")
+if not entry_ok then
+  if vim.uv.fs_stat(lazypath) then
+    vim.fn.system({ "rm", "-rf", lazypath })
+  end
   vim.fn.system({
     "git",
     "clone",

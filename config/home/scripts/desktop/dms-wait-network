@@ -1,0 +1,38 @@
+#!/bin/bash
+# dms-wait-network — 等网络后端的 D-Bus 名字出现后再放行 dms.service（ExecStartPre 用）。
+#
+# 为什么要等：DMS v1.6.0 只在后端启动时探测一次网络栈（core/internal/server/network/detect.go
+# 直接问 NameHasOwner），探测不到就返回 ErrNoNetworkBackend，server.go 随即打印
+# "No supported network backend present; skipping retries" 并永久放弃，不再重试。
+# 开机时 dms.service 与 NetworkManager.service 常在同一个时间戳启动，NM 还没抢到
+# org.freedesktop.NetworkManager 总线名（此时只有它拉起的 wpa_supplicant 名字在），
+# 于是整个会话的控制中心网络区块都是空的，虽然有线本身正常工作。
+#
+# 策略：最多等 DMS_NETWORK_WAIT_TIMEOUT 秒；超时也返回 0，绝不因为等网络而让桌面起不来。
+set -uo pipefail
+
+timeout="${DMS_NETWORK_WAIT_TIMEOUT:-10}"
+# 覆盖名单便于测试，也便于换用 iwd/connman/networkd 的机器。
+read -r -a names <<< "${DMS_NETWORK_WAIT_NAMES:-org.freedesktop.NetworkManager net.connman net.connman.iwd org.freedesktop.network1}"
+
+name_has_owner() {
+    busctl --system call org.freedesktop.DBus /org/freedesktop/DBus \
+        org.freedesktop.DBus NameHasOwner s "$1" 2>/dev/null | grep -q 'b true'
+}
+
+waited=0
+deadline=$((timeout * 10)) # 0.1s 计数，避免 date 只有秒级精度
+while :; do
+    for n in "${names[@]}"; do
+        if name_has_owner "$n"; then
+            [ "$waited" -gt 0 ] && echo "network backend $n ready after ${waited}00ms"
+            exit 0
+        fi
+    done
+    [ "$waited" -ge "$deadline" ] && break
+    waited=$((waited + 1))
+    sleep 0.1
+done
+
+echo "no network backend D-Bus name within ${timeout}s; starting anyway" >&2
+exit 0

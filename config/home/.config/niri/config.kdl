@@ -63,7 +63,7 @@ overview {
     workspace-shadow {
         off
     }
-    // 概览缩放比例
+
     zoom 0.55
 }
 
@@ -129,7 +129,25 @@ include "dms/alttab.kdl"
 // include "dms/binds.kdl"
 include "dms/keybinds.kdl"
 include "dms/outputs.kdl"
-include "dms/input.kdl"
+// ===== 输入设置 =====
+// 键盘重复速度：DMS 1.6 自动生成的 dms/input.kdl 不再包含键盘段，niri 会回落到慢速默认值。
+// 鼠标/触摸板内容镜像自 dms/input.kdl（已不再 include 该文件），并补回键盘快速重复（200ms / 50Hz，
+// 与此前登录界面配置一致）。若 DMS 更新了鼠标/触摸板模板，需同步此处。
+input {
+    keyboard {
+        repeat-delay 200
+        repeat-rate 50
+    }
+    mouse {
+        accel-speed 0.0
+    }
+    touchpad {
+        tap
+        accel-speed 0.3
+        natural-scroll
+        dwt
+    }
+}
 include "dms/cursor.kdl"
 include "dms/windowrules.kdl"
 include "animations-spring.kdl"

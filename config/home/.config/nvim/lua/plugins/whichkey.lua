@@ -19,7 +19,7 @@ return {
       { "<leader>f", group = "搜索（Telescope）" },
       { "<leader>h", group = "快捷键速查" },
       { "<leader>r", group = "重命名/运行" },
-      { "<leader>s", group = "窗口分割" },
+      { "<leader>s", group = "窗口分割 / Spring" },
       { "<leader>t", group = "终端" },
       { "<leader>w", group = "保存/退出" },
 
@@ -36,7 +36,7 @@ return {
       { "gT", desc = "上一个标签页" },
       { "gv", desc = "重新选择上次可视区域" },
       { "gu", desc = "小写转换（配合 motion）" },
-      { "gU", desc = "大写转换（配合 motion）" },
+      { "gU", desc = "大写转换 / java 里=父类" },
       { "g~", desc = "切换大小写（配合 motion）" },
       { "gq", desc = "格式化选中文本" },
       { "gw", desc = "格式化（光标不动）" },

@@ -76,15 +76,52 @@ if [[ "$EUID" -ne 0 ]] && command -v sudo >/dev/null 2>&1; then
   fi
 fi
 
+# findmnt 取数：-P 输出 TARGET="..." SOURCE="..."，含空格的挂载点整段在引号里；
+# -r 会把空格等转义成 \x20。转义串一旦被原样交给 btrfs/systemd-escape，该文件
+# 系统会整段误报查询失败，所以必须先还原再配对，不能按空白切分。
+mnt_unescape() {
+  printf '%b' "$1"
+}
+
+mnt_pair_value() {
+  local line="$1" key="$2" re
+  re="(^|[[:space:]])${key}=\"([^\"]*)\""
+  [[ "$line" =~ $re ]] || return 0
+  mnt_unescape "${BASH_REMATCH[2]}"
+}
+
+# 每行输出 TARGET\x1fSOURCE，供调用方按行读取。
+mount_pair() {
+  local line="$1" target="" source=""
+  if [[ "$line" == *'TARGET="'* ]]; then
+    target="$(mnt_pair_value "$line" TARGET)"
+    source="$(mnt_pair_value "$line" SOURCE)"
+  else
+    # 兼容只支持 -r 的 findmnt：-r 已把空白转义，行内不会有属于路径的空白。
+    read -r target source <<< "$line"
+  fi
+  [[ -n "$target" && -n "$source" ]] || return 1
+  printf '%s\x1f%s\n' "$(mnt_unescape "$target")" "$(mnt_unescape "$source")"
+}
+
 declare -a BTRFS_TARGETS=() BTRFS_SOURCES=()
 discover_filesystems() {
-  local mountpoint source device mounts=""
+  local mountpoint source device line pair mounts="" rc=0
   declare -A seen=()
-  if ! mounts="$(findmnt -rn -t btrfs -o TARGET,SOURCE 2>&1)"; then
+  mounts="$(findmnt -P -t btrfs -o TARGET,SOURCE 2>&1)" || rc=$?
+  if ((rc == 0)) && [[ "$mounts" != *'TARGET="'* ]]; then
+    # -P 成功却没有任何键值对：兼容不支持 -P 的旧 findmnt/测试桩，用 -r 再取一次。
+    mounts="$(findmnt -rn -t btrfs -o TARGET,SOURCE 2>&1)" || rc=$?
+  fi
+  # findmnt 的退出码 1 表示"没有匹配项"：那是本机没有挂载 Btrfs，不是查询失败。
+  if ((rc != 0)) && { ((rc != 1)) || [[ -n "$mounts" ]]; }; then
     ui_err "Btrfs 挂载查询失败: %s" "${mounts:-无输出}"
     return 1
   fi
-  while read -r mountpoint source; do
+  while IFS= read -r line; do
+    [[ -n "$line" ]] || continue
+    pair="$(mount_pair "$line")" || continue
+    IFS=$'\x1f' read -r mountpoint source <<< "$pair"
     [[ -n "$mountpoint" && -n "$source" ]] || continue
     device="${source%%\[*}"
     [[ -z "${seen[$device]:-}" ]] || continue
@@ -105,7 +142,9 @@ select_target() {
   if [[ -n "$TARGET" ]]; then
     [[ "$(findmnt -n -o FSTYPE --target "$TARGET" 2>/dev/null || true)" == "btrfs" ]] \
       || { ui_err "目标不是已挂载的 Btrfs 文件系统: %s" "$TARGET"; return 1; }
-    TARGET="$(findmnt -n -o TARGET --target "$TARGET")"
+    # -r 会把空白转义成 \x20（含空格的挂载点），必须还原后再当路径使用。
+    TARGET="$(findmnt -rn -o TARGET --target "$TARGET")"
+    TARGET="$(mnt_unescape "$TARGET")"
     return 0
   fi
   if ((${#BTRFS_TARGETS[@]} == 1)); then
@@ -157,7 +196,8 @@ status_one() {
   esac
   result="$(systemctl show "$service" -p Result --value 2>&1)" || result_rc=$?
   if [[ "$result_rc" -ne 0 ]]; then
-    ui_panel_stat warn "上次 systemd scrub 结果查询失败"
+    # 查询失败（无法检查）与"发现问题"分开：前者按契约无 --strict 也计为非零
+    ui_panel_stat err "上次 systemd scrub 结果查询失败"
     [[ -z "$result" ]] || printf '%s\n' "$result" | ui_panel_raw
   elif [[ -n "$result" && "$result" != "success" ]]; then
     ui_panel_stat warn "上次 systemd scrub 结果: $result"
@@ -170,13 +210,13 @@ status_one() {
     ui_panel_stat warn "Btrfs device stats 存在非零错误"
     printf '%s\n' "$stats" | ui_panel_raw
   else
-    ui_panel_stat warn "Btrfs device stats 查询失败"
+    ui_panel_stat err "Btrfs device stats 查询失败"
     [[ -z "$stats" ]] || printf '%s\n' "$stats" | ui_panel_raw
   fi
 
   scrub="$(LC_ALL=C "${BTRFS_READ_SUDO[@]}" btrfs scrub status -R "$target" 2>&1)" || scrub_rc=$?
   if [[ "$scrub_rc" -ne 0 ]]; then
-    ui_panel_stat warn "scrub 状态查询失败"
+    ui_panel_stat err "scrub 状态查询失败"
     [[ -z "$scrub" ]] || printf '%s\n' "$scrub" | ui_panel_raw
   elif grep -q 'no stats available' <<< "$scrub"; then
     ui_panel_stat info "尚未完成过 scrub；首次定时执行后会显示结果（当前不是故障）"

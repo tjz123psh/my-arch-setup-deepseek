@@ -38,6 +38,7 @@ return {
           ["r"] = "rename",
           ["m"] = "move",
           ["p"] = "toggle_hidden",
+          ["Z"] = "expand_all_subnodes", -- 递归展开光标所在节点下的所有子节点
           ["."] = false,
         },
       },

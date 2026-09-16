@@ -19,3 +19,4 @@
 | `hypr-vmtest-toggle` | 切换 Hyprland 正常 / VM 测试配置（符号链接 + `hyprctl reload`） |
 | `hypr-magnifier` | Hyprland 原生屏幕放大镜（1x → 2x → 3x 循环，不走截屏回环） |
 | `screenshot-sound` | 截图快门音效服务（截图键上膛，剪贴板出现图片时播放快门声） |
+| `dms-wait-network` | `dms.service` 的 ExecStartPre：等网络后端抢到 D-Bus 名字再启动 DMS，最多 10s（修控制中心网络列表开机后空白） |

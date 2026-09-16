@@ -45,14 +45,33 @@ if ! command -v upower >/dev/null 2>&1; then
   exit 127
 fi
 
-BAT_PATH="$(upower -e | awk '/battery/ {print; exit}')"
+# upower 的失败必须显式报错：set -e 下裸命令替换会让脚本静默退出，
+# 退出码透传 1/3，与"确实没有电池"的 1 混淆，无法区分"无法检查"和"没有"。
+UPOWER_RC=0
+UPOWER_DEVICES="$(upower -e 2>&1)" || UPOWER_RC=$?
+if [[ "$UPOWER_RC" -ne 0 ]]; then
+  ui_err "upower 设备枚举失败（退出码 %s），无法检查电池。" "$UPOWER_RC"
+  [[ -z "$UPOWER_DEVICES" ]] || printf '%s\n' "$UPOWER_DEVICES" | sed -n '1,4p' >&2
+  exit 1
+fi
+BAT_PATH="$(awk '/battery/ {print; exit}' <<< "$UPOWER_DEVICES")"
 
 if [[ -z "$BAT_PATH" ]]; then
-  ui_err "未检测到电池设备（虚拟机 / 台式机属正常）"
+  ui_err "未检测到电池设备（虚拟机 / 台式机属正常）；upower 查询本身正常。"
   exit 1
 fi
 
-INFO="$(upower -i "$BAT_PATH")"
+UPOWER_RC=0
+INFO="$(upower -i "$BAT_PATH" 2>&1)" || UPOWER_RC=$?
+if [[ "$UPOWER_RC" -ne 0 ]]; then
+  ui_err "upower 读取电池 %s 失败（退出码 %s），无法检查电池。" "$BAT_PATH" "$UPOWER_RC"
+  [[ -z "$INFO" ]] || printf '%s\n' "$INFO" | sed -n '1,4p' >&2
+  exit 1
+fi
+if [[ -z "$INFO" ]]; then
+  ui_err "upower 对 %s 没有返回任何信息，无法检查电池。" "$BAT_PATH"
+  exit 1
+fi
 
 field() {
   local key="$1"
@@ -101,8 +120,9 @@ esac
 # 健康度 → 颜色（>=80 绿 / >=60 黄 / 其余红）
 HEALTH_NUM="$(awk '{gsub(/[^0-9.]/, "", $0); split($0, a, "."); print a[1]}' <<< "$HEALTH")"
 if [[ "$HEALTH_NUM" =~ ^[0-9]+$ ]]; then
-  if   (( HEALTH_NUM >= 80 )); then H_COLOR="$UI_C_GREEN"
-  elif (( HEALTH_NUM >= 60 )); then H_COLOR="$UI_C_YELLOW"
+  # 10# 前缀：避免 "08" 之类的前导零被 bash 当作八进制
+  if   (( 10#$HEALTH_NUM >= 80 )); then H_COLOR="$UI_C_GREEN"
+  elif (( 10#$HEALTH_NUM >= 60 )); then H_COLOR="$UI_C_YELLOW"
   else                              H_COLOR="$UI_C_RED"
   fi
 else

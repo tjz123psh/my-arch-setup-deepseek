@@ -30,6 +30,7 @@ return {
           "jsonls", -- JSON
           "yamlls", -- YAML
           "marksman", -- Markdown
+          "lemminx", -- XML / pom.xml
         },
         automatic_enable = false, -- 手动管理，跳过自动启用
       },
@@ -66,50 +67,13 @@ return {
       jsonls = {},
       yamlls = {},
       marksman = {},
+      lemminx = {}, -- XML / pom.xml
     },
 
     -- 当 LSP 附加到某个缓冲区时，注册对应的快捷键
-    on_attach = function(client, bufnr)
-      local desc = function(d)
-        return { buffer = bufnr, silent = true, desc = d }
-      end
-
-      -- 代码导航（只在服务器支持时才注册）
-      if client.server_capabilities.definitionProvider then
-        vim.keymap.set("n", "gd", vim.lsp.buf.definition, desc("跳转到定义"))
-      end
-      if client.server_capabilities.typeDefinitionProvider then
-        vim.keymap.set("n", "gR", vim.lsp.buf.type_definition, desc("跳转到类型定义"))
-      end
-      if client.server_capabilities.hoverProvider then
-        vim.keymap.set("n", "gh", vim.lsp.buf.hover, desc("悬停显示文档"))
-      end
-      if client.server_capabilities.referencesProvider then
-        vim.keymap.set("n", "gr", vim.lsp.buf.references, desc("查找所有引用"))
-      end
-      if client.server_capabilities.implementationProvider then
-        vim.keymap.set("n", "gi", vim.lsp.buf.implementation, desc("跳转到实现"))
-      end
-
-      -- 诊断导航（上下一个错误）
-      vim.keymap.set("n", "[d", function()
-        vim.diagnostic.jump({ count = -1, float = true })
-      end, desc("上一个诊断"))
-      vim.keymap.set("n", "]d", function()
-        vim.diagnostic.jump({ count = 1, float = true })
-      end, desc("下一个诊断"))
-
-      -- 代码操作
-      if client.server_capabilities.renameProvider then
-        vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, desc("重命名符号"))
-      end
-      if client.server_capabilities.codeActionProvider then
-        vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, desc("代码操作"))
-      end
-      if client.server_capabilities.signatureHelpProvider then
-        vim.keymap.set("i", "<C-k>", vim.lsp.buf.signature_help, desc("显示函数签名"))
-      end
-    end,
+    -- 抽到 core/lsp_on_attach.lua，因为 nvim-jdtls 走自己的启动路径、
+    -- 不经过这里的自动配置，需要和 lang/java.lua 共用同一份映射。
+    on_attach = require("core.lsp_on_attach"),
 
     -- 需要跳过的服务器（由专门的插件管理）
     setup = {

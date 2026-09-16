@@ -4,7 +4,7 @@ foreground = '#e0e2e8'
 
 [colors.selection]
 text = '#e0e2e8'
-background = '#164974'
+background = '#154974'
 
 [colors.cursor]
 text = '#101418'
@@ -21,7 +21,7 @@ cyan    = '#9ecafc'
 white   = '#eff6ff'
 
 [colors.bright]
-black   = '#979da3'
+black   = '#3f4347'
 red     = '#ff9fbb'
 green   = '#a5ffb1'
 yellow  = '#fffaa5'

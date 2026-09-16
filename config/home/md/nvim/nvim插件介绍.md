@@ -327,9 +327,9 @@
 | **功能** | Java 语言服务器增强（Eclipse JDTLS），提供代码补全、调试、重构等完整 Java 开发体验 |
 | **配置** | `plugins/lang/java.lua` |
 | **加载** | `ft = { "java" }`（打开 Java 文件时加载） |
-| **快捷键** | `<F5>` 调试 Java（输入主类名）、`<leader>co` Java 代码操作、`<leader>ot` 整理 import |
+| **快捷键** | `<F5>` 调试 Java 应用；`<leader>Jt` / `<leader>JT` 在终端运行测试方法 / 测试类；`<leader>Jg` / `<leader>JG` 调试测试方法 / 测试类；`<leader>co` Java 代码操作；`<leader>ot` 整理 import |
 | **依赖** | nvim-dap（调试）、mason 安装的 jdtls 和 java-debug-adapter |
-| **备注** | lspconfig 已跳过 jdtls（由本插件接管）；自动将 java-debug-adapter 的 JAR 作为 bundles 传给 jdtls；工作区目录按项目名分开存储，避免反复索引 |
+| **备注** | lspconfig 已跳过 jdtls（由本插件接管）；由 `java.lua` 注入 java-debug/java-test 的 OSGi bundles，并排除 test runner、jacoco 和 JDTLS 已提供的重复 ASM bundle；工作区目录按项目分开存储，避免互相污染 |
 
 ## C/C++ 语言附加配置
 

@@ -8,10 +8,15 @@ UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
 have() { command -v "$1" >/dev/null 2>&1; }
 
 SUDO_READ=()
+READ_ACCESS_SKIPPED=0
 
 request_read_access() {
   [[ "$EUID" -eq 0 ]] && return 0
-  [[ -t 0 && -t 1 ]] || return 0
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    # 非交互环境无法提权：必须显式标注，避免"没检查"被读成"检查过没问题"。
+    READ_ACCESS_SKIPPED=1
+    return 0
+  fi
   if ! have sudo; then
     ui_err "完整 pacnew 检查需要 sudo，但当前没有 sudo 命令"
     return 1
@@ -36,7 +41,7 @@ panel_end() {
 }
 
 main() {
-  local strict=0 query_failed=0
+  local strict=0 query_failed=0 missing_cmd=0
   if (( $# > 1 )); then
     ui_err "参数过多；用法: pacnew-check [--strict]"
     return 2
@@ -55,41 +60,49 @@ main() {
   ui_panel_line ".pacnew 是软件包提供的新配置，更新后需要你和现有配置人工合并。"
   ui_panel_line ".pacsave 是包管理器保存的旧配置；本工具只列出它们，不会自动处理。"
   ui_panel_line "sudo 仅用于完整扫描 /etc 与 /boot，避免把权限不足误报成没有残留。"
+  if [[ "$READ_ACCESS_SKIPPED" -eq 1 ]]; then
+    # 只标注不判定：真正的"读不到"由下面的 err/查询失败决定 rc，避免完整可读的非交互运行被误判
+    ui_panel_stat info "本次未做完整检查：非交互环境已跳过 sudo 提权，受保护路径可能读不到"
+  fi
 
   panel "pacnew / pacsave" ""
   if ! have pacdiff; then
     ui_panel_stat miss "缺少 pacdiff；请安装 pacman-contrib"
-    panel_end
-    exit 1
-  fi
-
-  local pacdiff_output pacdiff_error_file pacdiff_error pacdiff_status=0
-  pacdiff_error_file="$(mktemp)"
-  pacdiff_output="$("${SUDO_READ[@]}" pacdiff --output 2> "$pacdiff_error_file")" \
-    || pacdiff_status=$?
-  pacdiff_error="$(< "$pacdiff_error_file")"
-  rm -f -- "$pacdiff_error_file"
-
-  if [[ "$pacdiff_status" -ne 0 ]]; then
-    ui_panel_stat err "pacdiff 查询失败（退出码 $pacdiff_status）"
-    [[ -n "$pacdiff_error" ]] && printf '%s\n' "$pacdiff_error" | ui_panel_raw
-    query_failed=1
-  elif [[ -z "$pacdiff_output" ]]; then
-    ui_panel_stat ok "未发现需要处理的 .pacnew / .pacsave"
+    missing_cmd=1
   else
-    ui_panel_stat warn "发现需要人工合并或处理的配置文件："
-    printf '%s\n' "$pacdiff_output" | ui_panel_raw
-    ui_panel_blank
-    ui_panel_line "${UI_BOLD}建议${UI_RESET}"
-    ui_panel_line "${UI_DIM}1. 更新系统后优先处理这些文件，避免新配置没有生效。${UI_RESET}"
-    ui_panel_line "${UI_DIM}2. 手动交互处理: sudo DIFFPROG='nvim -d' pacdiff${UI_RESET}"
-    ui_panel_line "${UI_DIM}3. 只想再次列出: pacdiff --output${UI_RESET}"
+    local pacdiff_output pacdiff_error_file pacdiff_error pacdiff_status=0
+    pacdiff_error_file="$(mktemp)"
+    pacdiff_output="$("${SUDO_READ[@]}" pacdiff --output 2> "$pacdiff_error_file")" \
+      || pacdiff_status=$?
+    pacdiff_error="$(< "$pacdiff_error_file")"
+    rm -f -- "$pacdiff_error_file"
+
+    if [[ "$pacdiff_status" -ne 0 ]]; then
+      ui_panel_stat err "pacdiff 查询失败（退出码 $pacdiff_status）"
+      [[ -n "$pacdiff_error" ]] && printf '%s\n' "$pacdiff_error" | ui_panel_raw
+      query_failed=1
+    elif [[ -z "$pacdiff_output" ]]; then
+      ui_panel_stat ok "未发现需要处理的 .pacnew / .pacsave"
+    else
+      ui_panel_stat warn "发现需要人工合并或处理的配置文件："
+      printf '%s\n' "$pacdiff_output" | ui_panel_raw
+      ui_panel_blank
+      ui_panel_line "${UI_BOLD}建议${UI_RESET}"
+      ui_panel_line "${UI_DIM}1. 更新系统后优先处理这些文件，避免新配置没有生效。${UI_RESET}"
+      ui_panel_line "${UI_DIM}2. 手动交互处理: sudo DIFFPROG='nvim -d' pacdiff${UI_RESET}"
+      ui_panel_line "${UI_DIM}3. 只想再次列出: pacdiff --output${UI_RESET}"
+    fi
   fi
 
   panel "常见位置" ""
-  local path count find_output find_error_file find_status
+  local path count find_output find_error_file find_status find_ok=1
+  if ! have find; then
+    ui_panel_stat miss "缺少 find（findutils），无法扫描配置残留"
+    missing_cmd=1
+    find_ok=0
+  fi
   for path in /etc /boot /usr/lib/sysusers.d /usr/lib/tmpfiles.d; do
-    if [[ -d "$path" ]]; then
+    if [[ "$find_ok" -eq 1 && -d "$path" ]]; then
       find_error_file="$(mktemp)"
       find_status=0
       find_output="$("${SUDO_READ[@]}" find "$path" \
@@ -100,7 +113,7 @@ main() {
         ui_panel_stat warn "$path 有 $count 个 pacman 配置残留"
       fi
       if [[ "$find_status" -ne 0 ]]; then
-        ui_panel_stat warn "$path 扫描未完成（退出码 $find_status），不能判定为无残留"
+        ui_panel_stat err "$path 扫描未完成（退出码 $find_status），不能判定为无残留"
         if [[ -s "$find_error_file" ]]; then
           sed -n '1,4p' "$find_error_file" | ui_panel_raw
         fi
@@ -114,6 +127,8 @@ main() {
 
   panel_end
   ui_tally_summary
+  # 缺命令（127）优先于查询失败（1）；两者都不能被当成"检查完成"
+  [[ "$missing_cmd" -eq 0 ]] || return 127
   [[ "$query_failed" -eq 0 ]] || return 1
   ui_tally_status "$strict"
 }

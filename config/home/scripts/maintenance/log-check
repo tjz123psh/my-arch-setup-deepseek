@@ -30,6 +30,8 @@ md_code_block() {
 }
 
 REPORT_QUERY_FAILED=0
+# 系统范围那次 systemctl --failed 的输出，供 generate_report 复用。
+SYSTEM_FAILED_OUTPUT=""
 
 capture_command() {
   local output_var="$1"
@@ -38,9 +40,10 @@ capture_command() {
   local captured_output captured_error error_file rc=0
 
   error_file="$(mktemp)"
+  ui_tmp_register "$error_file"
   captured_output="$("$@" 2> "$error_file")" || rc=$?
   captured_error="$(< "$error_file")"
-  rm -f -- "$error_file"
+  ui_tmp_discard "$error_file"
   printf -v "$output_var" '%s' "$captured_output"
   printf -v "$error_var" '%s' "$captured_error"
   return "$rc"
@@ -72,6 +75,9 @@ print_failed_units_md() {
   if [[ "$rc" -ne 0 ]]; then
     print_query_error_md "systemctl${scope:+ ($scope)} --failed" "$rc" "$error"
     return 0
+  fi
+  if [[ "$scope" != "user" ]]; then
+    SYSTEM_FAILED_OUTPUT="$output"
   fi
   if [[ -z "$output" ]]; then
     printf -- '- OK: 没有 failed unit\n'
@@ -132,38 +138,73 @@ generate_report() {
   print_journal_errors_md system "系统错误日志"
   print_journal_errors_md user "用户错误日志"
 
-  first_failed="$(systemctl --failed --no-legend --no-pager 2>/dev/null | awk 'NR == 1 {print $1}' || true)"
+  # 复用"系统失败服务"那一次查询，不再重复执行 systemctl --failed。
+  first_failed="$(awk 'NR == 1 {print $1}' <<< "$SYSTEM_FAILED_OUTPUT")"
   print_unit_hint_md "${first_failed:-}"
 }
 
 main() {
-  local report
+  local report="" cmd
+  local save=0
+  local -a missing_cmds=()
 
   if (( $# > 1 )); then
-    ui_err "参数过多；用法: log-check"
+    ui_err "参数过多；用法: log-check [--save[=路径]]"
     return 2
   fi
   case "${1:-}" in
     -h|--help)
-      printf '用法: log-check\n生成本次启动的 failed 服务和 error 日志 Markdown 报告。\n'
+      printf '用法: log-check [--save[=路径]]\n'
+      printf '生成本次启动的 failed 服务和 error 日志 Markdown 报告。\n'
+      printf '默认只输出到终端；--save 才写文件（默认 ~/log-check-<时间戳>.md）。\n'
       return 0
       ;;
+    --save) save=1 ;;
+    --save=*) save=1; report="${1#--save=}" ;;
     "") ;;
     *) ui_err "未知参数: %s" "$1"; return 2 ;;
   esac
+  # 向后兼容：旧的 LOG_CHECK_REPORT 环境变量仍然表示"写到该路径"。
+  if (( save == 0 )) && [[ -n "${LOG_CHECK_REPORT:-}" ]]; then
+    save=1
+    report="$LOG_CHECK_REPORT"
+  fi
+  if (( save == 1 )) && [[ -z "$report" ]]; then
+    if [[ -z "${HOME:-}" ]]; then
+      ui_err "无法确定默认报告路径：HOME 未设置；请使用 --save=路径"
+      return 2
+    fi
+    report="$HOME/log-check-$(date '+%Y%m%d-%H%M%S').md"
+  fi
 
   ui_banner "日志检查" "log-check · 生成 Markdown 报告"
 
-  if ! have systemctl || ! have journalctl; then
+  # 契约：127=缺少必需命令（必须报出缺哪一个），不能与"查询失败"的 1 混用。
+  for cmd in systemctl journalctl; do
+    have "$cmd" || missing_cmds+=("$cmd")
+  done
+  if ((${#missing_cmds[@]} > 0)); then
     ui_panel_open "依赖检查"
-    ui_panel_stat miss "缺少 systemctl 或 journalctl"
+    for cmd in "${missing_cmds[@]}"; do
+      ui_panel_stat miss "缺少必需命令: $cmd"
+    done
     ui_panel_close
-    exit 1
+    return 127
   fi
 
-  report="${LOG_CHECK_REPORT:-$HOME/log-check-$(date '+%Y%m%d-%H%M%S').md}"
   ui_working "正在读取本次启动的系统和用户日志"
-  generate_report > "$report"
+  if (( save == 1 )); then
+    # 只读检查默认不写文件；显式 --save 时才落盘，写入失败要给出明确提示。
+    if [[ -d "$report" ]] || ! { : > "$report"; } 2>/dev/null; then
+      ui_panel_open "报告"
+      ui_panel_stat err "无法写入报告文件: $report"
+      ui_panel_close
+      return 1
+    fi
+    generate_report > "$report"
+  else
+    generate_report
+  fi
 
   ui_panel_open "报告"
   if [[ "$REPORT_QUERY_FAILED" -eq 0 ]]; then
@@ -171,11 +212,21 @@ main() {
   else
     ui_panel_stat warn "报告已生成，但至少一项系统查询失败"
   fi
-  ui_panel_kv "路径" "$report"
+  if (( save == 1 )); then
+    ui_panel_kv "路径" "$report"
+  else
+    ui_panel_line "未写入文件；如需保存请加 --save[=路径]（默认 ~/log-check-<时间戳>.md）。"
+  fi
   ui_panel_close
   [[ "$REPORT_QUERY_FAILED" -eq 0 ]]
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  # 旧实现只在正常路径 rm 临时文件：中途 Ctrl+C 会把它留在 /tmp。陷阱只在
+  # 本脚本被直接执行时安装；被 source（如 tests/run）时安装会顶替调用方自己
+  # 的 EXIT 陷阱，套件的夹具目录就再也不会被清理。
+  trap 'ui_tmp_cleanup' EXIT
+  trap 'ui_tmp_cleanup; exit 130' INT
+  trap 'ui_tmp_cleanup; exit 143' TERM
   main "$@"
 fi

@@ -7,6 +7,11 @@ UI_LIB="$(dirname "$(readlink -f "$0")")/lib/ui.sh"
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# 查询失败（命令报错/输出不可解析）与"确实没有"必须分开：
+#   查询失败 → 退出码 1（无法检查 ≠ 健康）；缺核心命令 → 127。
+GPU_QUERY_FAILED=0
+GPU_MISSING_CMD=0
+
 _PANEL_OPEN=false
 panel() {
   [[ "$_PANEL_OPEN" == true ]] && ui_panel_close
@@ -47,7 +52,8 @@ show_opengl() {
 
   output="$("$@" 2>&1)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    ui_panel_stat warn "$command_label 查询失败（退出码 $rc）"
+    ui_panel_stat err "$command_label 查询失败（退出码 $rc），无法验证渲染链路"
+    GPU_QUERY_FAILED=1
     [[ -z "$output" ]] || printf '%s\n' "$output" | sed -n '1,4p' | ui_panel_raw
     return
   fi
@@ -75,11 +81,13 @@ show_vulkan() {
   local output="" rc=0 instance devices summary
   if ! have vulkaninfo; then
     ui_panel_stat miss "缺少 vulkaninfo（vulkan-tools），无法验证 Vulkan"
+    GPU_QUERY_FAILED=1
     return
   fi
   output="$(vulkaninfo --summary 2>&1)" || rc=$?
   if [[ "$rc" -ne 0 ]]; then
-    ui_panel_stat warn "Vulkan 查询失败（退出码 $rc）"
+    ui_panel_stat err "Vulkan 查询失败（退出码 $rc），无法验证 Vulkan"
+    GPU_QUERY_FAILED=1
     [[ -z "$output" ]] || printf '%s\n' "$output" | sed -n '1,5p' | ui_panel_raw
     return
   fi
@@ -139,13 +147,16 @@ main() {
   ui_panel_line "混合显卡中默认使用 AMD 核显是正常且省电的，prime-run 应切到 NVIDIA 独显。"
   ui_panel_line "温度、显存和利用率只显示检查当下的瞬时值，不是压力测试结果。"
 
-  local pci_output="" pci_rows="" pci_rc=0 gpu_count=0 index=0 has_nvidia=0
+  local pci_output="" pci_rows="" pci_rc=0 gpu_count=0 index=0 has_nvidia=0 pci_ok=0
   panel "PCI 显卡" ""
   if have lspci; then
     pci_output="$(LC_ALL=C lspci -k 2>&1)" || pci_rc=$?
     if [[ "$pci_rc" -ne 0 ]]; then
-      ui_panel_stat warn "lspci 查询失败（退出码 $pci_rc）"
+      # 查询失败时绝不能说"没有 N 卡"：本节结论不可用。
+      ui_panel_stat err "lspci 查询失败（退出码 $pci_rc），无法检查显卡"
+      GPU_QUERY_FAILED=1
     else
+      pci_ok=1
       pci_rows="$(awk '
         function emit() {
           if (model != "") {
@@ -186,23 +197,27 @@ main() {
     fi
   else
     ui_panel_stat miss "缺少 lspci，建议安装 pciutils"
+    GPU_MISSING_CMD=1
   fi
 
-  local module_output="" module_rows="" module_count=0 module_rc=0
+  local module_output="" module_rows="" module_count=0 module_rc=0 module_ok=0
   panel "内核模块" ""
   if have lsmod; then
     module_output="$(lsmod 2>&1)" || module_rc=$?
     if [[ "$module_rc" -ne 0 ]]; then
-      ui_panel_stat warn "lsmod 查询失败（退出码 $module_rc）"
+      ui_panel_stat err "lsmod 查询失败（退出码 $module_rc），无法检查显卡内核模块"
+      GPU_QUERY_FAILED=1
       [[ -z "$module_output" ]] || printf '%s\n' "$module_output" | sed -n '1,4p' | ui_panel_raw
     else
-      module_rows="$(awk '$1 ~ /^(amdgpu|nvidia|nouveau)$/ {print $1 "\034" $3}' \
+      module_ok=1
+      # Intel i915/xe 与老 radeon 同样是接管显卡的内核模块，不能漏判。
+      module_rows="$(awk '$1 ~ /^(i915|xe|radeon|amdgpu|nvidia|nouveau)$/ {print $1 "\034" $3}' \
         <<< "$module_output")"
       module_count="$(awk 'NF {n++} END {print n + 0}' <<< "$module_rows")"
     fi
-    if [[ "$module_rc" -eq 0 && "$module_count" -eq 0 ]]; then
-      ui_panel_stat warn "未发现 amdgpu / nvidia / nouveau 模块"
-    elif [[ "$module_rc" -eq 0 ]]; then
+    if [[ "$module_ok" -eq 1 && "$module_count" -eq 0 ]]; then
+      ui_panel_stat warn "未发现 i915 / xe / radeon / amdgpu / nvidia / nouveau 模块"
+    elif [[ "$module_ok" -eq 1 ]]; then
       while IFS=$'\034' read -r module used; do
         [[ -n "$module" ]] || continue
         ui_panel_kv "$module" "已加载" "引用计数 ${used:-0}"
@@ -216,6 +231,7 @@ main() {
     fi
   else
     ui_panel_stat miss "缺少 lsmod，建议安装 kmod"
+    GPU_MISSING_CMD=1
   fi
 
   panel "默认图形栈" ""
@@ -223,16 +239,21 @@ main() {
     show_opengl "默认 OpenGL" glxinfo -B
   else
     ui_panel_stat miss "缺少 glxinfo（mesa-utils），无法验证 OpenGL"
+    GPU_QUERY_FAILED=1
   fi
 
   panel "Vulkan" ""
   show_vulkan
 
   panel "NVIDIA" ""
-  if ((has_nvidia == 0)); then
+  if ((has_nvidia == 0)) && [[ "$pci_ok" -ne 1 ]]; then
+    # 无法判断 ≠ 没有：PCI 查询没成功时不能断言"未检测到 NVIDIA"。
+    ui_panel_stat warn "无法判断 NVIDIA 显卡是否存在：PCI 查询未成功（本次未做该项检查）"
+  elif ((has_nvidia == 0)); then
     ui_panel_stat info "未检测到 NVIDIA 显卡，本节不适用"
   elif ! have nvidia-smi; then
     ui_panel_stat miss "检测到 NVIDIA 显卡，但缺少 nvidia-smi"
+    GPU_QUERY_FAILED=1
   else
     local nvidia_output="" nvidia_rc=0
     local name driver temp power mem_used mem_total util
@@ -240,7 +261,8 @@ main() {
       --query-gpu=name,driver_version,temperature.gpu,power.draw,memory.used,memory.total,utilization.gpu \
       --format=csv,noheader,nounits 2>&1)" || nvidia_rc=$?
     if [[ "$nvidia_rc" -ne 0 || -z "$nvidia_output" ]]; then
-      ui_panel_stat warn "nvidia-smi 查询失败（退出码 $nvidia_rc）"
+      ui_panel_stat err "nvidia-smi 查询失败（退出码 $nvidia_rc），无法检查 NVIDIA 状态"
+      GPU_QUERY_FAILED=1
       [[ -z "$nvidia_output" ]] || printf '%s\n' "$nvidia_output" | sed -n '1,4p' | ui_panel_raw
     else
       while IFS=',' read -r name driver temp power mem_used mem_total util; do
@@ -263,8 +285,10 @@ main() {
     ui_panel_line "${UI_C_SKY}独显渲染验证${UI_RESET}"
     if ! have prime-run; then
       ui_panel_stat miss "缺少 prime-run（nvidia-prime），无法验证独显渲染"
+      GPU_QUERY_FAILED=1
     elif ! have glxinfo; then
       ui_panel_stat miss "缺少 glxinfo（mesa-utils），无法执行 prime-run OpenGL"
+      GPU_QUERY_FAILED=1
     else
       show_opengl "prime-run OpenGL" prime-run glxinfo -B
     fi
@@ -272,6 +296,9 @@ main() {
 
   panel_end
   ui_tally_summary
+  # 缺核心命令（127）优先；查询失败即使没有 --strict 也必须非零。
+  [[ "$GPU_MISSING_CMD" -eq 0 ]] || return 127
+  [[ "$GPU_QUERY_FAILED" -eq 0 ]] || return 1
   ui_tally_status "$strict"
 }
 

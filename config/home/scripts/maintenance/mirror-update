@@ -41,8 +41,17 @@ readonly BACKUP_KEEP
 # 全局状态变量，用于 trap 判断脚本是否完整且成功地执行完毕
 SCRIPT_SUCCESS=false
 
-# reflector 基础参数：https 协议、按速率排序、详细输出
-readonly BASE_ARGS=("--protocol" "https" "--sort" "rate" "--verbose")
+# reflector 基础参数：https 协议、按速率排序、详细输出。
+# --sort rate 要逐个测速：旧写法第一次尝试既没有超时也是单线程，
+# 遇到一批慢镜像就得干等好几分钟。这里统一给上并发和两个超时，
+# 后面几次尝试因此不必再各自重复 --download-timeout。
+MIRROR_THREADS="$(maintenance_config_get MIRROR_THREADS 5 MIRROR_THREADS)"
+# 环境变量覆盖与配置文件走同一套校验：越界/非法值明确报错退出，不静默回落默认值。
+{ [[ "$MIRROR_THREADS" =~ ^[1-9][0-9]*$ ]] && (( MIRROR_THREADS <= 32 )); } \
+    || ui_die "MIRROR_THREADS 必须是 1 到 32 的整数（当前值: %s）" "$MIRROR_THREADS"
+readonly MIRROR_THREADS
+readonly BASE_ARGS=("--protocol" "https" "--sort" "rate" "--verbose" \
+    "--threads" "$MIRROR_THREADS" "--connection-timeout" "3" "--download-timeout" "5")
 
 # --- 文案（纯中文）---
 MSG_DESC="具备校验与回退功能的智能镜像更新器。"
@@ -100,6 +109,9 @@ cleanup() {
     local exit_code=$?
     # 注销 trap 防止循环调用
     trap - EXIT INT TERM HUP QUIT
+
+    # 清掉 _run_reflector 登记在案的 mktemp 临时文件（INT/TERM 也会经 EXIT 走到这里）
+    ui_tmp_cleanup
 
     # 如果脚本未被标记为成功，或者镜像源文件为空（被中断），则触发恢复逻辑
     if [[ "$SCRIPT_SUCCESS" != "true" ]] || [[ ! -s "$MIRRORLIST" ]]; then
@@ -223,6 +235,7 @@ _run_reflector() {
     local title="$1" preview="$2"; shift 2
     local tmp rc n
     tmp="$(mktemp)" || { ui_err "无法创建临时文件"; return 1; }
+    ui_tmp_register "$tmp"
 
     ui_panel_open "$title" "$UI_ICON_INFO"
     ui_panel_line "${UI_C_SUBTLE}${MSG_CMD_PREVIEW}${UI_RESET} ${UI_DIM}${preview}${UI_RESET}"
@@ -241,14 +254,14 @@ _run_reflector() {
     if [[ "$rc" -eq 0 && -s "$tmp" && "${n:-0}" -gt 0 ]]; then
         if sudo cp "$tmp" "$MIRRORLIST"; then
             ui_ok "已写入 %s 个镜像源" "${n:-0}"
-            rm -f "$tmp"
+            ui_tmp_discard "$tmp"
             return 0
         fi
     fi
     if [[ "$rc" -eq 0 && "${n:-0}" -eq 0 ]]; then
         ui_err "生成结果没有有效的 HTTPS Server 行，拒绝写入 mirrorlist。"
     fi
-    rm -f "$tmp"
+    ui_tmp_discard "$tmp"
     return 1
 }
 
@@ -280,8 +293,8 @@ run_reflector_with_retry() {
         warn "$MSG_FAIL_RETRY"
         if _run_reflector \
             "$MSG_ATTEMPT_2 $fallback" \
-            "sudo reflector ${BASE_ARGS[*]} --age 24 --fastest 10 --download-timeout 5 --country $fallback" \
-            "${BASE_ARGS[@]}" --age 24 --fastest 10 --download-timeout 5 --country "$fallback"; then
+            "sudo reflector ${BASE_ARGS[*]} --age 24 --fastest 10 --country $fallback" \
+            "${BASE_ARGS[@]}" --age 24 --fastest 10 --country "$fallback"; then
             return 0
         fi
     fi
@@ -301,7 +314,7 @@ while [[ $# -gt 0 ]]; do
         -c|--country)
             if [[ -n "${2:-}" ]]; then MANUAL_COUNTRY="$2"; shift 2
             else error "--country 缺少参数"; fi ;;
-        *) printf "未知参数: %s\n" "$1"; usage; exit 1 ;;
+        *) printf "未知参数: %s\n" "$1" >&2; usage >&2; exit 2 ;;
     esac
 done
 
@@ -342,7 +355,10 @@ if ! sudo -v; then error "需要管理员权限。"; fi
 
 mkdir -p "$BACKUP_DIR"
 candidate_backup="$BACKUP_DIR/mirrorlist-$(date '+%Y%m%d-%H%M%S')-$$.bak"
-if grep -q '^Server = ' "$MIRRORLIST" 2>/dev/null; then
+# 只要当前文件非空就先给它建一份新备份，让回滚恢复的是用户此刻的内容；绝不
+# 再把 BACKUP_PATH 指向历史旧备份去覆盖现状。可用源判断放宽到 pacman 合法语法
+# （Server=/Server = /Include=/Include =），它只用于提示，不改变备份对象。
+if [[ -s "$MIRRORLIST" ]]; then
   BACKUP_PATH="$candidate_backup"
   if cp "$MIRRORLIST" "$BACKUP_PATH" 2>/dev/null; then
       log "$MSG_BACKUP_DONE $BACKUP_PATH"
@@ -353,13 +369,16 @@ if grep -q '^Server = ' "$MIRRORLIST" 2>/dev/null; then
   fi
   ln -sfn "$(basename "$BACKUP_PATH")" "$BACKUP_DIR/mirrorlist.latest.bak"
   prune_backups
+  grep -Eq '^[[:space:]]*(Server|Include)[[:space:]]*=' "$MIRRORLIST" 2>/dev/null \
+    || warn "当前 mirrorlist 无可用 Server/Include 行，已备份现状待回滚：$BACKUP_PATH"
 else
+  # 只有当前文件不存在或为空，才退回历史最新备份
   BACKUP_PATH="$(find "$BACKUP_DIR" -maxdepth 1 -type f -regextype posix-extended \
     -regex '.*/mirrorlist-[0-9]{8}-[0-9]{6}-[0-9]+\.bak' -printf '%T@ %p\n' 2>/dev/null \
     | sort -nr | cut -d' ' -f2- | sed -n '1p')"
   [[ -n "$BACKUP_PATH" ]] || BACKUP_PATH="$BACKUP_DIR/mirrorlist.bak"
   if [[ ! -s "$BACKUP_PATH" ]]; then
-      error "当前 mirrorlist 无有效 Server 行，且没有可用的历史备份。"
+      error "当前 mirrorlist 无有效 Server/Include 行，且没有可用的历史备份。"
   fi
   warn "当前 mirrorlist 无效，保留历史备份不覆盖：$BACKUP_PATH"
 fi
@@ -389,8 +408,8 @@ if [[ "$SUCCESS" == "false" ]]; then
     if [[ -z "$TARGET_COUNTRY" ]]; then warn "$MSG_WARN_NO_SET"; else warn "$MSG_FAIL_GLOBAL"; fi
 
     if _run_reflector "$MSG_ATTEMPT_3" \
-        "sudo reflector ${BASE_ARGS[*]} --latest 50 --fastest 10 --download-timeout 5" \
-        "${BASE_ARGS[@]}" --latest 50 --fastest 10 --download-timeout 5; then
+        "sudo reflector ${BASE_ARGS[*]} --latest 50 --fastest 10" \
+        "${BASE_ARGS[@]}" --latest 50 --fastest 10; then
         SUCCESS=true
     fi
 fi

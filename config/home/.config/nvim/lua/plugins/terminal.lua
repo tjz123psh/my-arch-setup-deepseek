@@ -20,6 +20,8 @@ return {
       open_mapping = nil, -- 不用默认映射，用下方自定义
       shading_factor = 2, -- 终端背景暗化程度
       direction = "float", -- 默认浮动
+      close_on_exit = false, -- 命令结束后保留终端和输出，便于查看测试结果
+      auto_scroll = true,
       float_opts = {
         border = "rounded",
         winblend = 0, -- 匹配 kitty background_opacity 0.8
