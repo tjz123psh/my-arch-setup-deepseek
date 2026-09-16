@@ -1,11 +1,5 @@
 [Default Applications]
 application/json=zedg.desktop
-application/pdf=onlyoffice-desktopeditors.desktop
-application/vnd.comicbook+zip=onlyoffice-desktopeditors.desktop
-application/vnd.comicbook-rar=onlyoffice-desktopeditors.desktop
-application/x-bzpdf=onlyoffice-desktopeditors.desktop
-application/x-ext-pdf=onlyoffice-desktopeditors.desktop
-application/x-gzpdf=onlyoffice-desktopeditors.desktop
 application/x-zerosize=zedg.desktop
 image/png=org.nomacs.ImageLounge.desktop
 inode/directory=nemo.desktop
@@ -32,12 +26,6 @@ x-scheme-handler/workbuddy=workbuddy.desktop
 
 [Added Associations]
 application/json=zedg.desktop;
-application/pdf=onlyoffice-desktopeditors.desktop;
-application/vnd.comicbook+zip=onlyoffice-desktopeditors.desktop;
-application/vnd.comicbook-rar=onlyoffice-desktopeditors.desktop;
-application/x-bzpdf=onlyoffice-desktopeditors.desktop;
-application/x-ext-pdf=onlyoffice-desktopeditors.desktop;
-application/x-gzpdf=onlyoffice-desktopeditors.desktop;
 application/x-zerosize=zedg.desktop;
 image/png=org.nomacs.ImageLounge.desktop;
 text/markdown=typora.desktop;zedg.desktop;
