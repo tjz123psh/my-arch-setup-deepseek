@@ -1,0 +1,4 @@
+# 本机全局 C/C++ 风格：基于 LLVM，缩进改为 4 空格（中文常用约定）。
+# 项目内若已有自己的 .clang-format，会优先于本文件。
+BasedOnStyle: LLVM
+IndentWidth: 4

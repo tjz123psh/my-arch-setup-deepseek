@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Route Grok through the local Clash proxy (127.0.0.1:7890) when it is running.
+# Direct connections to provider/CDN endpoints (agentrouter.org, anyrouter.top)
+# are blocked on this network; grok (reqwest) only honors proxy env vars.
+if ss -tln 2>/dev/null | grep -q ':7890 '; then
+    export HTTPS_PROXY=http://127.0.0.1:7890
+    export HTTP_PROXY=http://127.0.0.1:7890
+    export ALL_PROXY=socks5://127.0.0.1:7890
+fi
+exec "${HOME:-/home/pang}/.grok/bin/grok" "$@"

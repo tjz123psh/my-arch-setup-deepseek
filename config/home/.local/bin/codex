@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Route Codex through the local Clash proxy (127.0.0.1:7890) when it is running.
+# Direct connections to provider/CDN endpoints (agentrouter.org, anyrouter.top)
+# are blocked on this network; codex only honors proxy *environment variables*.
+# This wrapper exists because the fish conf.d proxy export only affects shells
+# started after it was created (old terminals / GUI launches would miss it).
+if ss -tln 2>/dev/null | grep -q ':7890 '; then
+    export HTTPS_PROXY=http://127.0.0.1:7890
+    export HTTP_PROXY=http://127.0.0.1:7890
+    export ALL_PROXY=socks5://127.0.0.1:7890
+fi
+exec /usr/bin/codex "$@"

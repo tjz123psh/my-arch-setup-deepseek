@@ -278,3 +278,9 @@ physical-v1	desktop-shared	config/home/.config/environment.d/20-ime.conf	.config
 physical-v1	desktop-shared	config/home/.config/qq-electron-flags.conf	.config/qq-electron-flags.conf	644
 physical-v1	desktop-shared	config/home/.config/xdg-terminals.list	.config/xdg-terminals.list	644
 physical-v1	personal-user-services	config/home/.config/systemd/user/clipboard-x11-bridge.service	.config/systemd/user/clipboard-x11-bridge.service	644
+physical-v1	personal-user-services	config/home/.local/bin/agentrouter-proxy.mjs	.local/bin/agentrouter-proxy.mjs	755
+physical-v1	personal-scripts	config/home/.local/bin/codex	.local/bin/codex	755
+physical-v1	personal-scripts	config/home/.local/bin/grok	.local/bin/grok	755
+physical-v1	personal-user-services	config/home/.config/systemd/user/agentrouter-proxy.service	.config/systemd/user/agentrouter-proxy.service	644
+physical-v1	development-toolchain	config/home/.clang-format	.clang-format	644
+physical-v1	desktop-shared	config/home/.config/gtk-3.0/bookmarks	.config/gtk-3.0/bookmarks	644
