@@ -52,7 +52,7 @@ hl.gesture({
 hl.device({
 	name = "hfd-atk-a87pro-mouse",
 	accel_profile = "flat",
-	sensitivity = 0.3,
+	sensitivity = 0.5,
 })
 -- YJX 无线游戏鼠标：USB 重新枚举时上报的 product string 会变，Hyprland 归一化出
 -- 两种设备名（有线/USB 模式 yjx-chip-usb-gaming-mouse，2.4G 无线模式
@@ -60,10 +60,14 @@ hl.device({
 hl.device({
 	name = "yjx-chip-usb-gaming-mouse",
 	accel_profile = "flat",
-	sensitivity = 0.3,
+	sensitivity = 0.5,
 })
 hl.device({
 	name = "yjx-chip-2.4g-gaming-mouse",
 	accel_profile = "flat",
-	sensitivity = 0.3,
+	sensitivity = 0.5,
+})
+hl.device({
+	name = "asuf1204:00-2808:0202-touchpad",
+	sensitivity = 1,
 })
