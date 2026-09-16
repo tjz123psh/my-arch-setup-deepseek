@@ -127,6 +127,7 @@ nvidia-prime	pacman	extra	pacman	graphics-nvidia	package-only	install	current-ex
 nvidia-settings	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	Tool for configuring the NVIDIA graphics driver
 nvidia-utils	pacman	extra	pacman	graphics-nvidia	package-only	install	current-explicit	NVIDIA drivers utilities
 obsidian-bin	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	Obsidian desktop application without vault or profile migration
+openai-codex	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenAI Codex terminal coding agent
 opencode-bin	aur	aur	aur-build	development-toolchain	package-only	install	current-explicit	OpenCode command-line development agent
 os-prober	pacman	extra	verify-only	base-tools	package-only	install	confirmed-desired	Utility to detect other OSes on a set of drives
 pacman-contrib	pacman	extra	pacman	repository-tools	package-only	install	current-explicit	Contributed scripts and tools for pacman systems
@@ -167,6 +168,7 @@ spice-vdagent	pacman	extra	pacman	virtualization	deferred	deferred	current-expli
 starship	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	The cross-shell prompt for astronauts
 strace	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	A diagnostic, debugging and instructional userspace tracer
 sshpass	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Non-interactive SSH password authentication
+switcheroo-control	pacman	extra	pacman	hardware-tools	package-only	install	current-explicit	D-Bus service to check the availability of dual-GPU
 tcpdump	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-line packet analyzer
 stylua	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Deterministic code formatter for Lua
 sudo	pacman	core	verify-only	base-preconditions	manual-precondition	verify	current-explicit	Give certain users the ability to run some commands as root
