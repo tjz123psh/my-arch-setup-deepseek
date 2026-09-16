@@ -1,6 +1,7 @@
 # schema=1
 # package
 
+dbx-bin
 dsearch-bin
 fcitx5-skin-fluentdark-git
 fuzzel-ime-git

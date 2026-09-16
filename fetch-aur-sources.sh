@@ -75,6 +75,8 @@ echo "== URL sources =="
 # dsearch-bin
 dl LICENSE-0.3.2        "https://raw.githubusercontent.com/AvengeMedia/danksearch/1269b4688cc94cbd271e1cbbf19a6e7caa2293de/LICENSE"
 dl README-0.3.2.md      "https://raw.githubusercontent.com/AvengeMedia/danksearch/1269b4688cc94cbd271e1cbbf19a6e7caa2293de/README.md"
+# dbx-bin (GitHub release deb; recipe pinned to the installed 0.6.4)
+dl dbx_0.6.4_amd64.deb "https://github.com/t8y2/dbx/releases/download/v0.6.4/dbx_0.6.4_amd64.deb" 82eb52a54706a9664f5ee0a754726f81572a9732f97c711cfe086f5d04e4e015
 dl dsearch-x86_64-0.3.2.gz "https://github.com/AvengeMedia/danksearch/releases/download/v0.3.2/dsearch-linux-amd64.gz"
 # fcitx5-skin-fluentdark-git
 dl Fluent-fcitx5-399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz "https://github.com/Reverier-Xu/Fluent-fcitx5/archive/399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz"
