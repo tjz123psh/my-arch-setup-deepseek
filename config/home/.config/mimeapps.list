@@ -4,19 +4,15 @@ inode/directory=nemo.desktop
 text/html=firefox.desktop
 x-scheme-handler/about=firefox.desktop
 x-scheme-handler/calendar=dms-open.desktop
-x-scheme-handler/clash=clash-verge.desktop
-x-scheme-handler/clash-verge=clash-verge.desktop
+x-scheme-handler/ccswitch=cc-switch-handler.desktop
 x-scheme-handler/geo=dms-open.desktop
 x-scheme-handler/http=firefox.desktop
 x-scheme-handler/https=firefox.desktop
 x-scheme-handler/unknown=firefox.desktop
-x-scheme-handler/dbx=dbx-handler.desktop
 
 [Added Associations]
 image/png=org.nomacs.ImageLounge.desktop;
 x-scheme-handler/calendar=dms-open.desktop;
-x-scheme-handler/clash=clash-verge.desktop;
-x-scheme-handler/clash-verge=clash-verge.desktop;
 x-scheme-handler/geo=dms-open.desktop;
 
 [Removed Associations]
