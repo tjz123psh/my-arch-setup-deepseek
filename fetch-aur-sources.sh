@@ -68,6 +68,8 @@ echo "== git sources (SRCDEST bare mirrors) =="
 gitm fuzzel          https://codeberg.org/dnkl/fuzzel.git
 gitm dank-greeter    https://github.com/AvengeMedia/dank-greeter.git
 gitm dank-qml-common https://github.com/AvengeMedia/dank-qml-common.git
+# snapd-xdg-open-git (AUR->AUR runtime dep of linuxqq-nt-bwrap; bare mirror for offline makepkg)
+gitm snapd-xdg-open https://github.com/snapcore/snapd-xdg-open.git
 
 echo "== URL sources =="
 # dsearch-bin
@@ -78,16 +80,16 @@ dl dsearch-x86_64-0.3.2.gz "https://github.com/AvengeMedia/danksearch/releases/d
 dl Fluent-fcitx5-399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz "https://github.com/Reverier-Xu/Fluent-fcitx5/archive/399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz"
 # google-chrome
 dl google-chrome-stable_151.0.7922.71-1_amd64.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_151.0.7922.71-1_amd64.deb"
-# linuxqq-appimage (CN CDN)
-dl Linuxqq-3.2.32_20260730-x86_64.AppImage "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.33/release/c97651b2/QQ_3.2.32_260730_x86_64_01.AppImage"
+# linuxqq-nt-bwrap (CN CDN; pinned deb, sha256 from the reviewed PKGBUILD)
+dl linuxqq_3.2.33-52892_amd64.deb "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.35/beta/1763096b/linuxqq_3.2.33-52892_amd64.deb" 502a978f2d03af9f21acefc461f9d1d1fe09b65bad620bbfcdb589a79ac53b7e
 # obsidian-bin
 dl obsidian_1.12.7_amd64.deb "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.12.7/obsidian_1.12.7_amd64.deb"
 # opencode-bin
 dl opencode-bin_1.18.10_x86_64.tar.gz "https://github.com/anomalyco/opencode/releases/download/v1.18.10/opencode-linux-x64.tar.gz"
 # paru
 dl paru-2.1.0.tar.gz "https://github.com/Morganamilo/paru/archive/v2.1.0.tar.gz"
-# wechat-appimage (CN CDN)
-dl WechatLinux-1783692407-x86_64.AppImage "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.AppImage"
+# wechat-universal-bwrap (CN CDN; makepkg stores the deb under the recipe SRCDEST name)
+dl wechat-universal-4.1.13.9-x86_64.deb "https://dldir1v6.qq.com/weixin/Universal/Linux/WeChatLinux_x86_64.deb" 096865e050ba0d3c1a23887227e2400bf343037b1d7d658c84c88ff26bfdc17f
 # wooz-git
 dl wooz-24e2856bf2cc13810f00971ae143973840555321.tar.gz "https://github.com/negrel/wooz/archive/24e2856bf2cc13810f00971ae143973840555321.tar.gz"
 

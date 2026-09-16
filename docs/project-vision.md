@@ -31,9 +31,12 @@ and it is not an audited/reproducible engineering system.
 3. **AUR is fully automatic.** The manifest's AUR targets (count follows
    the manifest; see `./check-extend.sh` reconcile output) build from their real
    upstream sources via makepkg, pinned under `third_party/aur/` (recipe trees
-   include `vmware-keymaps`, a build-time dependency of `vmware-workstation`
-   bootstrapped+installed first by 06-aur because `makepkg -s` needs it
-   installed before it can resolve the workstation recipe's dependency). The
+   include `vmware-keymaps`, a build-time dependency of `vmware-workstation`,
+   and `snapd-xdg-open-git`, the AUR runtime dependency of
+   `linuxqq-nt-bwrap` (the bwrap QQ/WeChat packages replaced the former
+   AppImage recipes on 2026-09-16) — each bootstrapped+installed first by
+   06-aur because `makepkg -s` needs an AUR dependency installed before it can
+   resolve the dependent recipe). The
    target set is filtered by the same machine-role `module_selected()` as
    packages: physical includes vmware-workstation, a VM excludes it (host
    stack excluded) — a VM never builds or installs

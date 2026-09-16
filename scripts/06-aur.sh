@@ -235,32 +235,43 @@ offline_mode() {
     fi
   fi
 
-  # AUR->AUR dependency bootstrap: vmware-workstation's `makepkg -s` requires
-  # vmware-keymaps to already be installed (its PKGBUILD does
-  # `depends+=(vmware-keymaps)`). The old build-all-then-install-all model
-  # cannot satisfy that, so vmware-keymaps gets its own build + dedicated
-  # install before the main batch (review 5.5). Only relevant when the host
-  # stack is actually selected (physical); a vm guest never builds it.
-  if [[ "${RECIPES[*]}" == *"vmware-workstation"* ]] && [[ -d "${RECIPES_DIR}/vmware-keymaps" ]]; then
-    log "Bootstrapping vmware-keymaps (AUR dependency of vmware-workstation)..."
-    if install_recipe vmware-keymaps; then
-      mapfile -t km_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name 'vmware-keymaps*.pkg.tar.*')
-      if (( ${#km_pkgs[@]} > 0 )); then
-        run pacman -U --noconfirm "${km_pkgs[@]}" || {
-          error "could not install bootstrapped vmware-keymaps"
+  # AUR->AUR dependency bootstrap. `makepkg -s` resolves dependencies through
+  # pacman, so an AUR package that DEPENDS on another AUR package cannot be
+  # built offline unless the dependency is already installed: the
+  # build-all-then-install-all model cannot satisfy it. Each such
+  # prerequisite therefore gets its own build + dedicated install BEFORE the
+  # main batch (vmware-keymaps -> vmware-workstation, review 5.5;
+  # snapd-xdg-open-git -> linuxqq-nt-bwrap, 2026-09-16). A prereq is only
+  # pulled in when its dependent target is actually selected (so a vm guest
+  # never builds the physical-only host stack).
+  local -a aur_prereqs=()
+  [[ "${RECIPES[*]}" == *"vmware-workstation"* ]] && aur_prereqs+=(vmware-keymaps)
+  [[ "${RECIPES[*]}" == *"linuxqq-nt-bwrap"* ]] && aur_prereqs+=(snapd-xdg-open-git)
+  local prereq
+  for prereq in "${aur_prereqs[@]}"; do
+    if [[ ! -d "${RECIPES_DIR}/${prereq}" ]]; then
+      error "missing prerequisite recipe ${prereq}; cannot build the selected AUR targets"
+      exit 1
+    fi
+    log "Bootstrapping ${prereq} (AUR dependency of a selected target)..."
+    if install_recipe "${prereq}"; then
+      mapfile -t prereq_pkgs < <(find "${BUILD_BASE}" -maxdepth 1 -name "${prereq}*.pkg.tar.*")
+      if (( ${#prereq_pkgs[@]} > 0 )); then
+        run pacman -U --noconfirm "${prereq_pkgs[@]}" || {
+          error "could not install bootstrapped ${prereq}"
           exit 1
         }
-        rm -f "${km_pkgs[@]}"
-        log "Installed vmware-keymaps"
+        rm -f "${prereq_pkgs[@]}"
+        log "Installed ${prereq}"
       else
-        error "vmware-keymaps built no artifact; cannot proceed to vmware-workstation"
+        error "${prereq} built no artifact; cannot proceed with its dependent target"
         exit 1
       fi
     else
-      error "vmware-keymaps bootstrap build failed; vmware-workstation cannot resolve its AUR dependency"
+      error "${prereq} bootstrap build failed; its dependent target cannot resolve the AUR dependency"
       exit 1
     fi
-  fi
+  done
 
   local failed=0 recipe
   for recipe in "${RECIPES[@]}"; do

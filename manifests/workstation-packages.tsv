@@ -82,7 +82,7 @@ gtk4-layer-shell	pacman	extra	pacman	recording	package-only	install	current-expl
 hyprland	pacman	extra	pacman	wm-hyprland	config-backed	install	confirmed-desired	a highly customizable dynamic tiling Wayland compositor
 inotify-tools	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	inotify-tools is a C library and a set of command-line programs for Linux providing a simple interface to inotify.
 inter-font	pacman	extra	pacman	fonts	package-only	install	current-explicit	A typeface specially designed for user interfaces
-jdk-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 26 development kit
+jdk21-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 21 development kit
 jdk8-openjdk	pacman	extra	pacman	development-toolchain	package-only	install	current-explicit	OpenJDK Java 8 development kit
 jq	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Command-line JSON processor
 khal	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	CLI calendar application built around CalDAV
@@ -99,7 +99,7 @@ linux-firmware	pacman	core	pacman	hardware-tools	package-only	install	current-ex
 linux-headers	pacman	core	pacman	kernel-support	package-only	install	current-explicit	Headers and scripts for building modules for the Linux kernel
 linux-zen	pacman	extra	verify-only	base-preconditions	manual-precondition	verify	current-explicit	The Linux ZEN kernel and modules
 linux-zen-headers	pacman	extra	pacman	kernel-support	package-only	install	current-explicit	Headers and scripts for building modules for the Linux ZEN kernel
-linuxqq-appimage	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	QQ desktop application without account or profile migration
+linuxqq-nt-bwrap	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	New Linux QQ based on Electron, with bubblewrap sandbox and some tweaks
 lsof	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Lists open files for running Unix processes
 lua-language-server	pacman	extra	pacman	developer-editor	package-only	install	current-explicit	Lua Language Server coded by Lua
 matugen	pacman	extra	pacman	desktop-shared	config-backed	install	current-explicit	A material you color generation tool
@@ -188,7 +188,7 @@ vulkan-mesa-layers	pacman	extra	pacman	graphics-amd	package-only	install	current
 vulkan-radeon	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Open-source Vulkan driver for AMD GPUs
 vulkan-tools	pacman	extra	pacman	graphics-amd	package-only	install	current-explicit	Vulkan tools and utilities
 webkitgtk-6.0	pacman	extra	pacman	desktop-apps	package-only	install	current-explicit	Web content engine for GTK
-wechat-appimage	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	WeChat desktop application without account or profile migration
+wechat-universal-bwrap	aur	aur	aur-build	daily-apps	package-only	install	current-explicit	WeChat (Universal) with bwrap sandbox
 wf-recorder	pacman	extra	pacman	recording	package-only	install	confirmed-desired	Screen recorder for wlroots-based compositors such as sway
 wget	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Network utility to retrieve files from the web
 wireplumber	pacman	extra	pacman	audio	package-only	install	current-explicit	Session / policy manager implementation for PipeWire

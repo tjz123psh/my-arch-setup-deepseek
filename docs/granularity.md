@@ -8,7 +8,7 @@
 |---|---|---|
 | 模块流水线 | 11 步同构；04-drivers 自跳过（exit 0） | 11 步同构 |
 | 机型过滤（`module_selected()`） | `virtualization-vmware-guest` 仅 vm（open-vm-tools 等） | `virtualization-vmware-host` 仅 physical（vmware-workstation 等）；硬件包（graphics-*/hardware-tools/asus-hardware）在 03 两机型都排除，归 04-drivers |
-| AUR 目标 | 11（不含 vmware-workstation） | 12（含 vmware-workstation）；vmware-keymaps 是构建依赖、非安装目标（offline 引导安装 / online 由 paru 解析） |
+| AUR 目标 | 11（不含 vmware-workstation） | 12（含 vmware-workstation）；`vmware-keymaps`、`snapd-xdg-open-git` 是 AUR→AUR 依赖、非安装目标（offline 由 06-aur 先引导安装 / online 由 paru 解析） |
 | 驱动（04） | 跳过 | 真实安装；`physical-sim-vmware` 模拟时硬件专属效果标 `NOT_APPLICABLE_SIMULATED`（supergfxd enable、GPU mode switching、vmware-networks/usbarbitrator enable） |
 | 配置（07） | SCOPE=`physical-v1` 共用；唯一门控例外：`asus-hardware` 行（rog-control-center.cfg）在 vm 被跳过 | 全量部署 |
 | 服务（08） | 共享服务集（docker/grub-btrfsd/bluetooth 等，两机型都启用）+ `vmtoolsd`（必需）+ `vmware-vmblock-fuse`（可选） | 共享服务集 + `vmware-networks`/`vmware-usbarbitrator`（VMware host）；supergfxd 归 04-drivers |

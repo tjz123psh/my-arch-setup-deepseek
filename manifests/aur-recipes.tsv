@@ -5,12 +5,13 @@ dsearch-bin
 fcitx5-skin-fluentdark-git
 fuzzel-ime-git
 google-chrome
-linuxqq-appimage
+linuxqq-nt-bwrap
 obsidian-bin
 opencode-bin
 paru
-wechat-appimage
+wechat-universal-bwrap
 wooz-git
 greetd-dms-greeter-git
 vmware-keymaps
+snapd-xdg-open-git
 vmware-workstation
