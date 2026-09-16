@@ -10,6 +10,8 @@
 #   3. README 过期数字   -> --only=numbers  必须失败
 #   4. 私钥进 config/    -> --only=secret   必须失败
 #   5. 孤儿 recipe 目录  -> --only=refs     必须失败
+#   6. 部署期 include 的坏 kdl -> --only=syntax 必须失败（暂存校验路径）
+#   7. 绝对 include 指向仓库外且无对应文件 -> --only=syntax 必须失败（不得静默 SKIP）
 set -Eeuo pipefail
 
 root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -87,6 +89,19 @@ d="$tmp/s5"; clone_repo "$d"
 mkdir -p "$d/third_party/aur/zz-orphan-test"
 printf 'pkgname=zz-orphan-test\n' > "$d/third_party/aur/zz-orphan-test/PKGBUILD"
 expect_fail "孤儿 recipe 目录" "$d" "refs"
+
+echo "== 6. kdl 部署期 include：坏 KDL 必须被抓住（暂存校验路径）=="
+d="$tmp/s6"; clone_repo "$d"
+# config/etc/greetd/niri/config.kdl 的 include 是部署期绝对路径
+# (/etc/greetd/niri/dms.kdl)，syntax 节会把它暂存到工作区沙箱后校验；
+# 注入坏节点必须经该路径被抓住（2026-09-16 修复的回归保护）。
+printf '}\n' >> "$d/config/etc/greetd/niri/config.kdl"
+expect_fail "部署期 include 的坏 kdl" "$d" "syntax"
+
+echo "== 7. 绝对 include 指向仓库外且无对应文件：必须失败而不是静默 SKIP =="
+d="$tmp/s7"; clone_repo "$d"
+sed -i 's|^include .*|include "/etc/greetd/niri/zz-nope.kdl"|' "$d/config/etc/greetd/niri/config.kdl"
+expect_fail "无法解析的绝对 include" "$d" "syntax"
 
 echo "======================"
 echo "check-extend-test: pass=$pass fail=$fail"

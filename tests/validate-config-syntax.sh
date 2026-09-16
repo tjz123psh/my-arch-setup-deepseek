@@ -17,7 +17,7 @@
 #   sh        -> bash -n
 #   desktop   -> desktop-file-validate
 #   service/timer/socket/path -> systemd-analyze verify
-#   kdl       -> niri validate -c
+#   kdl       -> niri validate -c（部署期绝对 include 在仓库内暂存等价布局后校验）
 #   qml       -> qmllint（无则 python 结构配平：括号/引号/注释）
 #   ini       -> python3 configparser（strict=False）
 #   .gitconfig-> git config --file --list
@@ -39,6 +39,84 @@ have() { command -v "$1" >/dev/null 2>&1; }
 note_fail()   { fail=$((fail+1)); failures+=("$1"); }
 note_skip()   { skip=$((skip+1)); skipped+=("$1"); }
 note_manual() { manual=$((manual+1)); manual_files+=("$1"); }
+
+# --- kdl 部署期 include 的暂存校验 -----------------------------------------
+# 有的 kdl 用绝对路径 include 部署后才存在的文件。实例：greetd greeter 的
+# config/etc/greetd/niri/config.kdl 第 19 行 include "/etc/greetd/niri/dms.kdl"，
+# 该路径由 08-services 部署 /etc/greetd/niri/ 之后才存在。直接对仓库副本跑
+# `niri validate -c` 会因 include 解析失败而 FAIL —— 这是宿主状态依赖的误报
+# （2026-09-16：宿主没有 /etc/greetd/niri 目录，syntax 节因此变红），不是载荷缺陷。
+# 处理规则（fail closed，不放行真实错误）：
+#   - include 在本机可解析（绝对路径已存在 / 相对路径相对文件所在目录存在）-> 原地校验；
+#   - 绝对 include 本机不存在、但仓库同目录有同名文件 -> 把该目录的 *.kdl 暂存到
+#     工作区沙箱（gitignored，退出时删除），把绝对 include 重写为同目录相对路径，
+#     即“部署后的等价布局”，再交给 niri validate（include 目标文件本体也会被独立校验）；
+#   - include 本机不存在且仓库也没有对应文件（相对 include 缺失同此）-> FAIL 并打印原因。
+# 沙箱固定在工作区内（AGENTS 只允许写工作区），与 tests/session-lifecycle-test.sh
+# 的沙箱约定一致。
+KDL_STAGE_ROOT="${root}/download-mode-lab/fixtures/tmp"
+# 暂存目录名带本次运行的 PID：清理只针对自己建的目录，且 EXIT trap 在被
+# command substitution 拉起的子 shell 里也能用同一个 $$ 前缀匹配（bash 子 shell 的
+# $$ 与父进程一致）。cleanup 必须显式 return 0：本脚本是 set -Eeuo pipefail，在
+# EXIT trap 内让最后一条命令失败（例如空数组守卫生成的 [[ ... ]] && rm 返回 1）会
+# 让整个脚本以 1 退出——已实测复现（FAIL=0 的脚本 rc=1）。
+KDL_STAGE_PREFIX="kdl-stage.$$"
+cleanup_kdl_stages() {
+  rm -rf "${KDL_STAGE_ROOT}/${KDL_STAGE_PREFIX}".* 2>/dev/null || true
+  return 0
+}
+trap cleanup_kdl_stages EXIT
+
+kdl_validate_target() { # 输出待校验路径；rc 1 = include 无法解析（调用方记 FAIL）
+  local f="$1" p b line sf tmp re
+  local -a stageable=()
+  re='^[[:space:]]*include[[:space:]]*"([^"]*)"'
+  while IFS= read -r line; do
+    [[ "${line}" =~ ${re} ]] || continue
+    p="${BASH_REMATCH[1]}"
+    [[ -n "${p}" ]] || continue
+    if [[ "${p}" == /* ]]; then
+      [[ -e "${p}" ]] && continue
+      if [[ -f "$(dirname "${f}")/$(basename "${p}")" ]]; then
+        stageable+=("${p}")
+      else
+        printf 'kdl: %s 的绝对 include "%s" 在本机不存在，仓库同目录也没有同名文件\n' \
+          "${f#"${root}/"}" "${p}" >&2
+        return 1
+      fi
+    else
+      [[ -e "$(dirname "${f}")/${p}" ]] && continue
+      printf 'kdl: %s 的相对 include "%s" 不存在（niri 相对 include 以所在目录解析）\n' \
+        "${f#"${root}/"}" "${p}" >&2
+      return 1
+    fi
+  done < "${f}"
+
+  (( ${#stageable[@]} == 0 )) && { printf '%s\n' "${f}"; return 0; }
+
+  mkdir -p "${KDL_STAGE_ROOT}" 2>/dev/null || {
+    printf 'kdl: %s：无法创建工作区沙箱 %s\n' "${f#"${root}/"}" "${KDL_STAGE_ROOT}" >&2
+    return 1
+  }
+  local stage
+  stage="$(mktemp -d "${KDL_STAGE_ROOT}/${KDL_STAGE_PREFIX}.XXXXXX")" || return 1
+  # 只暂存 kdl（include 只能指向 kdl）；目录里其它大文件不复制
+  cp -a "$(dirname "${f}")"/*.kdl "${stage}/" 2>/dev/null || true
+  for sf in "${stage}"/*.kdl; do
+    [[ -f "${sf}" ]] || continue
+    tmp="${sf}.rewrite"
+    while IFS= read -r line; do
+      if [[ "${line}" =~ ${re} ]]; then
+        p="${BASH_REMATCH[1]}"; b="$(basename "${p}")"
+        if [[ -f "${stage}/${b}" ]]; then printf '%s\n' "${line/"${p}"/"${b}"}"; continue; fi
+      fi
+      printf '%s\n' "${line}"
+    done < "${sf}" > "${tmp}"
+    mv "${tmp}" "${sf}"
+  done
+  printf '%s\n' "${stage}/$(basename "${f}")"
+  return 0
+}
 
 # type_of <file> -> 输出类型名（lua/json/toml/yaml/fish/sh/python/desktop/systemd/kdl/ini/gitconfig/manual）
 type_of() {
@@ -156,7 +234,12 @@ validate_type() {
       ;;
     kdl)
       if have niri; then
-        if ! niri validate -c "$f" >/dev/null 2>&1; then rc=1; fi
+        local ktarget=""
+        if ! ktarget="$(kdl_validate_target "$f")"; then
+          rc=1
+        elif ! niri validate -c "${ktarget:-$f}" >/dev/null 2>&1; then
+          rc=1
+        fi
       else note_skip "$f (kdl: niri 缺失)"; return; fi
       ;;
     qml)
