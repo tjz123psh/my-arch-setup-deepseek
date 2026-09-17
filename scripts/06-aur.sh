@@ -340,9 +340,89 @@ offline_mode() {
   success "AUR stage complete (offline mode)"
 }
 
+# ---- Go module proxy preflight (online mode; 2026-09-17) ----
+# Go-based AUR recipes (greetd-dms-greeter-git) download modules with "go",
+# which uses GOPROXY. The stock https://proxy.golang.org is unreachable from
+# CN networks, and Go only falls back to "direct" on HTTP 404/410 - a blocked
+# proxy HANGS the build instead of failing it (operator VM, 2026-09-17: paru
+# stuck at "go: downloading github.com/...", no error, no progress). Deploying
+# ~/.config/go/env in 07-config is NOT enough: a resumed install skips the
+# already-done 07 step, so the file can be missing exactly when 06 reruns.
+# Behaviour: only when the effective GOPROXY still points at the default
+# proxy.golang.org AND that host is unreachable, switch to the first reachable
+# mirror and persist it for the target user. Offline mode is unaffected
+# (GOPROXY=off + .aur-sources/go-mod).
+GO_PROXY_MIRRORS=(https://goproxy.cn https://goproxy.io https://mirrors.aliyun.com/goproxy/)
+GO_PROXY_PROBE_PATH="/github.com/spf13/cobra/@v/list"
+
+probe_http_code() { # probe_http_code <url> -> stdout http code (000 on failure)
+  command -v curl >/dev/null 2>&1 || { echo "000"; return 0; }
+  curl -m 5 -sS -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || true
+}
+
+recipe_needs_go() { # recipe_needs_go <recipe> ; 0 = reviewed recipe builds with go
+  local f="${RECIPES_DIR}/${1}/PKGBUILD"
+  [[ -f "${f}" ]] || return 1
+  grep -qE "^makedepends=.*'go'|^makedepends=.*\"go\"|^makedepends=\(go" "${f}" && return 0
+  return 1
+}
+
+ensure_go_proxy() {
+  command -v go >/dev/null 2>&1 || { log "go absent; Go module proxy preflight skipped"; return 0; }
+  local cur
+  cur="$(go env GOPROXY 2>/dev/null || true)"
+  [[ -z "${cur}" ]] && cur="https://proxy.golang.org,direct"
+  if [[ "${cur}" != *"proxy.golang.org"* ]]; then
+    log "Go module proxy already customised: ${cur}"
+    return 0
+  fi
+  local code
+  code="$(probe_http_code "https://proxy.golang.org${GO_PROXY_PROBE_PATH}")"
+  if [[ "${code}" == "200" ]]; then
+    log "Go module proxy proxy.golang.org reachable (http 200)"
+    return 0
+  fi
+  warn "proxy.golang.org unreachable (http ${code:-timeout}); probing Go module mirrors..."
+  local m mcode
+  for m in "${GO_PROXY_MIRRORS[@]}"; do
+    mcode="$(probe_http_code "${m}${GO_PROXY_PROBE_PATH}")"
+    if [[ "${mcode}" == "200" ]]; then
+      log "Go module mirror reachable: ${m} (http 200) -> GOPROXY=${m},direct"
+      export GOPROXY="${m},direct"
+      # persist for the target user: a resumed install skips 07-config, which
+      # is what deploys ~/.config/go/env on a fresh machine.
+      if [[ "$(id -u)" -eq 0 ]]; then
+        runuser -u "${TARGET_USER}" -- env HOME="${TARGET_HOME}" go env -w "GOPROXY=${m},direct" 2>/dev/null \
+          || warn "could not persist GOPROXY for ${TARGET_USER} (this run still uses the mirror)"
+      else
+        go env -w "GOPROXY=${m},direct" 2>/dev/null \
+          || warn "could not persist GOPROXY in ~/.config/go/env (this run still uses the mirror)"
+      fi
+      aur_log "GOPROXY switched to ${m},direct (proxy.golang.org http ${code:-timeout})"
+      return 0
+    fi
+  done
+  # No mirror answered. Fail fast only when a Go-built target is in this run
+  # (a hang is worse than an actionable error); otherwise just warn.
+  local r go_targets=()
+  for r in "${RECIPES[@]}"; do
+    recipe_needs_go "${r}" && go_targets+=("${r}")
+  done
+  if (( ${#go_targets[@]} > 0 )); then
+    error "no reachable Go module proxy (proxy.golang.org http ${code:-timeout}; mirrors tried: ${GO_PROXY_MIRRORS[*]})"
+    error "Go-built AUR target(s) in this run: ${go_targets[*]} - they would HANG on module downloads."
+    error "Fix the network, or set one manually: go env -w GOPROXY=<mirror>,direct  (then rerun install.sh)"
+    exit 1
+  fi
+  warn "no reachable Go module proxy, but this run has no Go-built AUR target; continuing"
+  return 0
+}
+
 # ---- online mode: git clone install with network; paru pulls latest AUR ----
 online_mode() {
   log "Online mode: no .aur-sources cache; installing LATEST AUR packages via paru"
+  # Go-based builds must not hang on an unreachable default module proxy.
+  ensure_go_proxy
   # Bootstrap paru: archlinuxcn pacman package first (03 already configured
   # the repo); fall back to building the pinned recipe with makepkg.
   if ! command -v paru >/dev/null 2>&1; then

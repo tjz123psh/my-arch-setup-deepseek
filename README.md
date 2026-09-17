@@ -19,7 +19,9 @@ cd my-arch-setup-deepseek && ./install.sh    # 或 sudo bash strap.sh（root 自
 > **国内网络注意（在线模式）**：构建 Go 写的 AUR 包（`greetd-dms-greeter-git`、`snapd-xdg-open-git`、
 > `wooz-git` 等）会走 `GOPROXY`。默认 `proxy.golang.org` 在国内会卡死在依赖下载（2026-09-17 VM 实测超时），
 > 因此 payload 会部署 `~/.config/go/env`（`GOPROXY=https://goproxy.cn,direct`）；已有自定义设置请先备份。
-> 已经卡住的现场补救：`go env -w GOPROXY=https://goproxy.cn,direct` 后重跑 `./install.sh`（断点续传）。
+> `06-aur` 在线模式还会**自检**：默认代理不可达时自动切到可达镜像（goproxy.cn → goproxy.io → 阿里云），
+> 并写回目标用户的 `~/.config/go/env`；若镜像也不可达且本轮有 Go 目标，则**快速失败并给出可执行提示**，
+> 不会再无声卡死。已经卡住的现场补救：`go env -w GOPROXY=https://goproxy.cn,direct` 后重跑 `./install.sh`（断点续传）。
 
 ## 离线安装（无海外网络）
 

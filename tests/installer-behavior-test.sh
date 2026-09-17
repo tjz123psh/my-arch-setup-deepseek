@@ -160,6 +160,22 @@ if grep -q 'online_mode()' "$root/scripts/06-aur.sh" \
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur dual-mode wiring missing (online paru or cache dispatch)"
 fi
+# 06-aur online mode: Go module proxy preflight (2026-09-17). A blocked
+# proxy.golang.org HANGS Go-based AUR builds - Go only falls back to `direct`
+# on HTTP 404/410, never on a timeout - and a resumed install skips 07-config,
+# which is what deploys ~/.config/go/env on a fresh machine (operator VM hung
+# at "go: downloading github.com/..."). The online branch must therefore
+# self-check the effective GOPROXY, switch to a reachable mirror, and fail
+# fast (with an actionable message) when a Go-built target cannot be built.
+if grep -q '^ensure_go_proxy()' "$root/scripts/06-aur.sh" \
+   && grep -q '^  ensure_go_proxy$' "$root/scripts/06-aur.sh" \
+   && grep -q 'GO_PROXY_MIRRORS=(https://goproxy.cn https://goproxy.io' "$root/scripts/06-aur.sh" \
+   && grep -q 'would HANG on module downloads' "$root/scripts/06-aur.sh" \
+   && grep -q 'go env -w "GOPROXY=' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur online mode preflights GOPROXY (mirror fallback + fail fast)"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur GOPROXY preflight missing (Go AUR builds can hang)"
+fi
 # 06-aur observability: mode banner + persistent log must exist so a fast-
 # scrolling install can be verified afterwards (user audit 2026-08-11: mode
 # was unverifiable by eye - banner too fast, output too dense).
