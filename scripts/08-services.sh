@@ -305,6 +305,41 @@ EOF"
       exit 1
     fi
   fi
+
+  # /tmp/.X11-unix ownership guard (X11/greeter boot race, 2026-09-17).
+  # niri >= 25.5 validates the X11 socket directory when the user session
+  # starts and DISABLES its xwayland-satellite integration when it is not
+  # root:root 1777 (journal: "wrong X11 directory permissions"), so EVERY X11
+  # app in the session fails with "Can't open display" (MusicFree, WPS, xclip,
+  # clipboard-x11-bridge, WeChat - its bwrap sandbox ro-binds the X11 socket).
+  # The login-screen session can win the race against tmpfs /tmp mounting and
+  # systemd-tmpfiles-setup, leaving the directory greeter-owned; the oneshot
+  # below keeps re-applying the correct ownership until the real user session
+  # exists (+10s slack). Source path is injectable for tests (07-config's DI
+  # pattern). Deploy + enable only: the unit must NOT run during the install
+  # itself (it waits for a login, which would stall the step).
+  X11_DIR_UNIT_SRC="${X11_DIR_UNIT_SRC:-${PROJECT_DIR}/config/etc/systemd/system/fix-x11-unix-dir.service}"
+  if [[ -f "${X11_DIR_UNIT_SRC}" ]]; then
+    run install -o root -g root -m 0644 "${X11_DIR_UNIT_SRC}" /etc/systemd/system/fix-x11-unix-dir.service
+    run systemctl daemon-reload
+    if run systemctl enable fix-x11-unix-dir.service; then
+      log "Service: fix-x11-unix-dir.service (X11 socket dir guard)"
+    else
+      error "could not enable fix-x11-unix-dir.service (X11 would be lost after login)"
+      exit 1
+    fi
+    # Lenient postcondition: a mock/unit-masked environment must not fail the
+    # step here, but the operator still sees when enable was not confirmed.
+    isen_x11="$(run systemctl is-enabled fix-x11-unix-dir.service 2>/dev/null || true)"
+    if [[ "${isen_x11}" == "enabled" ]]; then
+      log "Verified: fix-x11-unix-dir.service enabled"
+    else
+      warn "fix-x11-unix-dir.service is-enabled='${isen_x11}' (not confirmed)"
+    fi
+  else
+    error "fix-x11-unix-dir.service source missing (${X11_DIR_UNIT_SRC})"
+    exit 1
+  fi
 else
   # DESKTOP_ENV=none (TTY login): converge from any previous desktop install.
   # dms and greetd are project-managed -> a failed disable FAILS the step and

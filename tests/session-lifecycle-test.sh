@@ -316,6 +316,8 @@ case "$*" in
     fi
     exit "$rc" ;;
   *"is-enabled dms.service"*) [[ -f "$FAKE_STATE_DIR/dms.disabled" ]] && exit 1 || exit 0 ;;
+  # X11 socket dir guard (2026-09-17): a failed enable is fatal in 08-services
+  *"enable fix-x11-unix-dir.service"*) exit "${FAKE_X11UNIT_ENABLE_RC:-0}" ;;
   *"disable dsearch.service"*) exit "${FAKE_DSEARCH_DISABLE_RC:-0}" ;;
   *"disable greetd"*)
     rc="${FAKE_GREETD_DISABLE_RC:-0}"
@@ -538,6 +540,13 @@ else
   check "none: dms wants symlink removed (postcondition)" 1 1
 fi
 assert_grep "none: greetd is-enabled checked (postcondition)" 'is-enabled greetd' "$order"
+# the X11 socket dir guard belongs to the graphical-login chain: a TTY-only
+# install must not deploy or enable it
+if grep -q 'fix-x11-unix-dir.service' "$order"; then
+  check "none: X11 socket dir guard NOT deployed (TTY login)" 1 0
+else
+  check "none: X11 socket dir guard NOT deployed (TTY login)" 0 0
+fi
 # 5 exact artifacts removed
 for rel in \
   ".config/systemd/user/hyprland.service" \
@@ -795,17 +804,34 @@ PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log3" FAKE_DMS_ENABLE_RC=0 \
 check "both: full pass with stock Hyprland entry (rc 0)" "$rc" 0
 assert_grep "both: stock session verified log line present" 'stock Hyprland session verified' "$log3"
 assert_grep "both: dms wants symlink verified" 'Verified:.*graphical-session.target.wants/dms.service' "$log3"
+# X11 socket dir guard (2026-09-17): deployed + enabled in the desktop branch
+assert_grep "both: X11 socket dir guard installed" 'install .*fix-x11-unix-dir.service' "$log3"
+assert_grep "both: X11 socket dir guard enabled" 'enable fix-x11-unix-dir.service' "$log3"
 a="$(lineno 'stale cleanup:' "$log3")"
 b="$(lineno 'confirmed: stale unit hyprland.service' "$log3")"
 c="$(lineno 'stock Hyprland session verified' "$log3")"
 d="$(lineno 'enable dms.service' "$log3")"
 e="$(lineno 'Configuring greetd' "$log3")"
-if [[ -n "$a" && -n "$b" && -n "$c" && -n "$d" && -n "$e" \
-   && "$a" -lt "$b" && "$b" -lt "$c" && "$c" -lt "$d" && "$d" -lt "$e" ]]; then
-  check "order: cleanup < confirmed < verified < enable dms < greetd" 0 0
+f="$(lineno 'fix-x11-unix-dir.service' "$log3")"
+if [[ -n "$a" && -n "$b" && -n "$c" && -n "$d" && -n "$e" && -n "$f" \
+   && "$a" -lt "$b" && "$b" -lt "$c" && "$c" -lt "$d" && "$d" -lt "$e" && "$e" -lt "$f" ]]; then
+  check "order: cleanup < confirmed < verified < enable dms < greetd < X11 guard" 0 0
 else
-  check "order: cleanup < confirmed < verified < enable dms < greetd" 1 0
+  check "order: cleanup < confirmed < verified < enable dms < greetd < X11 guard" 1 0
 fi
+
+# G3b: both + X11 socket dir guard enable failure -> FAIL CLOSED. The guard is
+# what keeps /tmp/.X11-unix root:root 1777; a silent failure would mean losing
+# X11 for every X11 app after the next login (2026-09-17 host incident).
+log3b="$sandbox/g3b.log"
+rc=0
+PATH="$sandbox/mockbin:$PATH" FAKE_SYS_LOG="$log3b" FAKE_DMS_ENABLE_RC=0 \
+  FAKE_X11UNIT_ENABLE_RC=1 \
+  GREETER_CACHE_DIR="$sandbox/greeter-cache-g" \
+  HOME="$fakehome_g" PROJECT_DIR="$root" DESKTOP_ENV=both MACHINE_TYPE=vm \
+  bash "$services" >>"$log3b" 2>&1 || rc=$?
+check "both: X11 socket dir guard enable failure exits nonzero" "$rc" 1
+assert_grep "both: X11 socket dir guard failure names the consequence" 'X11 would be lost after login' "$log3b"
 
 # G4: both + user-modified hyprland.desktop override survives cleanup ->
 #     effective secondary entry is NOT the system one -> FAIL CLOSED

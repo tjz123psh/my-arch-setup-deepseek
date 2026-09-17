@@ -1,0 +1,25 @@
+[Unit]
+Description=Ensure /tmp/.X11-unix is root-owned mode 1777 for Xwayland
+# 登录屏 greeter 会话（greetd + dms-greeter/niri）的 Xwayland 会在开机时抢建/接管
+# /tmp/.X11-unix（归属 greeter:greeter、权限 1755/1771），而 niri(>=25.5) 自带的
+# xwayland-satellite 集成在用户会话启动时校验该目录：归属/权限不对就**整个会话**
+# 禁用集成（journal: "error opening X11 sockets, disabling xwayland-satellite
+# integration: wrong X11 directory permissions"），于是所有 X11 应用都连不上 X
+# （MusicFree / WPS / xclip / xwayland 剪贴板桥 / 微信：bwrap 沙箱仍 ro-bind 该 X11
+# socket 目录）。系统自带规则（/usr/lib/tmpfiles.d/x11.conf: D /tmp/.X11-unix 1777
+# root root 1h）与 tmpfs /tmp 挂载、greeter 会话三方竞争，抢不到就留下错误归属
+# （2026-08-17 首发；2026-09-17 移除本单元后当次开机复现）。
+# 本服务在 greetd 之后持续校正（每 1s，最长 300s —— 2026-09-17 实测登录发生在开机后
+# 3m19s，旧版 120s 窗口会漏），直到真实登录用户（uid>=1000；greeter 是系统用户
+# uid<1000）出现，再以 0.25s 间隔兜 10s，保证用户会话的 niri 做启动检查时目录一定
+# 是 root:root 1777。注意：ExecStart 里的 "$$" 是给 systemd 的字面 "$" 转义。
+After=greetd.service systemd-tmpfiles-setup.service
+Wants=systemd-tmpfiles-setup.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -ec 'fix(){ install -d -o root -g root -m 1777 /tmp/.X11-unix; }; logged_in(){ for d in /run/user/*; do [ -d "$$d" ] || continue; u=$${d##*/}; case "$$u" in *[!0-9]*) continue;; esac; [ "$$u" -ge 1000 ] && return 0; done; return 1; }; fix; i=0; while [ "$$i" -lt 300 ] && ! logged_in; do sleep 1; fix; i=$$((i+1)); done; i=0; while [ "$$i" -lt 40 ]; do sleep 0.25; fix; i=$$((i+1)); done'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
