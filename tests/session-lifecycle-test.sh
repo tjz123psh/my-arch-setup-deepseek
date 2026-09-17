@@ -1805,7 +1805,15 @@ fi
 # --- D2: STALE markers (dead owner / pid reuse with comm != dms) ARE absent
 # -> fallback allowed.
 rm -rf "${rt:?}"/*
-mkmarker 4444 wayland-new 999999          # owner pid dead (stale marker)
+# owner pid guaranteed-dead: spawn + kill + reap it here. A hardcoded pid
+# (previously 4444) is NOT safe: on the operator host 2026-09-17 a live dms
+# THREAD happened to have TID 4444 (visible in /proc, invisible to `ps`),
+# so the helper correctly classified a plausible owner and this assertion
+# failed. Never assume a fixed pid is free.
+sleep 300 & dead_owner=$!
+kill "$dead_owner" 2>/dev/null || true
+wait "$dead_owner" 2>/dev/null || true
+mkmarker "$dead_owner" wayland-new 999999
 sleep 300 & liveD2=$!
 live_pids="$live_pids $liveD2"
 mkmarker "$liveD2" wayland-new "$liveD2"  # owner alive but comm="sleep" (pid reuse)

@@ -288,3 +288,4 @@ physical-v1	wm-hyprland	config/home/.config/hypr/dms/windowrules.lua	.config/hyp
 physical-v1	desktop-shared	config/home/.local/share/applications/cc-switch-handler.desktop	.local/share/applications/cc-switch-handler.desktop	644
 physical-v1	personal-user-services	config/home/.local/share/applications/ai.vellum.desktop	.local/share/applications/ai.vellum.desktop	644
 physical-v1	desktop-shared	config/home/.local/share/applications/clash-verge-handler.desktop	.local/share/applications/clash-verge-handler.desktop	644
+physical-v1	development-toolchain	config/home/.config/go/env	.config/go/env	644
