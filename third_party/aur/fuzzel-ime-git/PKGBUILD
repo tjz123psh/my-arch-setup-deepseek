@@ -1,5 +1,5 @@
 pkgname=fuzzel-ime-git
-pkgver=1.14.1.r26.g302f228
+pkgver=1.15.0.r7.g616485c
 pkgrel=1
 pkgdesc="Fuzzel(a wayland launcher) with Input Method support."
 arch=('x86_64')
@@ -9,7 +9,8 @@ depends=('cairo' 'fcft' 'libxkbcommon' 'pixman' 'tllist' 'wayland' 'glibc')
 makedepends=('meson' 'ninja' 'scdoc' 'wayland-protocols')
 provides=("fuzzel=${pkgver}")
 conflicts=('fuzzel' 'fuzzel-git')
-_commit=302f228bb87d3c861a8debd39b9d8e4a0ea81037
+_commit=616485c08cd0924af23f0ee9cbf7f104baba2dcc
+# Update 2026-09-17: upstream master moved to 616485c0 (git describe 1.15.0-7-g616485c).
 # Local modification (2026-08-06): upstream AUR uses codeberg's
 # /archive/<commit>.tar.gz, but that archive endpoint is unreachable from
 # CN networks while the git smart-HTTP endpoint works fine. Clone via git

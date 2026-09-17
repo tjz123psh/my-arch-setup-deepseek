@@ -39,6 +39,18 @@
 
 ## Expected output
 
-- Package: `dsearch-bin 0.3.2-1 (x86_64)`
-- Default artifact: `dsearch-bin-0.3.2-1-x86_64.pkg.tar.zst`
+- Package: `dsearch-bin 1.6.0-1 (x86_64)`
+- Default artifact: `dsearch-bin-1.6.0-1-x86_64.pkg.tar.zst`
 - Expected payload: `/usr/bin/dsearch`, user unit, license, and README.
+
+## Update 2026-09-17: 0.3.2 -> 1.6.0 (AUR commit 97ab391c1cd004482c4cd5d53f5453386e9d8416)
+
+- Upstream tag v1.6.0 peels to 984f86e644a93d2a366d960e3c56233260a501de.
+- Local conventions preserved: x86_64 only, documentation URLs pinned to the full commit,
+  local dsearch.service kept, !strip !debug kept.
+- Hashes re-derived from real bytes:
+  LICENSE @984f86e = 4cee96286c5b7da9763a4694868bb1853b33bb1558821e0c609ad2eabd426bfa;
+  README.md @984f86e = b99cd31bc10e7b07e90907c70c92a42427f240ee7ad3d9c5b57acd4938077cb2;
+  dsearch-linux-amd64.gz (7,708,935 B) = e7ebc1d3032ef89006ab8a43746bf503f387decd018ff3977bb1550cb2c5b36a;
+  dsearch.service unchanged (6908e1e9...).
+- The AUR 1.6.0 recipe dropped its own doc-URL commit pin; the local pin is retained on purpose.

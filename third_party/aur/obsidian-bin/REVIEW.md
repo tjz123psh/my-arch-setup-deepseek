@@ -42,7 +42,21 @@
 ## Expected output
 
 - Package base: `obsidian`.
-- Package: `obsidian-bin 1.12.7-1 (x86_64)`.
+- Package: `obsidian-bin 1.13.7-1 (x86_64)`.
 - Default artifact: `obsidian-bin-1.12.7-1-x86_64.pkg.tar.zst`.
 - Expected launcher: `/usr/bin/obsidian` as a regular wrapper file, not a direct symlink.
 - Conditional package-hook artifact: `/etc/apparmor.d/obsidian` only on compatible AppArmor systems.
+
+## Update 2026-09-17: 1.12.7 -> 1.13.7 (official release v1.13.7)
+
+- Official Debian artifact downloaded (107,021,628 B) and hashed: sha256
+  17dc33b49cb3e785ecc27edd2ea0c79e40207798b554fd2886e36ebee7af9ae0 from
+  https://github.com/obsidianmd/obsidian-releases/releases/download/v1.13.7/obsidian_1.13.7_amd64.deb
+- Local x86_64-only derivation kept (split pkgbase restricted to obsidian-bin, AppImage/aarch64 removed,
+  local obsidian-bin launcher + obsidian-bin.install hook kept, single data.tar.* requirement kept).
+  The launcher hash a94e2070... is unchanged.
+- AUR provenance note: the AUR obsidian-bin git repository is stale at pkgver=1.8.10
+  (HEAD e89ed1447d267e208b01482bb78c9f6c3e5d45e7, last commit 2025-06-03) while the AUR RPC advertises
+  1.13.7-2 (modified 2026-09-06); no 1.13.7 recipe content is retrievable via cgit, git or snapshot.
+  This recipe therefore tracks the official upstream release directly and AUR_COMMIT records the AUR HEAD
+  that was actually inspected.

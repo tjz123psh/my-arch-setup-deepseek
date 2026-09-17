@@ -37,7 +37,14 @@
 
 ## Expected output
 
-- Package: `opencode-bin 1.18.10-1 (x86_64)`
+- Package: `opencode-bin 1.18.31-1 (x86_64)`
 - Provider: `opencode`
-- Default artifact: `opencode-bin-1.18.10-1-x86_64.pkg.tar.zst`
+- Default artifact: `opencode-bin-1.18.31-1-x86_64.pkg.tar.zst`
 - Expected executable: `/usr/bin/opencode`.
+
+## Update 2026-09-17: 1.18.10 -> 1.18.31 (AUR commit 0e7831a8531d9a796b6b5ef85edb1b83f32950db)
+
+- Local form kept: x86_64 only, version-qualified release URL, the AUR empty _subver not carried over,
+  ARM source/checksum removed.
+- Release archive re-downloaded (60,590,585 B) and hashed: sha256
+  e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4 (matches the AUR recipe value).

@@ -3,7 +3,7 @@
 
 pkgbase=obsidian
 pkgname=obsidian-bin
-pkgver=1.12.7
+pkgver=1.13.7
 pkgrel=1
 pkgdesc='A powerful knowledge base over a local folder of plain text Markdown files (official bundled-Electron binary)'
 arch=('x86_64')
@@ -21,7 +21,7 @@ source=(
 )
 sha256sums=(
   'a94e20705d4b67501f225d74f4460b746a258e52aa6bc522aed1e26ac42dbef9'
-  '3644e3ef19bcd23db4d17f7c73311b5245429391a2a48b361da93375f59712b0'
+  '17dc33b49cb3e785ecc27edd2ea0c79e40207798b554fd2886e36ebee7af9ae0'
 )
 
 package() {

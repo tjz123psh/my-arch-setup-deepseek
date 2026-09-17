@@ -1,7 +1,7 @@
 pkgname=greetd-dms-greeter-git
 _binname=dms-greeter
 epoch=1
-pkgver=0.0.0.r5.g399ff66
+pkgver=1.6.2.r0.g0175be5
 pkgrel=1
 pkgdesc='Greetd login screen with the Dank Material aesthetic (git)'
 arch=('x86_64' 'aarch64')
@@ -21,11 +21,12 @@ makedepends=('git' 'go')
 provides=("greetd-dms-greeter" "$_binname=$pkgver")
 conflicts=('greetd-dms-greeter' 'greetd-dms-greeter-bin' 'dms-greeter')
 install=greetd-dms-greeter.install
-# review P1-11: VCS sources pinned to reviewed upstream commits (queried
-# 2026-08-08) so a rebuild is reproducible and a supply-chain change fails
-# the fetch; checksum SKIP is inherent to git+ sources, the commit is the pin.
-source=('dank-greeter::git+https://github.com/AvengeMedia/dank-greeter.git#commit=f353eafdee856a2e1c6ce87ce551304e8a6ed404'
-        'dank-qml-common::git+https://github.com/AvengeMedia/dank-qml-common.git#commit=28fde7311296cbd041e5b704e54a481082b92b18')
+# review P1-11: VCS sources pinned to reviewed upstream commits; re-pinned 2026-09-17
+# (dank-greeter master 0175be5c, git describe v1.6.2-0-g0175be5). A rebuild is reproducible
+# and a supply-chain change fails the fetch; checksum SKIP is inherent to git+ sources, the
+# pinned commit is the integrity anchor.
+source=('dank-greeter::git+https://github.com/AvengeMedia/dank-greeter.git#commit=0175be5c2084e2c5027324403a329e04040cd0bc'
+        'dank-qml-common::git+https://github.com/AvengeMedia/dank-qml-common.git#commit=26396ce432d6c71c3f5367438f96f4a8d667e160')
 sha256sums=('SKIP'
             'SKIP')
 

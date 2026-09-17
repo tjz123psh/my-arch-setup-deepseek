@@ -4,7 +4,7 @@
 # Contributor: t3ddy, Lex Rivera aka x-demon, ruario, Abdullah
 
 pkgname=google-chrome
-pkgver=151.0.7922.71
+pkgver=153.0.8010.47
 pkgrel=1
 pkgdesc='The popular web browser by Google (Stable Channel)'
 arch=('x86_64')
@@ -26,7 +26,7 @@ sha512sums=(
   'aa346ffe6adf3b0402abdf8f0abe6ec72c93238099af3a7c0dde86c6400792f4893a93325178746854564ba39ea5a3a6824ecf87277bf1a47c3c4e0a5853c474'
   'f60e9424ba1a3cb6d84c994606a1ee8518c10312f2d8ccdfc58940ab9698a887993aeaf07a249222dff9dc9a10cff8e1b479f7967091b37736783569eacf9446'
 )
-sha512sums_x86_64=('b657e18aef41d0316a7edf4367673282dfe4f142fc1e106eff304ee0dfdbac9319dbbe4468ecbfd461ef074e00c2a35168694b5eafe6971c8b606b39dada6e52')
+sha512sums_x86_64=('cd70639f4737c043a9eb2c349dd2d447b1929b78eba972fa997c4120e7730018f62aa3ddcda1e5f0fe06b76c786076f281b4a5b50e96a62dfe4cf4aa35b70238')
 
 package() {
   bsdtar -xf data.tar.xz -C "${pkgdir}/"

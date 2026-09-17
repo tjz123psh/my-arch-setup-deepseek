@@ -1,8 +1,11 @@
 # Maintainer: Avenge Media <avengemediallc at gmail dot com>
+# Local x86_64-only fixed recipe derived from the reviewed AUR recipe.
+# Update 2026-09-17: AUR 0.3.2 -> 1.6.0; tag v1.6.0 peels to 984f86e..., the doc URLs stay
+# full-commit addressed, ARM stays removed, and every hash was re-derived from real bytes.
 
 pkgname=dsearch-bin
 _pkgname=dsearch
-pkgver=0.3.2
+pkgver=1.6.0
 pkgrel=1
 pkgdesc='Fast filesystem search service'
 arch=('x86_64')
@@ -11,7 +14,7 @@ license=('MIT')
 provides=('dsearch')
 conflicts=('dsearch')
 options=('!strip' '!debug')
-_upstream_commit=1269b4688cc94cbd271e1cbbf19a6e7caa2293de
+_upstream_commit=984f86e644a93d2a366d960e3c56233260a501de
 _rawurl="https://raw.githubusercontent.com/AvengeMedia/danksearch/${_upstream_commit}"
 
 source=(
@@ -22,10 +25,10 @@ source=(
 source_x86_64=("dsearch-x86_64-${pkgver}.gz::${url}/releases/download/v${pkgver}/dsearch-linux-amd64.gz")
 sha256sums=(
   '4cee96286c5b7da9763a4694868bb1853b33bb1558821e0c609ad2eabd426bfa'
-  '6a4cb2d57168eff67f565dc45b71cf118b6c02f69c3fa35184fd670196c54306'
+  'b99cd31bc10e7b07e90907c70c92a42427f240ee7ad3d9c5b57acd4938077cb2'
   '6908e1e996cf4c457543dbf108e70c9dda7b03229dd11badd3a28598373e5b4b'
 )
-sha256sums_x86_64=('2c9e433f82948c77488543d25955a170835755a39d29ecc2240a8e4d74be63fd')
+sha256sums_x86_64=('e7ebc1d3032ef89006ab8a43746bf503f387decd018ff3977bb1550cb2c5b36a')
 
 package() {
   install -Dm755 "${srcdir}/dsearch-${CARCH}-${pkgver}" "${pkgdir}/usr/bin/dsearch"

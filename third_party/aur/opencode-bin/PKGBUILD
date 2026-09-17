@@ -2,7 +2,7 @@
 # Maintainer: adam
 
 pkgname=opencode-bin
-pkgver=1.18.10
+pkgver=1.18.31
 pkgrel=1
 pkgdesc='The AI coding agent built for the terminal.'
 arch=('x86_64')
@@ -13,7 +13,7 @@ provides=('opencode')
 conflicts=('opencode')
 depends=('ripgrep')
 source_x86_64=("opencode-bin_${pkgver}_x86_64.tar.gz::${url}/releases/download/v${pkgver}/opencode-linux-x64.tar.gz")
-sha256sums_x86_64=('6b1113da704253fb4da12b41e4236acecb9f2b62949c945f6eeacaa15111b976')
+sha256sums_x86_64=('e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4')
 
 package() {
   install -Dm755 "${srcdir}/opencode" "${pkgdir}/usr/bin/opencode"

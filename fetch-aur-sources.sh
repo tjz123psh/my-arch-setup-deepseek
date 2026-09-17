@@ -73,21 +73,21 @@ gitm snapd-xdg-open https://github.com/snapcore/snapd-xdg-open.git
 
 echo "== URL sources =="
 # dsearch-bin
-dl LICENSE-0.3.2        "https://raw.githubusercontent.com/AvengeMedia/danksearch/1269b4688cc94cbd271e1cbbf19a6e7caa2293de/LICENSE"
-dl README-0.3.2.md      "https://raw.githubusercontent.com/AvengeMedia/danksearch/1269b4688cc94cbd271e1cbbf19a6e7caa2293de/README.md"
+dl LICENSE-1.6.0        "https://raw.githubusercontent.com/AvengeMedia/danksearch/984f86e644a93d2a366d960e3c56233260a501de/LICENSE" 4cee96286c5b7da9763a4694868bb1853b33bb1558821e0c609ad2eabd426bfa
+dl README-1.6.0.md      "https://raw.githubusercontent.com/AvengeMedia/danksearch/984f86e644a93d2a366d960e3c56233260a501de/README.md" b99cd31bc10e7b07e90907c70c92a42427f240ee7ad3d9c5b57acd4938077cb2
 # dbx-bin (GitHub release deb; recipe pinned to the installed 0.6.4)
 dl dbx_0.6.4_amd64.deb "https://github.com/t8y2/dbx/releases/download/v0.6.4/dbx_0.6.4_amd64.deb" 82eb52a54706a9664f5ee0a754726f81572a9732f97c711cfe086f5d04e4e015
-dl dsearch-x86_64-0.3.2.gz "https://github.com/AvengeMedia/danksearch/releases/download/v0.3.2/dsearch-linux-amd64.gz"
+dl dsearch-x86_64-1.6.0.gz "https://github.com/AvengeMedia/danksearch/releases/download/v1.6.0/dsearch-linux-amd64.gz" e7ebc1d3032ef89006ab8a43746bf503f387decd018ff3977bb1550cb2c5b36a
 # fcitx5-skin-fluentdark-git
 dl Fluent-fcitx5-399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz "https://github.com/Reverier-Xu/Fluent-fcitx5/archive/399699ac7d366ed6c1952646ed71647e3c8f99b5.tar.gz"
 # google-chrome
-dl google-chrome-stable_151.0.7922.71-1_amd64.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_151.0.7922.71-1_amd64.deb"
+dl google-chrome-stable_153.0.8010.47-1_amd64.deb "https://dl.google.com/linux/chrome/deb/pool/main/g/google-chrome-stable/google-chrome-stable_153.0.8010.47-1_amd64.deb"
 # linuxqq-nt-bwrap (CN CDN; pinned deb, sha256 from the reviewed PKGBUILD)
 dl linuxqq_3.2.33-52892_amd64.deb "https://qqdl.gtimg.cn/qqfile/QQNT/9.9.35/beta/1763096b/linuxqq_3.2.33-52892_amd64.deb" 502a978f2d03af9f21acefc461f9d1d1fe09b65bad620bbfcdb589a79ac53b7e
 # obsidian-bin
-dl obsidian_1.12.7_amd64.deb "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.12.7/obsidian_1.12.7_amd64.deb"
+dl obsidian_1.13.7_amd64.deb "https://github.com/obsidianmd/obsidian-releases/releases/download/v1.13.7/obsidian_1.13.7_amd64.deb" 17dc33b49cb3e785ecc27edd2ea0c79e40207798b554fd2886e36ebee7af9ae0
 # opencode-bin
-dl opencode-bin_1.18.10_x86_64.tar.gz "https://github.com/anomalyco/opencode/releases/download/v1.18.10/opencode-linux-x64.tar.gz"
+dl opencode-bin_1.18.31_x86_64.tar.gz "https://github.com/anomalyco/opencode/releases/download/v1.18.31/opencode-linux-x64.tar.gz" e9312be75ed803b7415fc2aeabda1f4fe938912a39673762dc0c38c0e11ebde4
 # paru
 dl paru-2.1.0.tar.gz "https://github.com/Morganamilo/paru/archive/v2.1.0.tar.gz"
 # wechat-universal-bwrap (CN CDN; makepkg stores the deb under the recipe SRCDEST name)

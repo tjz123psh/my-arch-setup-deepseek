@@ -37,6 +37,17 @@
 
 ## Expected output
 
-- Package: `google-chrome 151.0.7922.71-1 (x86_64)`
-- Default artifact: `google-chrome-151.0.7922.71-1-x86_64.pkg.tar.zst`
+- Package: `google-chrome 153.0.8010.47-1 (x86_64)`
+- Default artifact: `google-chrome-153.0.8010.47-1-x86_64.pkg.tar.zst`
 - Expected executable launcher: `/usr/bin/google-chrome-stable`.
+
+## Update 2026-09-17: 151.0.7922.71 -> 153.0.8010.47 (AUR commit 18cc0c7e2711d5eb10e708ccaac8d91dd1772246)
+
+- x86_64-only local form kept; ARM artifact/checksum still removed; the AUR update-discovery comment
+  block stays dropped.
+- Local google-chrome-stable.sh (quoted XDG_CONFIG_HOME path + shellcheck directive) and the
+  newline-normalized eula_text.html are unchanged, so their local sha512 values stay: aa346ffe... (EULA)
+  and f60e9424... (launcher). google-chrome.install is byte-identical to AUR.
+- Vendor artifact re-downloaded (141,932,640 B) and hashed: sha512
+  cd70639f4737c043a9eb2c349dd2d447b1929b78eba972fa997c4120e7730018f62aa3ddcda1e5f0fe06b76c786076f281b4a5b50e96a62dfe4cf4aa35b70238
+  (matches the AUR recipe value).

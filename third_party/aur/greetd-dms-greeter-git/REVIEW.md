@@ -9,3 +9,13 @@
 - Depends: greetd, quickshell, qt6-declarative; git source (rolling).
 - The greeter runs as the `greeter` user; the host greetd config starts
   `dms-greeter --command niri --cache-dir /var/cache/dms-greeter -C /etc/greetd/niri/config.kdl`.
+
+## Update 2026-09-17: re-pin to upstream master (AUR commit 63109962d1b2d17a3b10da4aaca1cbc689f50a6c)
+
+- dank-greeter pin f353eafd... -> 0175be5c2084e2c5027324403a329e04040cd0bc
+  (git describe --long --tags = v1.6.2-0-g0175be5, hence pkgver=1.6.2.r0.g0175be5).
+- dank-qml-common submodule pin 28fde731... -> 26396ce432d6c71c3f5367438f96f4a8d667e160
+  (submodule SHA recorded by the dank-greeter tree at that commit).
+- Local conventions kept: reproducible commit pins instead of the floating git+ source, local sysusers +
+  tmpfiles units, real go test (failure fails the build), GOMODCACHE left to the installer's offline cache.
+- The AUR recipe still floats on master; the pins above are the reviewed snapshot for this update.

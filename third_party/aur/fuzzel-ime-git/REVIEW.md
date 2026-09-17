@@ -44,3 +44,12 @@
 - Default artifact name: `fuzzel-ime-git-1.14.1.r26.g302f228-1-x86_64.pkg.tar.zst`
 - With this workstation's enabled debug option, `makepkg --packagelist` also reports `fuzzel-ime-git-debug-1.14.1.r26.g302f228-1-x86_64.pkg.tar.zst`.
 - Payload includes `/usr/bin/fuzzel`, the system example configuration, manual pages, fish/zsh completions, documentation, and the package license copy.
+
+## Update 2026-09-17: pin upstream master 616485c08cd0924af23f0ee9cbf7f104baba2dcc
+
+- The AUR recipe itself is unchanged (AUR commit c49a01c7c754df0663cfa0dacfdf7c71ea4711dd still current);
+  the -git package tracks upstream master, which moved from 302f228 to 616485c0.
+- git describe --long --tags 616485c = 1.15.0-7-g616485c -> pkgver=1.15.0.r7.g616485c (same AUR mapping rule).
+- Local modification retained: pinned git+https://codeberg.org/dnkl/fuzzel.git#commit=... clone instead of
+  the unreachable Codeberg archive endpoint; x86_64-only arch kept.
+- Verified against a --bare --filter=blob:none clone of the upstream repository (commit exists, describe matches).
