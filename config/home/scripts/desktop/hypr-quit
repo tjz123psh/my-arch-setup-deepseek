@@ -16,6 +16,27 @@ fi
 # shellcheck source=/home/pang/scripts/maintenance/lib/ui.sh
 . "$UI_LIB"
 
+# --- 实例签名兜底 ---
+# 键位调用时 Hyprland 已经注入 HYPRLAND_INSTANCE_SIGNATURE；但从普通终端调用时
+# （尤其 niri 会话里的终端）env 里可能是空的、或残留一个已退出实例的旧签名，
+# 那样 hyprctl 全部连不上（窗口数显示"未知"，退出命令也发不出去）。这里逐个
+# 探测运行中的实例（hyprctl version 能连上才算），并把签名导出给后续 hyprctl。
+ensure_instance() {
+  if [[ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] && hyprctl version >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local sig
+  while IFS= read -r sig; do
+    if HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl version >/dev/null 2>&1; then
+      export HYPRLAND_INSTANCE_SIGNATURE="$sig"
+      return 0
+    fi
+  done < <(ls -t "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/" 2>/dev/null)
+
+  return 1
+}
+
 usage() {
   cat <<'EOF'
 用法: hypr-quit
@@ -134,7 +155,9 @@ run_menu() {
       ui_panel_stat warn "即将关闭当前桌面会话，未保存内容可能丢失。"
       ui_panel_close
       printf '\n'
-      if hyprctl dispatch exit; then
+      # Lua 配置（non-legacy parser）下 hyprctl dispatch 按 Lua 解析，旧式
+      # `hyprctl dispatch exit` 会报 "expected a dispatcher"（exit 在 Lua 环境里不是全局）。
+      if hyprctl dispatch 'hl.dsp.exit()'; then
         return 0
       fi
       ui_err "退出 Hyprland 失败，请检查 hyprctl IPC 状态。"
@@ -149,6 +172,9 @@ run_menu() {
 
 case "${1:-}" in
   --preview)
+    # 正常是菜单进程的子进程（已继承解析好的签名）；单独调用时也不该因签名失效
+    # 而丢掉窗口数，所以这里尽力解析，失败也照常出预览（窗口数显示"未知"）。
+    ensure_instance || true
     print_preview "${2:-cancel}"
     exit 0
     ;;
@@ -164,6 +190,14 @@ case "${1:-}" in
     exit 2
     ;;
 esac
+
+# 真正要跟 Hyprland 打交道了（--help/--preview 已在上面退出）：确保 hyprctl 连得上。
+# 失败就退出——此时退出命令本来也发不出去，打开菜单没有意义。
+if ! ensure_instance; then
+  notify-send "Hyprland 退出" "找不到运行中的 Hyprland 实例（hyprctl 无法连接）。" 2>/dev/null || true
+  ui_err "找不到运行中的 Hyprland 实例（hyprctl 无法连接）。"
+  exit 1
+fi
 
 # 快捷键从 Hyprland 直接 spawn 时没有终端；沿用 niri-quit 模式自动打开 kitty。
 if [[ "${HYPR_QUIT_KITTY:-0}" != "1" ]]; then

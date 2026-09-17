@@ -47,18 +47,29 @@ require_deps() {
 
 switch_to() {
   local mode="$1" target="$2"
+  local previous
 
   if [[ ! -f "$target" ]]; then
     notify-send "VM 测试模式" "找不到${mode}配置: $target（先运行 hypr-vmtest-gen？）" 2>/dev/null || true
+    printf '错误: 找不到%s配置 %s（先运行 hypr-vmtest-gen？）\n' "$mode" "$target" >&2
     return 1
   fi
+
+  # 记录原链接目标，reload 失败时回滚，避免「链接已指向测试配置、合成器还在跑正常配置」。
+  previous="$(readlink "$LIVE" 2>/dev/null || true)"
 
   # -n：目标本身是符号链接时替换链接本身，不跟随；同目录相对链接，
   # 配置目录整体迁移（dotfiles 仓库 / 换 HOME）也不失效。
   ln -sfn "$(basename "$target")" "$LIVE"
 
   if ! hyprctl reload >/dev/null 2>&1; then
+    if [[ -n "$previous" ]]; then
+      ln -sfn "$previous" "$LIVE"
+    fi
     notify-send "VM 测试模式" "hyprctl reload 失败，配置未切换。" 2>/dev/null || true
+    printf '错误: hyprctl reload 失败，配置未切换（已回滚链接）。\n' >&2
+    printf '      当前 HYPRLAND_INSTANCE_SIGNATURE=%s\n' "${HYPRLAND_INSTANCE_SIGNATURE:-<未设置>}" >&2
+    printf '      请在 Hyprland 会话内的终端运行，或按 `hyprctl instances` 的实例签名重试。\n' >&2
     return 1
   fi
 

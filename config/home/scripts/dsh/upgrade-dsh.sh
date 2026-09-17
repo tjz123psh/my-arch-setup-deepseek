@@ -15,11 +15,17 @@
 #                顺序：停服 → 换装 → 同步实验包 → 起服 → 验证 → 失败回滚。
 #
 # 用法：
-#   bash upgrade-dsh.sh --probe --target 0.1.6-alpha.1
-#   # 切换必须脱离调用者的 cgroup（否则调用方的 systemd 瞬态 scope 停止会连带杀死它）：
+#   bash upgrade-dsh.sh --probe --target 0.1.6-alpha.2
+#   # 切换必须脱离调用者的 cgroup（否则调用方的 systemd 瞬态 scope 停止会连带杀死它），
+#   # 且必须带 --property=KillMode=process：
+#   #   本脚本 start_server 用 setsid nohup 派生服务，而 setsid **只换会话不换 cgroup**。
+#   #   瞬态单元默认 KillMode=control-group，主进程退出时会杀掉 cgroup 内全部进程，
+#   #   于是新起的 dsh web 随单元一起消失，机器停在"端口无服务"。
+#   #   2026-09-17 A/B 实测：不带该属性 -> 派生进程被杀；带上 -> 存活。
 #   systemd-run --user --unit=dsh-upgrade-$(date +%s) --collect \
+#       --property=KillMode=process \
 #       bash /home/pang/scripts/dsh/upgrade-dsh.sh \
-#       --activate --target 0.1.6-alpha.1 --fallback 0.1.5-rc.2 --grace 30
+#       --activate --target 0.1.6-alpha.2 --fallback 0.1.6-alpha.1 --grace 90
 #
 # 产物：
 #   ~/.dsh/notes/probe-<target>.log / probe-<target>-STATUS        探测日志与结论

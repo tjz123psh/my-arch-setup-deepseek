@@ -29,6 +29,7 @@ Ctrl+Alt+Del	任务管理器
 # 应用启动
 Super+O	应用启动器（DMS spotlight，搜索程序/文件）
 Alt+Enter	打开终端（kitty）
+Super+Enter	打开终端（kitty，Alt+Enter 的备选）
 Alt+/	浮动终端（quickterminal）
 Alt+B	B 站视频弹窗播放
 Alt+A	屏幕放大镜（原生缩放，循环 1x→2x→3x→关）
@@ -118,6 +119,7 @@ Ctrl+音量↓	当前播放器音量 -3%（mpris）
 
 # 系统
 Super+D	概览：平铺展开当前工作区所有窗口，点选窗口后自动收起
+Super+Shift+D	VM 测试模式：禁用 host 快捷键（再按一次退出）
 Super+Shift+E	退出 Hyprland（回到登录界面）
 Super+Shift+P	关闭显示器（待机）
 Super+/	快捷键速查（本面板）

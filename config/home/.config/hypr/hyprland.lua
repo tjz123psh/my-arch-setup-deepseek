@@ -29,3 +29,10 @@ require("conf.appearance")
 require("conf.input")
 require("conf.keybinds")
 require("conf.windowrules")
+
+-- >>> VM 测试模式开关 >>>
+-- Win+Shift+D：进入 VM 测试模式（host 快捷键全关，只留此键退出），同 niri 的 Mod+Shift+D。
+-- 本块由 hypr-vmtest-gen 管理：生成 hyprland.lua.vmtest 时会整块剥离，并换成调用
+-- `hypr-vmtest-toggle leave` 的返回键；下面的标记行格式不要改动。
+hl.bind("SUPER + SHIFT + D", hl.dsp.exec_cmd("$HOME/scripts/desktop/hypr-vmtest-toggle enter"))
+-- <<< VM 测试模式开关 <<<

@@ -15,7 +15,25 @@
 
 set -u
 
-SIG="${HYPRLAND_INSTANCE_SIGNATURE:-default}"
+# 实例签名：键位调用时 Hyprland 已注入；从普通终端调用时 env 里可能是空的、
+# 或残留一个已退出实例的旧签名，那样 hyprctl / socat 全连不上（概览静默失效）。
+# 逐个探测运行中的实例（hyprctl version 能连上才算），并把签名导出给后续调用。
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! hyprctl version >/dev/null 2>&1; then
+	while IFS= read -r sig; do
+		if HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl version >/dev/null 2>&1; then
+			HYPRLAND_INSTANCE_SIGNATURE="$sig"
+			export HYPRLAND_INSTANCE_SIGNATURE
+			break
+		fi
+	done < <(ls -t "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr/" 2>/dev/null)
+fi
+
+SIG="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+if [[ -z "$SIG" ]]; then
+	notify-send -a "Fake Overview" "找不到运行中的 Hyprland 实例" 2>/dev/null || true
+	exit 1
+fi
+
 STATE_FILE="/tmp/hypr_fake_overview_state_${SIG}"
 SOCKET="${XDG_RUNTIME_DIR}/hypr/${SIG}/.socket2.sock"
 

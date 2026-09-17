@@ -10,9 +10,13 @@
 # 首次运行本脚本会完成迁移：
 #   hyprland.lua（普通文件）→ hyprland.lua.normal + hyprland.lua -> normal 的符号链接
 # 注意：迁移后请编辑 hyprland.lua.normal（在 hyprland.lua 上编辑会跟随链接写到同一文件）。
+#
+# 安全网：正常配置的结构变了（找不到开关块 / require("conf.keybinds") / luac 语法检查不过）
+# 就中止并保留原测试配置，避免产出「测试模式仍加载全部 host 快捷键」的假测试配置。
 set -euo pipefail
 
-CONFIG_DIR="$HOME/.config/hypr"
+# 配置目录可用环境变量覆盖，便于在不碰真实配置的前提下自测。
+CONFIG_DIR="${HYPR_VMTEST_CONFIG_DIR:-$HOME/.config/hypr}"
 LIVE="$CONFIG_DIR/hyprland.lua"
 NORMAL="$CONFIG_DIR/hyprland.lua.normal"
 TEST="$CONFIG_DIR/hyprland.lua.vmtest"
@@ -33,17 +37,34 @@ if [[ ! -f "$NORMAL" ]]; then
   exit 1
 fi
 
-python3 - "$NORMAL" "$TEST" <<'PY'
+# 先写临时文件，通过全部检查后再原子替换，失败时原测试配置保持可用。
+TMP="$TEST.tmp.$$"
+trap 'rm -f "$TMP"' EXIT
+
+python3 - "$NORMAL" "$TMP" <<'PY'
 import re, sys
+
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src, encoding='utf-8').read()
+problems = []
 
 # 1) 去掉正常配置里已有的「VM 测试模式开关」块，避免复制出指向自身的死绑定
-s = re.sub(r'\n-- >>> VM 测试模式开关.*?-- <<< VM 测试模式开关 <<<\n?', '\n', s, flags=re.S)
+#    （标记块位于 hyprland.lua.normal，两端标记行格式见该文件）。
+s, n_switch = re.subn(r'\n-- >>> VM 测试模式开关.*?-- <<< VM 测试模式开关 <<<\n?', '\n', s, flags=re.S)
+if n_switch != 1:
+    problems.append('未找到 -- >>> VM 测试模式开关 ... -- <<< VM 测试模式开关 <<< 块（找到 %d 处）' % n_switch)
 
 # 2) 注释掉 conf.keybinds 的 require（全部快捷键失效）
-s = s.replace('require("conf.keybinds")',
-              '-- VM 测试模式：快捷键已禁用（原 require("conf.keybinds") 被注释）')
+s, n_require = re.subn(r'require\("conf\.keybinds"\)',
+                       '-- VM 测试模式：快捷键已禁用（原 require("conf.keybinds") 被注释）', s)
+if n_require != 1:
+    problems.append('未找到 require("conf.keybinds")（找到 %d 处）' % n_require)
+
+if problems:
+    for p in problems:
+        print('错误: ' + p, file=sys.stderr)
+    print('错误: %s 结构与预期不符，已中止生成（原测试配置未改动）' % src, file=sys.stderr)
+    sys.exit(1)
 
 # 3) 追加唯一保留的开关键（切回正常配置，走 hypr-vmtest-toggle leave）
 s += '\n-- >>> VM 测试模式唯一保留键 >>>\n' \
@@ -52,15 +73,29 @@ s += '\n-- >>> VM 测试模式唯一保留键 >>>\n' \
      '-- <<< VM 测试模式唯一保留键 <<<\n'
 
 open(dst, 'w', encoding='utf-8').write(s)
-print("已生成:", dst)
+
+# 4) 事后自检：不得残留生效的 require("conf.keybinds")，且必须含返回键
+leftover = [l for l in s.splitlines()
+            if 'require("conf.keybinds")' in l and not l.lstrip().startswith('--')]
+if leftover or 'hypr-vmtest-toggle leave' not in s:
+    print('错误: 生成结果自检未通过（残留快捷键加载或缺少返回键）', file=sys.stderr)
+    sys.exit(1)
 PY
 
-# 4) 有 luac 时做纯语法检查（Hyprland 内嵌 Lua 5.4，语法层面一致；只查语法不执行，
-#    不会因 hl 全局缺失而报错）。失败仅告警，不阻断——reload 阶段一还会兜底。
+# 5) 有 luac 时做纯语法检查（Hyprland 内嵌 Lua 5.4，语法层面一致；只查语法不执行，
+#    不会因 hl 全局缺失而报错）。检查通过才安装——语法坏的测试配置会让 enter 之后
+#    reload 失败，可能卡在没有快捷键的模式里。
 if command -v luac >/dev/null 2>&1; then
-  if luac -p "$TEST" >/dev/null 2>&1; then
-    printf '语法检查: %s OK\n' "$TEST"
-  else
-    printf '警告: %s 语法检查未通过，请检查生成结果\n' "$TEST" >&2
+  if ! luac -p "$TMP" >/dev/null 2>&1; then
+    printf '错误: 生成的测试配置语法检查未通过，已保留原配置 %s\n' "$TEST" >&2
+    luac -p "$TMP" 2>&1 | head -3 >&2
+    exit 1
   fi
+fi
+
+mv -f "$TMP" "$TEST"
+trap - EXIT
+printf '已生成: %s\n' "$TEST"
+if command -v luac >/dev/null 2>&1; then
+  printf '语法检查: %s OK\n' "$TEST"
 fi

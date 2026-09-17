@@ -105,3 +105,12 @@ hl.window_rule({
 	float = true,
 	size = { 700, 500 },
 })
+
+-- 退出确认菜单：浮动 820x500（同 niri app-id="niri-quit" 的默认列宽/窗高规则；
+-- kitty 的 --class=hypr-quit 与这里的 class 对应）
+hl.window_rule({
+	name = "float-hypr-quit",
+	match = { class = "^hypr-quit$" },
+	float = true,
+	size = { 820, 500 },
+})

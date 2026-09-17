@@ -17,17 +17,22 @@
 
 set -uo pipefail
 
-SIG="${HYPRLAND_INSTANCE_SIGNATURE:-}"
-if [[ -z "$SIG" ]]; then
-	# 从 bash 工具等非会话 shell 调用时补签名（正常键位调用已带此环境变量）
-	# 实例签名是 Hyprland 生成的固定 hex 格式目录名，不含特殊字符，ls 足够。
-	# shellcheck disable=SC2012
-	SIG="$(ls -t /run/user/"$(id -u)"/hypr/ 2>/dev/null | head -1)"
-	export HYPRLAND_INSTANCE_SIGNATURE="$SIG"
+# 实例签名：键位调用时 Hyprland 已注入；从 bash 工具等非会话 shell 调用时可能为空，
+# 也可能残留一个已退出实例的旧签名（此时 hyprctl 连不上）。两种情况都逐个探测
+# 运行中的实例——hyprctl version 能连上才算，避免挑到死实例的目录名。
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! hyprctl version >/dev/null 2>&1; then
+	while IFS= read -r sig; do
+		if HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl version >/dev/null 2>&1; then
+			HYPRLAND_INSTANCE_SIGNATURE="$sig"
+			export HYPRLAND_INSTANCE_SIGNATURE
+			break
+		fi
+	done < <(ls -t /run/user/"$(id -u)"/hypr/ 2>/dev/null)
 fi
 
 usage() {
-	sed -n '3,20p' "$0" | sed 's/^# \{0,1\}//'
+	# 头部注释块 = 第 3 行到第一个空行（不要写死行号，避免头部改动后把代码读进帮助里）
+	sed -n '3,/^$/p' "$0" | sed 's/^# \{0,1\}//'
 	echo
 	echo "用法：hypr-magnifier [--reset|-h]"
 	echo "  无参数    在 1x → 2x → 3x → 1x 之间循环"

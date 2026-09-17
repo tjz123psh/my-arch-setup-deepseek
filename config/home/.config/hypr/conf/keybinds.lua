@@ -162,7 +162,9 @@ hl.bind(mainMod .. " + SHIFT + CTRL + L", hl.dsp.window.move({ monitor = "r" }))
 hl.bind(mainMod .. " + SHIFT + CTRL + Right", hl.dsp.window.move({ monitor = "r" }))
 
 -- ===== 系统 =====
-hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exit()) -- 退出 Hyprland（同 niri Mod+Shift+E）
+-- 退出确认菜单（term-menu 同款 fzf 界面，默认选中「取消」；同 niri Mod+Shift+E → niri-quit）。
+-- 脚本内部走 `hyprctl dispatch 'hl.dsp.exit()'`；浮动窗口规则见 conf/windowrules.lua。
+hl.bind(mainMod .. " + SHIFT + E", hl.dsp.exec_cmd("$HOME/scripts/desktop/hypr-quit")) -- 退出确认菜单
 -- 快捷键速查（kitty + fzf 浮动小窗，同 niri Mod+Slash）
 hl.bind(mainMod .. " + Slash", hl.dsp.exec_cmd("$HOME/.local/bin/hypr-keys")) -- 快捷键速查面板
 -- 伪概览（无插件）：临时把 scrolling 切成 dwindle 平铺展开全部窗口，点选窗口后自动切回。
