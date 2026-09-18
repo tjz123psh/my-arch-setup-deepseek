@@ -77,8 +77,10 @@ and it is not an audited/reproducible engineering system.
    entry can never be seen by dms-greeter (its HOME/XDG_DATA_HOME point at
    the greeter cache, not the target user's ~/.local/share), so the system
    entry is the only contract and 08-services verifies it (valid desktop
-   entry + Exec=/usr/bin/start-hyprland) in "both". `DESKTOP_ENV=none` skips
-   the dms/dsearch/greetd/Hyprland chain entirely. 08-services also runs a
+   entry + Exec=/usr/bin/start-hyprland) in "both". `DESKTOP_ENV=none` only
+   excludes the wm-niri/wm-hyprland modules and then disables the dms/greetd
+   services (08-services convergence); dms-greetd/desktop-shared packages and
+   their configs are still deployed. 08-services also runs a
    hash/marker-protected migration cleanup (backup first, only
    project-deployed content removed, daemon-reload + confirm) for Round-2/3
    leftovers in an existing target HOME.
@@ -146,10 +148,10 @@ and it is not an audited/reproducible engineering system.
    `hyprland-uwsm.desktop` was removed 2026-08-09 (R5): the uwsm entry no
    longer exists, so there is nothing to migrate; a stale uwsm memory on an
    upgraded host simply resolves to nothing and the greeter falls back to
-   the session menu. Verified against the pinned dms-greater source contract
-   via structural/synthetic JSON tests; it is NOT proof of a real greeter
-   login run - the live greeter menu and session runtime remain unverified
-   until VM acceptance.
+   the session menu. Verified against the pinned dms-greeter source contract
+   via structural/synthetic JSON tests (2026-08-09); the live greeter menu and
+   session runtime were subsequently verified in the VMware clean-base runs
+   (2026-08-10/08-12; see docs/physical-offline-install.md 验证记录).
 6. **Services mirror the host.** bluetooth, power-profiles, docker,
    NetworkManager, grub-btrfsd, paccache.timer, snapper-cleanup.timer,
    snapper-timeline.timer, btrfs-scrub@-.timer are enabled on *every* machine

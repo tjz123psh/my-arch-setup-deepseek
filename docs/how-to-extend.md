@@ -19,7 +19,7 @@
 | 加/删官方软件包 | `manifests/workstation-packages.tsv` 加一行 | reconciliation 测试 |
 | 加/删 AUR 包 | `manifests/aur-recipes.tsv` + `third_party/aur/<name>/` + 包清单 | reconciliation 测试 + fetch-aur-sources.sh 重新生成缓存 |
 | 加/改个人配置 | `config/` 放文件 + `manifests/config-mappings.tsv` 加一行 | reconciliation 测试 |
-| 加/改 `~/scripts` 脚本 | 直接改本机 `~/scripts`，跑 `sync-scripts.sh` | sync 输出无缺口 |
+| 加/改 `~/scripts` 脚本 | 直接改本机 `~/scripts`，跑 `sync-scripts.sh --apply` | plan 先看差异，apply 后无缺口 |
 | 加/改服务或 timer | `scripts/08-services.sh` 的 `SERVICES=` 或 timer 循环 | bash -n + 一次 VM 重装 |
 | 改系统设置（locale/时区/录屏等） | `scripts/09-settings.sh` | bash -n + VM 重装 |
 | 换 AUR 源、镜像等 | `scripts/01-mirror.sh` / `scripts/06-aur.sh` | VM 重装 |
@@ -38,7 +38,7 @@
      没有合适的新建一个即可（03-packages 按 module 过滤 wm 专用包，其余全装）。
    - 驱动类包**不要**加在这里——统一放 `scripts/04-drivers.sh`（物理机专属）。
 2. 跑 `tests/workstation-package-reconciliation-test.sh` 确认格式与引用合法。
-3. 更新 README 包数字。
+3. 仅当 README/how-to-extend 里出现 `install=`/`total=`/`mappings=`/`recipes=` 字面量时才需同步数字（`check-extend` 的 numbers 节会拦错的）。
 
 **archlinuxcn 包的迁移例外：**如果旧 AUR 包提供同名虚拟包（本项目的
 `flclash-bin` 提供 `flclash`），不能只把一行的 channel 改成 pacman。必须
@@ -58,7 +58,7 @@
 4. **若新包是 Rust 且用 cargo 构建**（如 paru 这类）：注意 `Cargo.lock` 是否随源码
    提供；paru 的 Cargo.lock 是手工固定在仓库里的（见 `third_party/aur/paru/`），
    版本升级时要同步刷新，否则 `cargo fetch --locked` 会失败。
-5. 跑测试 + 更新 README。
+5. 跑测试（`./check-extend.sh`）。
 
 ## 三、加/改个人配置
 
@@ -77,11 +77,14 @@
 本机 `~/scripts` 是日用品。改完后：
 
 ```bash
-cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
+cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh          # 只读计划（默认）
+cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh --apply  # 真正写入
 ```
 
-它会把 `~/scripts` 镜像进 `config/home/scripts/` 并自动补映射行（可执行 755 /
-普通 644），输出"0 gaps"即同步完成。之后正常 commit/push。
+**默认只做 plan**：打印差异并以 `PLAN ONLY - nothing was written (no mkdir, no rsync,
+no mapping edits).` 结束；加 `--apply` 才把 `~/scripts` 镜像进 `config/home/scripts/`、
+补映射行（可执行 755 / 普通 644），并留时间戳备份（`--rollback <backup-dir>` 可回退）。
+之后正常 commit/push。
 
 ## 五、加/改服务
 
@@ -97,11 +100,11 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
 
 1. **跑 `./check-extend.sh`** —— 一键总检（核心 8 节，全量 13 节，见上）。**任一节红 = 禁止提交**；
    红了按输出定位到节，修复后重跑至全绿。
-2. 改脚本逻辑（非纯数据）时，至少跑一次 VM 全新重装（`-d niri -t vm`），
-   确认闭环 11 步（01-mirror→09-settings + 99-cleanup）。物理机专属改动用
+2. 改脚本逻辑（非纯数据）时，至少跑一次 VM 全新重装（`-d both -t vm`，11 步；
+   `-d niri` 是 10 步、`-d none` 是 9 步），确认闭环（01-mirror→09-settings + 99-cleanup）。物理机专属改动用
    `-t physical` 在 VM 里跑路径。
 3. 更新 README 数字 + 重新打包 `~/Downloads/my-arch-setup.tar`。
-4. commit + push（git-push 约定见 AGENTS/仓库惯例）。
+4. commit + push（本仓库约定：门禁全绿后直接 `git push origin main`）。
 
 ## 七、宿主 → 仓库 差异同步（本机改好了，把状态收进仓库）
 
@@ -128,7 +131,7 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
   （离线模式：还需生成离线缓存 + 可能要调 PKGBUILD）。06-aur 是双模式：无
   `.aur-sources/` 缓存 → paru 装最新；有缓存 → makepkg 构建固定 recipe。
   当前 AUR 目标数随清单变化（见 `./check-extend.sh` reconcile 输出；另有
-  vmware-keymaps 构建依赖树）；迁移或删除旧 recipe 时必须同步清理 06、
+  vmware-keymaps、snapd-xdg-open-git 两个 AUR→AUR 引导依赖）；迁移或删除旧 recipe 时必须同步清理 06、
   离线缓存脚本（fetch-aur-sources.sh）和 manifest。
 - **改脚本逻辑**：1 小时级别，必须 VM 重装验证。
 - **红线（伤筋动骨，必须 VM 重验 + 换新 TEST_ID）**：改 manifests schema（表格列含义）、
@@ -136,9 +139,9 @@ cd ~/Projects/my-arch-setup-deepseek && ./sync-scripts.sh
   （00-utils/03/06/07/08/09）。按 TEST_ID/clean-baseline 规则，任何代码/清单/recipe/
   cache 变化都使旧 PASS 失效——红线改动不能拿旧验收结果宣称"验收通过"，必须重新冻结
   payload、生成新 TEST_ID 并完整重验。
-- **唯一「伤筋动骨」的改动**：改 manifests schema（表格列含义）、改
-  config-mappings 的 scope 体系、改 DESKTOP_ENV 过滤逻辑——这些会牵动 03/07 两个
-  步骤和全部数据，需要额外小心并完整重验。除此之外，穿插增改是安全的。
+- 四类红线里，前三类（schema / config-mappings scope 体系 / DESKTOP_ENV 过滤）会
+  牵动 03/07 两个步骤和全部数据；第四类（安装器核心脚本主流程）同理。除此之外，
+  穿插增改是安全的。
 
 ## 相关文件速查
 

@@ -10,9 +10,14 @@
 #   ./check-extend.sh --only=syntax,secret   # 只跑指定节（调试用）
 #   ./check-extend.sh --skip=behavior        # 跳过指定节
 #
+# 参数错误一律 exit 2（未知选项 / 未知节名 / --only 为空 / --only 与 --skip 同给）；
+# 实际执行的节数为 0 时同样 exit 2。这两条是 2026-09-19 修掉的“零检查报绿”假绿路径
+# （此前 ./check-extend.sh --ful 或 --only=<拼错的节名> 都会以 0 退出、一节不跑）。
+#
 # 节：
 #   bash-n     所有 shell 脚本 bash -n
-#   SC-check  对核心脚本跑 shellcheck -S error（注释行不能以 shellcheck 开头，会被当作指令）
+#   [shellcheck] 对核心脚本跑 shellcheck -S error（注意：本行注释不能以 shellcheck 开头，
+#               否则会被 shellcheck 当成指令解析——原命名 SC-check 就是为规避这点）
 #   reconcile  tests/workstation-package-reconciliation-test.sh（清单一致性）
 #   syntax     tests/validate-config-syntax.sh（配置内容语法，含 QML 结构配平）
 #   refs       recipe 目录 <-> aur-recipes.tsv 双向引用 + PKGBUILD 存在性 + fetch 缓存孤儿条目
@@ -34,9 +39,24 @@ skip=""
 declare -a SECTIONS=(bash-n shellcheck reconcile syntax refs secret numbers behavior session-lifecycle pacman-order flclash nvim-config deploy-sync)
 declare -a CORE=(bash-n shellcheck reconcile syntax refs secret numbers behavior)
 
-usage() {
-  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
-  exit 0
+usage() { # 打印文件头部的连续注释（shebang 之后），不依赖固定行号
+  awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"
+}
+die_usage() { usage >&2; exit 2; }
+normalize_sections() { printf '%s' "$1" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | paste -sd, -; }
+check_sections() { # check_sections <flag> <list>：规范化逗号列表；未知/空节名 exit 2
+  local flag="$1" raw="$2" s normalized
+  normalized="$(normalize_sections "$raw")"
+  if [[ -z "$normalized" ]]; then
+    echo "error: ${flag} needs at least one section name" >&2; die_usage
+  fi
+  IFS=',' read -r -a _sec_items <<<"$normalized"
+  for s in "${_sec_items[@]}"; do
+    if [[ " ${SECTIONS[*]} " != *" ${s} "* ]]; then
+      echo "error: unknown section '${s}' for ${flag}; known: ${SECTIONS[*]}" >&2; die_usage
+    fi
+  done
+  printf '%s' "$normalized"
 }
 
 while (( $# > 0 )); do
@@ -44,18 +64,27 @@ while (( $# > 0 )); do
     --fast)      fast=1; auto=0 ;;
     --full)      fast=0; auto=0 ;;
     --deploy)    deploy=1 ;;
-    --only=*)    only="${1#--only=}" ;;
-    --skip=*)    skip="${1#--skip=}" ;;
-    -h|--help)   usage ;;
-    *) echo "unknown option: $1" >&2; usage ;;
+    --only=*)    only="${1#--only=}"; [[ -n "$only" ]] || { echo "error: --only= is empty (use --only=<section>[,<section>...])" >&2; die_usage; } ;;
+    --only)      echo "error: --only requires --only=<section>[,<section>...]" >&2; die_usage ;;
+    --skip=*)    skip="${1#--skip=}"; [[ -n "$skip" ]] || { echo "error: --skip= is empty (use --skip=<section>[,<section>...])" >&2; die_usage; } ;;
+    --skip)      echo "error: --skip requires --skip=<section>[,<section>...]" >&2; die_usage ;;
+    -h|--help)   usage; exit 0 ;;
+    *) echo "unknown option: $1" >&2; die_usage ;;
   esac
   shift
 done
 
+if [[ -n "$only" && -n "$skip" ]]; then
+  echo "error: --only and --skip are mutually exclusive" >&2
+  die_usage
+fi
+[[ -n "$only" ]] && { only="$(check_sections --only "$only")" || exit 2; }
+[[ -n "$skip" ]] && { skip="$(check_sections --skip "$skip")" || exit 2; }
+
 # 自动选快慢：按 git diff 范围判定。改脚本/测试/闸门自身 → 全量；只改数据/文档 → 快速。
 if (( auto )); then
   changed=$(git diff --name-only HEAD 2>/dev/null || true)
-  if [[ -n "$changed" ]] && ! grep -qE '^(scripts/|tests/|install\.sh$|strap\.sh$|fetch-aur-sources\.sh$|sync-scripts\.sh$|check-extend\.sh$)' <<<"$changed"; then
+  if [[ -n "$changed" ]] && ! grep -qE '^(scripts/|tests/|install\.sh$|strap\.sh$|fetch-aur-sources\.sh$|sync-scripts\.sh$|sync-config-mappings\.sh$|cleanup-after-install\.sh$|check-extend\.sh$)' <<<"$changed"; then
     fast=1
     echo "（改动仅涉及数据/文档 → 自动快速模式 8 节；改脚本/测试会自动全量，--full 可强制）"
   fi
@@ -63,6 +92,7 @@ fi
 
 status=0
 section_count=0
+if (( fast )); then expected_sections=${#CORE[@]}; else expected_sections=${#SECTIONS[@]}; fi
 
 run() { # run <name>
   local name="$1"
@@ -93,7 +123,7 @@ bash-n() {
       echo "  bash -n FAIL: $f"
       rc=1
     fi
-  done < <(find scripts tests -name '*.sh' -type f; echo install.sh; echo strap.sh; echo fetch-aur-sources.sh; echo sync-scripts.sh; find config -type f -name '*.sh')
+  done < <(find scripts tests -name '*.sh' -type f; echo install.sh; echo strap.sh; echo fetch-aur-sources.sh; echo sync-scripts.sh; echo cleanup-after-install.sh; echo sync-config-mappings.sh; find config -type f -name '*.sh')
   return $rc
 }
 
@@ -103,7 +133,7 @@ shellcheck() {
     return 0
   fi
   # 注意：函数名与命令同名，必须用 `command` 调用，否则无限递归
-  if ! command shellcheck -S error scripts/*.sh install.sh strap.sh fetch-aur-sources.sh sync-scripts.sh tests/*.sh; then
+  if ! command shellcheck -S error scripts/*.sh install.sh strap.sh fetch-aur-sources.sh sync-scripts.sh cleanup-after-install.sh sync-config-mappings.sh tests/*.sh; then
     return 1
   fi
   return 0
@@ -164,16 +194,28 @@ refs() {
 }
 
 secret() {
-  local rc=0 pat
+  local rc=0 pat weak
   pat='BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|ghp_[A-Za-z0-9]{35,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}'
+  # 2026-09-19 补：明文口令弱模式。此前只有高置信 token/私钥形态，抓不到
+  # "root passwd: xxxxxx" / "密码：xxxxxxx" 这类写法，导致公开仓库的 md 笔记里
+  # 长期存在明文口令而门禁全绿。取 4+ 位 ASCII 值以避免误伤中文说明
+  # （"密码：见 private-env.fish" 不会命中）。
+  weak='(passwd|password|密码|口令)[[:space:]]*[:：][[:space:]]*["'"'"']?[A-Za-z0-9!@#%^&*_.-]{4,}'
   if grep -rInE "$pat" config/ 2>/dev/null; then
     echo "  FAIL config/ 命中高置信凭据模式（见上）"
     rc=1
   fi
+  if grep -rInE "$weak" config/ 2>/dev/null; then
+    echo "  FAIL config/ 命中疑似明文口令（见上；请改成占位符）"
+    rc=1
+  fi
+  # 说明：扫描范围仍是 config/ 载荷 + staged diff（tests/ 的假 key 夹具、
+  # docs/ 的历史记录不在范围内），扩大范围前需先排除 tests/check-extend-test.sh
+  # 里的 BEGIN OPENSSH PRIVATE KEY 占位夹具。
   local staged
   staged=$(git diff --cached --name-only 2>/dev/null || true)
-  if [[ -n "$staged" ]] && git diff --cached | grep -nE "$pat" >/dev/null 2>&1; then
-    echo "  FAIL staged diff 命中高置信凭据模式"
+  if [[ -n "$staged" ]] && git diff --cached | grep -nE "$pat|$weak" >/dev/null 2>&1; then
+    echo "  FAIL staged diff 命中凭据/明文口令模式"
     rc=1
   fi
   return $rc
@@ -288,10 +330,20 @@ for s in "${SECTIONS[@]}"; do
   run "$s"
 done
 
+if (( section_count == 0 )); then
+  echo "check-extend: 未执行任何节（参数或过滤错误）— 拒绝报绿 ❌" >&2
+  exit 2
+fi
 echo "======================"
 if (( status == 0 )); then
   echo "check-extend: ${section_count} 节全部通过 ✅"
-  if (( deploy )); then deploy_host; fi
+  if (( deploy )); then
+    if (( section_count == expected_sections )); then
+      deploy_host
+    else
+      echo "  ⚠ 跳过 --deploy：本次只执行 ${section_count}/${expected_sections} 节；--deploy 要求全量闸门通过"
+    fi
+  fi
 else
   echo "check-extend: 有失败，修复后重跑（红=禁止提交，不部署）❌"
 fi

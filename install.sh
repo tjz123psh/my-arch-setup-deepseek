@@ -292,8 +292,11 @@ main() {
     fi
     section "Step ${current}/${total}" "${module}"
     # shellcheck disable=SC1090
-    bash "${script_path}"
-    local rc=$?
+    # 模块状态必须用 `|| rc=$?` 捕获：直接 `bash "$script"` 后接 `local rc=$?`
+    # 在 set -e 下会在赋值前就退出，失败提示与 mark_done 分支都不可达
+    # （2026-09-19 修复：此前 "rerun install.sh to resume" 是死代码）。
+    local rc=0
+    bash "${script_path}" || rc=$?
     if (( rc == 0 )); then
       mark_done "${module}"
       success "Done: ${module}"

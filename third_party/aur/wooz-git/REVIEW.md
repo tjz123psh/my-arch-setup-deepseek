@@ -11,7 +11,7 @@
 
 ## Version reconciliation
 
-`manifests/workstation-package-inventory.tsv` observes `r189.24e2856-1`. The AUR version convention for this package is total reachable commit count plus abbreviated commit: the reviewed upstream commit has count `189` and abbreviation `24e2856`, yielding `pkgver=r189.24e2856`. With `pkgrel=1`, the local recipe exactly reproduces the observed version. The literal version stored in the floating AUR recipe represented an earlier source state and was not reused.
+`manifests/workstation-packages.tsv` observes `r189.24e2856-1`. The AUR version convention for this package is total reachable commit count plus abbreviated commit: the reviewed upstream commit has count `189` and abbreviation `24e2856`, yielding `pkgver=r189.24e2856`. With `pkgrel=1`, the local recipe exactly reproduces the observed version. The literal version stored in the floating AUR recipe represented an earlier source state and was not reused.
 
 ## Local changes from the AUR recipe
 

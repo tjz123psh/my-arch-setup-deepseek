@@ -1,6 +1,6 @@
 pkgbase = google-chrome
 	pkgdesc = The popular web browser by Google (Stable Channel)
-	pkgver = 151.0.7922.71
+	pkgver = 153.0.8010.47
 	pkgrel = 1
 	url = https://www.google.com/chrome
 	install = google-chrome.install

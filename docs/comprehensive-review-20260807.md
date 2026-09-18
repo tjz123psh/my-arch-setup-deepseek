@@ -8,6 +8,14 @@
 > 本文档中的包数/目标数等为当时快照，**当前以 `./check-extend.sh` reconcile 输出
 > 为准**；最新验证记录见 `docs/physical-offline-install.md`，VM vs 物理机颗粒度
 > 见 `docs/granularity.md`。
+>
+> **2026-09-19 复核提醒（重要）**：§4–§9 里带“当前/目前/仍/现状”字样的失败描述多为
+> 2026-08-07/08 快照，其中多项已在 §10 标记 `[x]` 修复，并于 2026-09-19 逐条复核代码：
+> 06-aur 角色过滤、reflector timeout、ShellCheck error、nomacs 前置、
+> `hyprland-session.target`（R5/2026-08-09 已移除该 unit）等。本文出现的清单计数
+> （211/191/197/217/231/330）亦已过期：当前为 install=200 / verify=12 / deferred=8 /
+> total=220、mappings=289、recipes=15、config 文件 388，以 `./check-extend.sh`
+> reconcile 输出为准。
 
 - 审查对象：`/home/pang/Projects/my-arch-setup-deepseek`
 - 审查基线：`main`，HEAD 为 `f44066d2a07b13a7bf542f17bde048d803ab2e6c`

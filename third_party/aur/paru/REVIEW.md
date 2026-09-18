@@ -26,8 +26,10 @@
 
 1. `makepkg` downloads `paru-2.1.0.tar.gz` from the pinned GitHub release URL
    and verifies its SHA-256.
-2. `prepare()` runs `cargo update alpm alpm-utils` to lift the alpm bindings to
-   a version supporting libalpm 16, then `cargo fetch --locked --target`.
+2. `prepare()` copies the repository-pinned `Cargo.lock` over the extracted
+   source (the lock already pins alpm 4.0.4 / alpm-sys 4.0.5, i.e. libalpm 16) and
+   runs `cargo fetch --locked` (falling back to `--offline` when a local cargo
+   cache exists). No `cargo update` runs at build time.
 3. `build()` runs `cargo build --frozen` against the fetched lock.
 4. The resulting package installs the same payload as upstream: `/usr/bin/paru`,
    `/etc/paru.conf`, manual pages, completions, locale catalogs.
@@ -46,15 +48,17 @@ Arch libalpm (`paru v2.1.0 - libalpm v16.0.1`).
 ## Local changes from the AUR recipe
 
 - Restricted architecture to x86_64.
-- `prepare()` explicitly upgrades `alpm`/`alpm-utils` (the current Arch
-  libalpm is v16; the upstream default lock resolves an alpm version that only
-  supports libalpm 15) and fetches the lock.
+- Ships and pins `Cargo.lock` (alpm 4.0.4 / alpm-sys 4.0.5 -> libalpm 16) and
+  copies it into `$srcdir` in `prepare()`. The alpm upgrade itself happens once on
+  the cache-generating machine (`fetch-aur-sources.sh` runs `cargo update alpm
+  alpm-utils` there), never on the installing machine.
 - Builds with `cargo build --frozen`.
 
 ## Remaining risks
 
-- Build-time network is required (crates.io fetch during `prepare()`); this is
-  the standard AUR trade-off and acceptable for a personal restore tool.
+- Online builds fetch crates.io in `prepare()` (normal AUR behaviour). In offline
+  mode 06-aur exports `CARGO_NET_OFFLINE=true` and uses the `.aur-sources/cargo`
+  cache, so no build-time network is required there.
 - `libfakeroot internal error: payload not recognized!` may appear during
   man-page compression; it is a known-harmless upstream fakeroot warning and
   does not affect the resulting package.

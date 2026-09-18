@@ -1,5 +1,8 @@
 # greetd-dms-greeter-git review
 
+> **2026-09-19 复核**：本文顶部的 AUR commit / 版本号为首次审查时的快照，可能落后于当前 pin；
+> 权威值以同目录 `AUR_COMMIT`、`PKGBUILD` 与文末 Update 段为准。
+
 - AUR origin: `https://aur.archlinux.org/greetd-dms-greeter-git.git`
 - AUR commit pinned: `41ff38b24c9d74067c8841615c503c7dc54ba76f`
 - Upstream: `https://github.com/AvengeMedia/dank-greeter` (MIT)

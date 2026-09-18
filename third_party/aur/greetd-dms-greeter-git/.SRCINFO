@@ -1,6 +1,6 @@
 pkgbase = greetd-dms-greeter-git
 	pkgdesc = Greetd login screen with the Dank Material aesthetic (git)
-	pkgver = 0.0.0.r5.g399ff66
+	pkgver = 1.6.2.r0.g0175be5
 	pkgrel = 1
 	epoch = 1
 	url = https://github.com/AvengeMedia/dank-greeter

@@ -10,7 +10,7 @@ Every deployed regular file must have one per-scope row in
 `manifests/config-mappings.tsv`, one selected module owner and a reviewed mode
 declared in that row (`600`, `644`, `744` or `755`); the declared mode, not the
 working-tree permission, is what gets deployed.
-`config/home/` owns the physical-v1 payload (231 rows at last reconciliation);
+`config/home/` owns the physical-v1 payload (289 rows at last reconciliation, 2026-09-18);
 VMware guests deploy the same full scope except the machine-role rows, which
 follow `MACHINE_TYPE` (vmware-host rows deploy on physical only,
 vmware-guest rows on vm only — same module selection as packages). There is no
@@ -29,8 +29,10 @@ The Fish payload may optionally source the user-maintained, unmapped
 
 Portable/system templates live separately under `config/templates/` and are
 never silently substituted for user payload. The archlinuxcn and AUR pacman
-templates are hash-bound inputs to their dedicated production adapters, but
-module gates still prevent use before approved VM validation.
+templates are manual reference copies only: nothing in the installer reads
+them (07-config deploys `config/home/` exclusively, and `config/templates/`
+is structurally excluded), so they are not wired into any automated adapter
+or hash-binding scheme.
 
 The mapped `scripts/desktop/gsudo` payload never changes the privilege route:
 production adapters call only that wrapper, which dispatches `sudo -A`. It does

@@ -1,18 +1,18 @@
 # schema=1
 # package
-
+# 含 AUR→AUR 引导依赖（非安装目标）：vmware-keymaps、snapd-xdg-open-git
 dbx-bin
 dsearch-bin
 fcitx5-skin-fluentdark-git
 fuzzel-ime-git
 google-chrome
+greetd-dms-greeter-git
 linuxqq-nt-bwrap
 obsidian-bin
 opencode-bin
 paru
+snapd-xdg-open-git
+vmware-keymaps
+vmware-workstation
 wechat-universal-bwrap
 wooz-git
-greetd-dms-greeter-git
-vmware-keymaps
-snapd-xdg-open-git
-vmware-workstation

@@ -11,7 +11,7 @@
 
 ## Version reconciliation
 
-`manifests/workstation-package-inventory.tsv` observes `v0.4.0.r7.g399699a-1`. The reviewed upstream commit has tag-distance identity `v0.4.0-7-g399699a`, which maps under the AUR version convention to `pkgver=v0.4.0.r7.g399699a`; with `pkgrel=1`, the local recipe exactly reproduces the observed version. The literal version stored in the old floating AUR recipe was stale and was not reused.
+`manifests/workstation-packages.tsv` observes `v0.4.0.r7.g399699a-1`. The reviewed upstream commit has tag-distance identity `v0.4.0-7-g399699a`, which maps under the AUR version convention to `pkgver=v0.4.0.r7.g399699a`; with `pkgrel=1`, the local recipe exactly reproduces the observed version. The literal version stored in the old floating AUR recipe was stale and was not reused.
 
 ## Local changes from the AUR recipe
 

@@ -1,4 +1,4 @@
-# my-archlinux-setup
+# my-arch-setup-deepseek
 
 面向本人 ASUS AMD + NVIDIA 工作站的 Arch Linux 一键恢复配置：重装 Arch、完成基础
 安装后，一条命令恢复完整桌面（Niri/Hyprland、软件包、AUR、个人配置与服务）。
@@ -16,6 +16,11 @@ cd my-arch-setup-deepseek && ./install.sh    # 或 sudo bash strap.sh（root 自
 安装（断点续传）。AUR 双模式：无缓存 → **在线**（paru 装最新版）；解压离线缓存 →
 **离线**（makepkg 固定 recipe，可复现）。
 
+> **基础安装硬前置（03 步逐条硬校验，缺一即中止）**：`linux` 与 `linux-zen` 必须并存
+> （archinstall 默认只装一个内核；补装：`pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`），
+> 另需 `base bash btrfs-progs coreutils gawk grub mkinitcpio networkmanager sed sudo`（共 12 项；
+> 详见 [`docs/physical-offline-install.md`](docs/physical-offline-install.md)）。
+
 > **国内网络注意（在线模式）**：构建 Go 写的 AUR 包（`greetd-dms-greeter-git`、`snapd-xdg-open-git`、
 > `wooz-git` 等）会走 `GOPROXY`。默认 `proxy.golang.org` 在国内会卡死在依赖下载（2026-09-17 VM 实测超时），
 > 因此 payload 会部署 `~/.config/go/env`（`GOPROXY=https://goproxy.cn,direct`）；已有自定义设置请先备份。
@@ -30,8 +35,8 @@ cd my-arch-setup-deepseek && ./install.sh    # 或 sudo bash strap.sh（root 自
 
 | 文件 | 内容 |
 |---|---|
-| `my-arch-setup.tar` | 仓库代码（安装器，78M） |
-| `aur-sources-physical.tar.gz` / `aur-sources-vm.tar.gz` | AUR 离线缓存，按机器类型选（1.6G / 899M） |
+| `my-arch-setup.tar` | 仓库代码（安装器，约 80M） |
+| `aur-sources-physical.tar.gz` / `aur-sources-vm.tar.gz` | AUR 离线缓存，按机器类型选（tar.gz 约 1.5G / 约 825M；解压后的 `.aur-sources/` 约 1.7G / 964M） |
 
 ```bash
 tar -xf my-arch-setup.tar -C ~/                        # 得到 ~/my-arch-setup-deepseek/

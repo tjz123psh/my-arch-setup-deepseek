@@ -335,8 +335,8 @@ pacman -Sy opencode
 ```
 We are in the archiso live. First, increase the cowspace size. Then install archlinux following the guide from github.com/SHORiN-KiWATA/wiki.
 BTRFS + GRUB
-root passwd: shorin
-normal username: shorin, passwd: shorin
+root passwd: （示例口令已删除，请自定强口令）
+normal username: shorin, passwd: （示例口令已删除，请自定强口令）
 setup dual boot
 ESP mount to /efi
 GRUB install into /efi
@@ -10986,7 +10986,7 @@ CachyOS 分为掌机版（Handheld Edition）和桌面版（Desktop Edition）�
 
     ```text
     用户名：astrbot
-    密码：astrbot
+    密码：（默认口令，请首次登录后立即修改）
     ```
 
     然后会弹出 AstrBot 仪表盘提示更改用户名和密码，修改后重新登录。

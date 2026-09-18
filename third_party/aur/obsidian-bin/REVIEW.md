@@ -1,5 +1,8 @@
 # Review: obsidian-bin
 
+> **2026-09-19 复核**：本文顶部的 AUR commit / 版本号为首次审查时的快照，可能落后于当前 pin；
+> 权威值以同目录 `AUR_COMMIT`、`PKGBUILD` 与文末 Update 段为准。
+
 ## Status
 
 - Decision: **reviewed from the current `obsidian` AUR pkgbase at the observed 1.12.7 version**.
@@ -43,7 +46,7 @@
 
 - Package base: `obsidian`.
 - Package: `obsidian-bin 1.13.7-1 (x86_64)`.
-- Default artifact: `obsidian-bin-1.12.7-1-x86_64.pkg.tar.zst`.
+- Default artifact: `obsidian-bin-1.13.7-1-x86_64.pkg.tar.zst`.
 - Expected launcher: `/usr/bin/obsidian` as a regular wrapper file, not a direct symlink.
 - Conditional package-hook artifact: `/etc/apparmor.d/obsidian` only on compatible AppArmor systems.
 

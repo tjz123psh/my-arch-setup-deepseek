@@ -37,7 +37,7 @@ tar -xzf "$USB/aur-sources-physical.tar.gz" -C ~/my-arch-setup-deepseek/
 ls -d ~/my-arch-setup-deepseek/.aur-sources
 
 # ⑤ 联网（仅国内镜像即可）+ 安装
-curl -m 5 -s -o /dev/null -w "%{http_code}\n" https://mirrors.aliyun.com   # 期望 200
+curl -m 5 -s -o /dev/null -w "%{http_code}\n" https://mirrors.aliyun.com   # 期望 200 或 3xx（301 是正常跳转，有响应即说明已联网）
 cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机用 -t vm
 ```
 
@@ -49,13 +49,17 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 
 ## 注意事项
 
-- **archinstall 基础安装时内核需 `linux-zen` 与 `linux` 并存**（默认只装 `linux`，03 硬性前置要求；可装完补 `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`）
+- **基础安装前置（03 步逐条 `pacman -Q` 硬校验，缺一即中止）**：
+  `base bash btrfs-progs coreutils gawk grub linux linux-zen mkinitcpio networkmanager sed sudo`。
+  其中 `linux-zen` 最容易漏（archinstall 默认只装 `linux`），补装：
+  `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`；非 btrfs 根或不用 GRUB 的基线
+  也会分别因缺 `btrfs-progs`/`grub` 被拦下。
 - **打包结构**：仓库 tar 必须带顶层目录（`my-arch-setup-deepseek/`）；缓存 tar 顶层必须是
   `.aur-sources/`。否则解压散文件、离线模式不触发（06 会走在线 paru）
 - **磁盘空间（重要）**：离线 AUR 阶段要解包全部源码、构建 10+ 个包、再一次性安装
   （chrome/QQ/微信/Obsidian 解包后合计 ~2.5G），需要 `.aur-sources` 体积 + **~3G** 余量。
   预检就是按这个公式算的（`06-aur` 开工前打印，2026-09-18 实测数字）：
-  **物理缓存 1.7G → 要求 `~4783MB`**（1700 + 3072）、**vm 缓存 964M → 要求 `~4036MB`**；
+  **物理缓存 1.7G → 要求 `~4783MB`**（公式 = cache_mb + 3072，cache_mb 取 `du -sm .aur-sources`；2026-09-18 实测 1711 → 4783）、**vm 缓存 964M → 要求 `~4036MB`**（964 + 3072）；
   不足则 fail-closed 并给出三条清理命令。伪物理机轮实测：装完 04 驱动后只剩 4126MB 被拦下，
   释放到 5059MB 才放行——**物理机请在公式之上再留余量，驱动安装本身就要 1G 上下**；
   19G 这种小盘还要盯"缓存 + 构建产物 + 已装桌面"的峰值（实测安装阶段最低仅剩 2.7G）。
@@ -174,6 +178,6 @@ greetd 下载问题不再复现。
   `EXIT=0`。
 - **vm（vm 缓存 964M）**：`mode=offline targets=12`，12/12 离线构建安装，`EXIT=0`。
 - 离线 pin 命中（dbx-bin 0.6.4-1、obsidian-bin 1.13.7-1、google-chrome 153.0.8010.47-1、
-  greetd-dms-greeter-git 1:1.6.2.r0.g0175be5-1 等），两轮 07 均部署 289 个文件。
+  greetd-dms-greeter-git 1:1.6.2.r0.g0175be5-1 等）；07 部署：物理轮 `deployed=289`，vm 轮 `deployed=288 skipped=1`（唯一的 asus-hardware 行 rog-control-center.cfg 被 module 门控跳过）。
 - 限制：这两轮都是"已装系统的修复式重跑"（真实构建 + 安装，离线路径全覆盖）；
   **同一 TEST_ID 的干净 base 四轮验收（VM-R1/R2 + PHY-R1/R2）仍待另行执行**。

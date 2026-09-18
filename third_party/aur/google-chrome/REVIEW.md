@@ -1,5 +1,8 @@
 # Review: google-chrome
 
+> **2026-09-19 复核**：本文顶部的 AUR commit / 版本号为首次审查时的快照，可能落后于当前 pin；
+> 权威值以同目录 `AUR_COMMIT`、`PKGBUILD` 与文末 Update 段为准。
+
 ## Status
 
 - Decision: **reviewed and pinned** for x86_64; fixed recipe upgrades the observed workstation version.
