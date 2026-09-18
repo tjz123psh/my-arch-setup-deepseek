@@ -176,6 +176,29 @@ if grep -q '^ensure_go_proxy()' "$root/scripts/06-aur.sh" \
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur GOPROXY preflight missing (Go AUR builds can hang)"
 fi
+# 06-aur online mode: forge-host preflight (2026-09-18). In a CN network the
+# AUR stage fails only AFTER per-source curl connect timeouts (VM: "Failed to
+# connect to github.com:443 after 133952 ms"), wasting ~20 minutes. The online
+# branch must warn up front with the two real remedies (offline cache / proxy).
+if grep -q '^ensure_online_sources()' "$root/scripts/06-aur.sh" \
+   && grep -q '^  ensure_online_sources$' "$root/scripts/06-aur.sh" \
+   && grep -q 'codeberg.org' "$root/scripts/06-aur.sh" \
+   && grep -q 'online mode needs GitHub/Codeberg' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur online mode warns when forge hosts are unreachable"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur online forge-host preflight missing (slow timeouts)"
+fi
+# 08-services non-root path: a plain SSH shell has no XDG_RUNTIME_DIR / session
+# bus, so `systemctl --user` failed with "Failed to connect to user scope bus"
+# and the step aborted at the dms.service enable (VM test 2026-09-18). The
+# non-root branch must derive both from the running user manager, and fail
+# closed with an actionable message when there is none.
+if grep -q 'DBUS_SESSION_BUS_ADDRESS="unix:path=' "$root/scripts/08-services.sh" \
+   && grep -q 'no reachable user systemd manager' "$root/scripts/08-services.sh"; then
+  pass=$((pass + 1)); echo "  ok   08-services derives session env for non-root/SSH runs"
+else
+  fail=$((fail + 1)); echo "  FAIL 08-services non-root session-env bootstrap missing"
+fi
 # 06-aur observability: mode banner + persistent log must exist so a fast-
 # scrolling install can be verified afterwards (user audit 2026-08-11: mode
 # was unverifiable by eye - banner too fast, output too dense).

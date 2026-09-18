@@ -37,6 +37,28 @@ as_user() {
     # 2026-08-10 swarm audit).
     runuser -u "${TARGET_USER}" -- env XDG_RUNTIME_DIR="/run/user/${uid}" XDG_CONFIG_HOME="${TARGET_HOME}/.config" "$@"
   else
+    # Non-root runs (./install.sh as the target user) normally come from a live
+    # session, where XDG_RUNTIME_DIR is already set. A plain remote shell (SSH)
+    # has neither XDG_RUNTIME_DIR nor DBUS_SESSION_BUS_ADDRESS, so every
+    # `systemctl --user` call there failed with "Failed to connect to user
+    # scope bus via local transport" and 08-services aborted at the dms.service
+    # enable (VM test 2026-09-18, exit 1 with the desktop shell left disabled).
+    # Derive both from the RUNNING user manager when it exists; if there is no
+    # user manager at all, fail closed with an actionable message instead of a
+    # confusing bus error.
+    local ruid
+    ruid="$(id -u)"
+    if [[ -z "${XDG_RUNTIME_DIR:-}" && -d "/run/user/${ruid}" ]]; then
+      export XDG_RUNTIME_DIR="/run/user/${ruid}"
+    fi
+    if [[ -z "${DBUS_SESSION_BUS_ADDRESS:-}" && -S "${XDG_RUNTIME_DIR:-/nonexistent}/bus" ]]; then
+      export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+    fi
+    if ! systemctl --user show-environment >/dev/null 2>&1; then
+      error "no reachable user systemd manager for $(id -un) (XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-unset})"
+      error "run the installer from the target machine's own session, or as root via strap.sh; a plain SSH shell has no user bus"
+      exit 1
+    fi
     "$@"
   fi
 }

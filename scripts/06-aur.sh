@@ -418,11 +418,38 @@ ensure_go_proxy() {
   return 0
 }
 
+
+ensure_online_sources() {
+  # Online mode pulls AUR recipes whose sources live on GitHub / Codeberg. On a
+  # CN network without overseas access those fetches do not fail fast: curl's
+  # connect timeout elapses per source (VM test 2026-09-18:
+  # "Failed to connect to github.com:443 after 133952 ms"), so the AUR stage
+  # burns ~20 minutes before paru reports a download failure. Warn once, up
+  # front, with the two real remedies (offline cache / proxy).
+  local u code bad=0
+  for u in "https://github.com" "https://codeberg.org"; do
+    code="$(probe_http_code "$u")"
+    case "$code" in
+      200|301|302) ;;
+      *) warn "online-mode source host unreachable: $u (http ${code:-timeout})"; bad=$((bad + 1)) ;;
+    esac
+  done
+  if (( bad > 0 )); then
+    warn "online mode needs GitHub/Codeberg for AUR sources; the AUR stage will fail or stall."
+    warn "use the offline cache instead (~/Downloads/aur-sources-*.tar.gz -> .aur-sources/) or set a proxy:"
+    warn "  export https_proxy=<url>  (and 'git config --global http.proxy <url>' for git sources)"
+  else
+    log "online-mode source hosts reachable (github.com, codeberg.org)"
+  fi
+  return 0
+}
 # ---- online mode: git clone install with network; paru pulls latest AUR ----
 online_mode() {
   log "Online mode: no .aur-sources cache; installing LATEST AUR packages via paru"
-  # Go-based builds must not hang on an unreachable default module proxy.
+  # Fail fast with actionable hints instead of burning curl timeouts: the Go
+  # module proxy for Go-built recipes, and the forge hosts for AUR sources.
   ensure_go_proxy
+  ensure_online_sources
   # Bootstrap paru: archlinuxcn pacman package first (03 already configured
   # the repo); fall back to building the pinned recipe with makepkg.
   if ! command -v paru >/dev/null 2>&1; then
