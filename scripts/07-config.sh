@@ -78,7 +78,7 @@ deploy_one() {
 
   mkdir -p "$(dirname "${target}")"
   cp -a "${local_src}" "${target}"
-  chmod "${mode}" "${target}" 2>/dev/null || true
+  chmod "${mode}" "${target}" 2>/dev/null || warn "could not chmod ${mode} ${target} (continuing)"
   # when running as root, keep the file AND the path to it owned by the
   # target user. Chowning only the file leaves the intermediate dirs
   # root-owned, so later user-run steps cannot write: niri-vmtest-gen's

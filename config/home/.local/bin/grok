@@ -7,4 +7,8 @@ if ss -tln 2>/dev/null | grep -q ':7890 '; then
     export HTTP_PROXY=http://127.0.0.1:7890
     export ALL_PROXY=socks5://127.0.0.1:7890
 fi
-exec "${HOME:-/home/pang}/.grok/bin/grok" "$@"
+# 2026-09-18：改为调用 grok-build-git 提供的系统二进制。此前 exec 的是手工下载的
+# ~/.grok/bin/grok，而 ~/.grok 既不在 payload 也不在任何清单里；fish 又把 ~/.local/bin
+# 排在 /usr/bin 之前 → 干净恢复后 `grok` 会被本包装器遮蔽并直接失败
+# （"恢复了 grok 配置，grok 反而不可用"）。代理注入逻辑保持不变。
+exec /usr/bin/grok "$@"

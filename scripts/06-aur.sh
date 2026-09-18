@@ -89,7 +89,11 @@ install_recipe() {
   # fresh strap.sh VM install; the non-root ./install.sh path was unaffected
   # because there the build dir is already owned by the invoking user).
   if [[ "$(id -u)" -eq 0 ]]; then
-    chown -R "${TARGET_USER}:${TARGET_USER}" "${work}"
+    # 2026-09-18：主组名不必等于用户名（手工 useradd 或 group=users 的机器上，原来的
+    # "${TARGET_USER}:${TARGET_USER}" 会让 chown 失败并在 set -e 下直接中止 06 步骤）。
+    local tgroup
+    tgroup="$(id -gn "${TARGET_USER}" 2>/dev/null || printf '%s' "${TARGET_USER}")"
+    chown -R "${TARGET_USER}:${tgroup}" "${work}"
   fi
 
   # PKGBUILDs carry real download URLs, so makepkg fetches them normally.
@@ -105,15 +109,17 @@ install_recipe() {
   else
     ( cd "${work}" && makepkg -s --noconfirm --holdver ) || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
   fi
-  # collect the built artifact; a single sudo installs everything at the end
-  local pkg
-  pkg="$(find "${work}" -maxdepth 1 -name '*.pkg.tar.*' | head -1)"
-  if [[ -z "${pkg}" ]]; then
+  # collect the built artifact(s); a single sudo installs everything at the end.
+  # 2026-09-18：改用 mapfile 收集，避免 `find | head -1` 在 pipefail 下的 SIGPIPE(141)
+  # 与"多产物只搬第一个、其余随 work 一起被删"的隐患（makepkg 打开 debug 时会产出多个）。
+  local -a built=()
+  mapfile -t built < <(find "${work}" -maxdepth 1 -name '*.pkg.tar.*' -print | sort)
+  if (( ${#built[@]} == 0 )); then
     mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"
     warn "No package artifact produced: ${recipe}"
     return 1
   fi
-  mv "${pkg}" "${BUILD_BASE}/"
+  mv "${built[@]}" "${BUILD_BASE}/"
   rm -rf "${work}"
   log "Built: ${recipe}"
 }

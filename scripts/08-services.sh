@@ -196,7 +196,7 @@ as_user systemctl --user daemon-reload || warn "user daemon-reload failed"
 # stale_hypr_cleanup (00-utils): lstat-every-component path safety, only
 # exact-content project files removed (backup first), Round-2 watcher set
 # detected+warned only (content never committed, no guessing).
-stale_hypr_cleanup
+stale_hypr_cleanup || warn "stale cleanup incomplete; continuing (see messages above)"
 as_user systemctl --user daemon-reload || warn "user daemon-reload failed after stale cleanup"
 for stale_unit in hyprland.service hyprland-shutdown.target hyprland-session.target hyprland-session.service; do
   # LoadState with the REAL query rc (R4.3 item 3): only query_rc=0 AND
@@ -283,7 +283,7 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
   for u in "${TARGET_HOME}/.config/systemd/user/"*.service; do
     [[ -e "${u}" ]] || continue
     unit="$(basename "${u}")"
-    as_user systemctl --user enable "${unit}" 2>/dev/null && log "User service: ${unit}"
+    if as_user systemctl --user enable "${unit}" 2>/dev/null; then log "User service: ${unit}"; else warn "could not enable user service: ${unit}"; fi
   done
 
   # greetd login manager. `--command niri` selects ONLY the compositor that
@@ -439,7 +439,7 @@ done
 # auto-created (matches host: snapper-timeline.timer enabled).
 for t in paccache.timer snapper-cleanup.timer snapper-timeline.timer; do
   if systemctl list-unit-files "${t}" >/dev/null 2>&1; then
-    run systemctl enable --now "${t}" && log "Timer: ${t}"
+    if run systemctl enable --now "${t}"; then log "Timer: ${t}"; else warn "could not enable ${t}"; fi
   fi
 done
 # btrfs scrub monthly timer (matches host: btrfs-scrub@-.timer enabled).
@@ -450,7 +450,7 @@ done
 if command -v btrfs >/dev/null 2>&1 \
   && [[ "$(findmnt -no FSTYPE / 2>/dev/null)" == "btrfs" ]] \
   && systemctl list-unit-files 'btrfs-scrub@.timer' >/dev/null 2>&1; then
-  run systemctl enable --now 'btrfs-scrub@-.timer' && log "Timer: btrfs-scrub@-.timer"
+  if run systemctl enable --now 'btrfs-scrub@-.timer'; then log "Timer: btrfs-scrub@-.timer"; else warn "could not enable btrfs-scrub@-.timer"; fi
 fi
 # --- VMware role services (KVM removed from the restore payload 2026-08-08) ---
 # physical / VMware host: vmware-networks + vmware-usbarbitrator (matches the
@@ -466,7 +466,7 @@ if [[ "${MACHINE_TYPE}" == "physical" ]]; then
   else
     for s in vmware-networks.service vmware-usbarbitrator.service; do
       if [[ -f "/usr/lib/systemd/system/${s}" ]]; then
-        run systemctl enable --now "${s}" && log "Service: ${s}"
+        if run systemctl enable --now "${s}"; then log "Service: ${s}"; else warn "could not enable ${s}"; fi
       else
         warn "VMware host service unit missing: ${s} (is vmware-workstation installed?)"
       fi
@@ -511,7 +511,7 @@ elif [[ "${MACHINE_TYPE}" == "vm" ]]; then
     exit 1
   fi
   if [[ -f /usr/lib/systemd/system/vmware-vmblock-fuse.service ]]; then
-    run systemctl enable --now vmware-vmblock-fuse.service && log "Service: vmware-vmblock-fuse.service"
+    if run systemctl enable --now vmware-vmblock-fuse.service; then log "Service: vmware-vmblock-fuse.service"; else warn "could not enable vmware-vmblock-fuse.service"; fi
   fi
 fi
 
@@ -528,7 +528,7 @@ for g in "${REQUIRED_GROUPS[@]}"; do
     run groupadd "${g}" 2>/dev/null || true
   fi
   if ! id -nG "${TARGET_USER}" 2>/dev/null | grep -qw "${g}"; then
-    run usermod -a -G "${g}" "${TARGET_USER}" && log "Added ${TARGET_USER} to group ${g}"
+    if run usermod -a -G "${g}" "${TARGET_USER}"; then log "Added ${TARGET_USER} to group ${g}"; else warn "could not add ${TARGET_USER} to group ${g} (DMS/docker 权限可能受影响)"; fi
   fi
 done
 

@@ -64,6 +64,7 @@ parse_args() {
   while (( $# > 0 )); do
     case "$1" in
       -d|--desktop)
+        [[ $# -ge 2 ]] || die "missing value for $1 (niri|both|none)"
         case "$2" in
           niri|both|none) DESKTOP_ENV="$2" ;;
           hyprland) die "invalid --desktop value: hyprland (no longer supported; use 'both' and pick Hyprland from the greetd session menu)" ;;
@@ -71,12 +72,14 @@ parse_args() {
         esac
         shift 2 ;;
       -t|--machine)
+        [[ $# -ge 2 ]] || die "missing value for $1 (vm|physical)"
         case "$2" in
           vm|physical) MACHINE_TYPE="$2" ;;
           *) die "invalid --machine value: $2 (vm|physical)" ;;
         esac
         shift 2 ;;
       --test-profile)
+        [[ $# -ge 2 ]] || die "missing value for $1 (physical-sim-vmware)"
         case "$2" in
           physical-sim-vmware)
             TEST_PROFILE="$2"
@@ -205,6 +208,12 @@ main() {
       die "--test-profile physical-sim-vmware requires systemd-detect-virt == vmware (detected: $(systemd-detect-virt 2>/dev/null || echo unknown))"
     fi
     log "physical-sim-vmware preflight: systemd-detect-virt=vmware confirmed"
+  fi
+  # 2026-09-18：payload 里约 29 个配置硬编码 /home/pang（niri 键位/spawn、fish PATH、
+  # systemd user 服务、桌面 Exec 等），安装器不做路径重写。换用户名不会失败，但会得到
+  # 半可用的桌面 —— 显式告警，避免排障到最后才发现。
+  if [[ "${TARGET_USER}" != "pang" ]]; then
+    warn "TARGET_USER=${TARGET_USER} != 'pang'（payload 假设的用户名）：~/.config 下多处硬编码 /home/pang 的配置会失效，详见 README「手工准备项」"
   fi
   ensure_fzf_ui
   select_machine

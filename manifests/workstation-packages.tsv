@@ -163,7 +163,7 @@ shellcheck	pacman	extra	pacman	development-toolchain	package-only	install	curren
 slurp	pacman	extra	pacman	recording	package-only	install	current-explicit	Select a region in a Wayland compositor
 smartmontools	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	Control and monitor S.M.A.R.T. enabled ATA and SCSI Hard Drives
 snapper	pacman	extra	pacman	storage-maintenance	package-only	install	current-explicit	A tool for managing BTRFS and LVM snapshots
-socat	pacman	extra	pacman	wm-hyprland	package-only	install	current-explicit	Multipurpose relay
+socat	pacman	extra	pacman	daily-apps	package-only	install	current-explicit	Multipurpose relay (linuxqq-nt-bwrap MAC fix; also fine on pure niri)
 sof-firmware	pacman	extra	pacman	audio	package-only	install	current-explicit	Sound Open Firmware
 sound-theme-freedesktop	pacman	extra	pacman	desktop-shared	package-only	install	current-explicit	Freedesktop sound theme
 spice-vdagent	pacman	extra	pacman	virtualization	deferred	deferred	current-explicit	SPICE VD agent for Linux guests [KVM legacy: no longer restored since 2026-08-08 KVM->VMware migration]

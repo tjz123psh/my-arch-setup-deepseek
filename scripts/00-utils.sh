@@ -44,7 +44,9 @@ progress_context() {
   local commit="dirty"
   if command -v git >/dev/null 2>&1 && git -C "${PROJECT_DIR}" rev-parse HEAD >/dev/null 2>&1; then
     commit="$(git -C "${PROJECT_DIR}" rev-parse --short HEAD 2>/dev/null || echo dirty)"
-    if [[ -n "$(git -C "${PROJECT_DIR}" diff --stat 2>/dev/null | tail -1)" ]]; then
+    # 2026-09-18：改用 diff HEAD，把已 git add 未 commit 的改动也算进 +dirty
+    # （此前 `git diff --stat` 只看未暂存改动，暂存后会被当成"干净"上下文）。
+    if [[ -n "$(git -C "${PROJECT_DIR}" diff HEAD --stat 2>/dev/null | tail -1)" ]]; then
       commit="${commit}+dirty"
     fi
   fi

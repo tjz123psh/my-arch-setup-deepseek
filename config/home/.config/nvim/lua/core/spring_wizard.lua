@@ -877,7 +877,12 @@ local function flow()
     return vim.system(argv, { cwd = parent, text = true }):wait()
   end)
   if not oksys then
-    vim.notify("执行失败：找不到 spring 命令（应在 ~/.local/bin/spring）", vim.log.levels.ERROR)
+    vim.notify(
+      "执行失败：找不到 spring 命令。本仓库不分发 spring CLI："
+        .. "需手工解到 ~/.local/share/spring/<版本>/ 并在 ~/.local/bin/spring 建包装器"
+        .. "（见仓库 README「手工准备项」）",
+      vim.log.levels.ERROR
+    )
     return
   end
   if res.code ~= 0 then

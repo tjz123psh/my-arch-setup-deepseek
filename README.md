@@ -52,6 +52,17 @@ cd ~/my-arch-setup-deepseek && ./install.sh
 进桌面检查无误后，运行 `./cleanup-after-install.sh` 清理安装残留（pacman/cargo/go
 构建缓存、离线源缓存，可释放数 GB）；脚本会先列出清单并确认，删除后不可恢复。
 
+## 手工准备项（不在自动恢复范围内）
+
+- **目标用户名为 `pang`**：`config/` 里有多处配置硬编码 `/home/pang`（niri 键位与
+  `spawn-at-startup`、截图脚本、fish 的 `fish_add_path`、三个 systemd user 服务、
+  `ai.vellum.desktop`、fuzzel 的 `include=`、gtk bookmarks 等，约 29 个文件），安装器
+  **不会**重写这些路径。换用户名安装不会报错，但会得到半可用的桌面；确需换名时装完自行
+  `grep -rl /home/pang ~/.config ~/.local/share/applications` 逐一修正。
+- **`spring` CLI**（只有 nvim 的 Spring Boot 向导调用）：仓库不分发。需要时把发行包解到
+  `~/.local/share/spring/<版本>/`，再建包装器 `~/.local/bin/spring`（`#!/bin/sh` +
+  `exec "$HOME/.local/share/spring/<版本>/bin/spring" "$@"`）。
+
 ## 其他
 
 - 增改包/配置/脚本：走 `manifests/` 清单 + `./check-extend.sh` 门禁，

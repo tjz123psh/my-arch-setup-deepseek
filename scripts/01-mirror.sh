@@ -85,9 +85,16 @@ else
 fi
 
 # enable multilib (needed for lib32 packages)
-if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
+# 2026-09-18：加回验。此前 sed 在自定义/精简 pacman.conf 上可能静默无操作，随后
+# lib32-* 与 multilib 包会以误导性的 "target not found" 失败（06-aur 的同类 sed 早有回验）。
+if ! pacman-conf --repo-list 2>/dev/null | grep -qx 'multilib'; then
   log "Enabling multilib repository..."
-  run bash -c 'sed -i "/^#\[multilib\]/,/^#Include/s/^#//" /etc/pacman.conf'
+  run bash -c 'sed -i "/^#\[multilib\]/,/^#Include/s/^#//" /etc/pacman.conf' || true
+  if command -v pacman-conf >/dev/null 2>&1 \
+     && ! pacman-conf --repo-list 2>/dev/null | grep -qx 'multilib'; then
+    error "multilib 仓库仍未启用（pacman.conf 里没有可启用的 [multilib] 块）；lib32-* 包会以 'target not found' 失败，请手工启用后重跑"
+    exit 1
+  fi
 fi
 
 # Downloader policy (download-mode-lab FINAL.md, D-01; merged step 1,
