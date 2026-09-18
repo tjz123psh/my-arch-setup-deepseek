@@ -199,6 +199,15 @@ if grep -q 'DBUS_SESSION_BUS_ADDRESS="unix:path=' "$root/scripts/08-services.sh"
 else
   fail=$((fail + 1)); echo "  FAIL 08-services non-root session-env bootstrap missing"
 fi
+# 06-aur offline builds must hold pinned VCS versions: every reviewed recipe
+# pins its sources by commit, and "makepkg updates the git checkout" is network
+# traffic that the offline path must not do (VM offline round 2026-09-18 saw
+# "failed to update dank-greeter git repo" warnings plus the connect timeout).
+if grep -q 'makepkg -s --noconfirm --holdver' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur builds pinned recipes with --holdver (no VCS updates)"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur missing --holdver (offline builds try to update VCS sources)"
+fi
 # 06-aur observability: mode banner + persistent log must exist so a fast-
 # scrolling install can be verified afterwards (user audit 2026-08-11: mode
 # was unverifiable by eye - banner too fast, output too dense).

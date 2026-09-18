@@ -60,3 +60,15 @@
   1.13.7-2 (modified 2026-09-06); no 1.13.7 recipe content is retrievable via cgit, git or snapshot.
   This recipe therefore tracks the official upstream release directly and AUR_COMMIT records the AUR HEAD
   that was actually inspected.
+
+## Fix 2026-09-18: desktop-entry filename is not stable (offline VM round failure)
+
+- Symptom (offline round, VM 2026-09-18): `sed: cannot read .../pkg/obsidian-bin/usr/share/applications/obsidian.desktop:
+  No such file or directory` -> `error: an error occurred in package()` -> recipe skipped, 06-aur ended with
+  "1 AUR package(s) failed to build" (10/11 built from the cache).
+- Cause: `package()` patched one hardcoded filename, but upstream renamed the entry:
+  1.12.7 shipped `usr/share/applications/obsidian.desktop`, 1.13.7 ships
+  `md.obsidian.Obsidian.desktop` (Exec `/opt/Obsidian/obsidian %U` -> rewritten to `obsidian`).
+- Fix: patch EVERY `usr/share/applications/*.desktop` the Debian payload provides and fail closed when
+  the payload ships none. Verified: `bash -n PKGBUILD` + `makepkg --printsrcinfo` OK.
+

@@ -31,7 +31,21 @@ package() {
     return 1
   fi
   bsdtar -xf "${data_archives[0]}" -C "${pkgdir}/"
-  sed -i 's|/opt/Obsidian/obsidian|obsidian|' "${pkgdir}/usr/share/applications/obsidian.desktop"
+  # The desktop-entry FILENAME is not stable across releases: 1.12.7 shipped
+  # usr/share/applications/obsidian.desktop, 1.13.7 ships
+  # md.obsidian.Obsidian.desktop. The offline VM round (2026-09-18) failed
+  # here with "sed: ... obsidian.desktop: No such file or directory" and the
+  # recipe was skipped. Patch every entry the payload provides instead of one
+  # hardcoded name, and fail closed when the payload has none at all.
+  local desktop found=0
+  while IFS= read -r desktop; do
+    sed -i 's|/opt/Obsidian/obsidian|obsidian|' "${desktop}"
+    found=1
+  done < <(find "${pkgdir}/usr/share/applications" -maxdepth 1 -name '*.desktop' -print 2>/dev/null)
+  if (( found == 0 )); then
+    error 'no .desktop entry found in the Debian payload (expected usr/share/applications/*.desktop)'
+    return 1
+  fi
   install -Dm755 "${srcdir}/obsidian-bin" "${pkgdir}/usr/bin/obsidian"
   install -Dm644 "${pkgdir}/opt/Obsidian/LICENSE.electron.txt" \
     "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE.electron.txt"

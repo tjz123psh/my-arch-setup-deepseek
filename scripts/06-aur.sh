@@ -93,12 +93,17 @@ install_recipe() {
   fi
 
   # PKGBUILDs carry real download URLs, so makepkg fetches them normally.
+  # --holdver: every reviewed recipe pins its VCS sources by commit (review
+  # P1-11), so letting makepkg "update" a git checkout is pointless and is
+  # network traffic by definition - in the offline round it produced
+  # "failed to update dank-greeter git repo" warnings and wasted the curl
+  # connect timeout per VCS source (VM 2026-09-18). Pinned recipes only.
   local build_cmd
-  build_cmd="cd '${work}' && makepkg -s --noconfirm"
+  build_cmd="cd '${work}' && makepkg -s --noconfirm --holdver"
   if [[ "$(id -u)" -eq 0 ]]; then
     runuser -u "${TARGET_USER}" -- bash -c "${build_cmd}" || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
   else
-    ( cd "${work}" && makepkg -s --noconfirm ) || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
+    ( cd "${work}" && makepkg -s --noconfirm --holdver ) || { mv "${work}" "${BUILD_BASE}/failed-${recipe}-$(date +%s)" 2>/dev/null || rm -rf "${work}"; return 1; }
   fi
   # collect the built artifact; a single sudo installs everything at the end
   local pkg
