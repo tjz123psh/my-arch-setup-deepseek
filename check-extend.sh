@@ -11,7 +11,7 @@
 #   ./check-extend.sh --skip=behavior        # 跳过指定节
 #
 # 参数错误一律 exit 2（未知选项 / 未知节名 / --only 为空 / --only 与 --skip 同给）；
-# 实际执行的节数为 0 时同样 exit 2。这两条是 2026-09-19 修掉的“零检查报绿”假绿路径
+# 实际执行的节数为 0 时同样 exit 2。这两条是 2026-09-18 修掉的“零检查报绿”假绿路径
 # （此前 ./check-extend.sh --ful 或 --only=<拼错的节名> 都会以 0 退出、一节不跑）。
 #
 # 节：
@@ -196,7 +196,7 @@ refs() {
 secret() {
   local rc=0 pat weak
   pat='BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY|ghp_[A-Za-z0-9]{35,}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9]{20,}|xox[baprs]-[A-Za-z0-9-]{10,}'
-  # 2026-09-19 补：明文口令弱模式。此前只有高置信 token/私钥形态，抓不到
+  # 2026-09-18 补：明文口令弱模式。此前只有高置信 token/私钥形态，抓不到
   # "root passwd: xxxxxx" / "密码：xxxxxxx" 这类写法，导致公开仓库的 md 笔记里
   # 长期存在明文口令而门禁全绿。取 4+ 位 ASCII 值以避免误伤中文说明
   # （"密码：见 private-env.fish" 不会命中）。
