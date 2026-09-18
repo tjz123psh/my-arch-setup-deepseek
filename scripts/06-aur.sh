@@ -191,6 +191,33 @@ aur_log() { # aur_log <line>  追加一行到模式日志
 }
 
 # ---- offline mode: pinned recipes built with makepkg from the source cache ----
+
+# --- free-space preflight for the AUR stage -----------------------------
+# The AUR stage unpacks every source, builds 10+ packages and then installs
+# them in ONE transaction. On a small root (19G VM, 2026-09-18: full desktop +
+# 3.4G pacman cache + a btrfs/snapper snapshot) this ran out of space DURING
+# the install and surfaced as a confusing
+#   error: could not extract /usr/bin/opencode (Write failed)
+#   error: failed to commit transaction (transaction aborted)
+# after ~10 minutes of perfectly good offline builds. Fail fast, with real
+# numbers and concrete remedies, instead of leaving the operator guessing.
+check_aur_free_space() { # check_aur_free_space <needed_mb> <label> ; 0 ok, 1 too low
+  local need="$1" label="$2" avail
+  avail="$(df -Pm "${PROJECT_DIR}" 2>/dev/null | awk 'NR==2 {print $4}')"
+  if [[ -z "${avail}" ]]; then
+    warn "could not determine free space for ${PROJECT_DIR}; skipping the space preflight"
+    return 0
+  fi
+  if (( avail < need )); then
+    error "not enough free space for the ${label} AUR stage: ${avail}MB available, ~${need}MB needed (${PROJECT_DIR})"
+    error "free space first: sudo pacman -Sc   (or: sudo rm -rf /var/cache/pacman/pkg/*)"
+    error "also drop the extracted aur-sources-*.tar.gz and old snapper snapshots (sudo snapper list; sudo snapper delete <n>)"
+    return 1
+  fi
+  log "free space OK for the ${label} AUR stage: ${avail}MB available (need ~${need}MB)"
+  return 0
+}
+
 offline_mode() {
   # Optional offline AUR source cache: if sources were pre-placed in
   # .aur-sources/ (makepkg SRCDEST layout - git bare mirrors + downloaded
@@ -198,6 +225,13 @@ offline_mode() {
   # physical machine with no overseas access still builds every AUR recipe.
   if has_aur_sources; then
     log "Using local AUR source cache: ${PROJECT_DIR}/.aur-sources (offline mode)"
+    # Unpacked sources + build dirs + the final install transaction (the big
+    # AUR payloads unpack to ~2.5G) need roughly the cache size again plus
+    # headroom; the check above exists because a full disk aborts the bulk
+    # install with a misleading "Write failed".
+    local cache_mb
+    cache_mb="$(du -sm "${PROJECT_DIR}/.aur-sources" 2>/dev/null | awk '{print $1}')"
+    check_aur_free_space "$(( ${cache_mb:-1024} + 3072 ))" "offline" || exit 1
     export SRCDEST="${PROJECT_DIR}/.aur-sources"
     # Build-dependency caches for the Go (greetd-dms-greeter) and Rust (paru)
     # recipes. Offline mode FAILS CLOSED when a required cache is missing:
@@ -455,6 +489,8 @@ online_mode() {
   # module proxy for Go-built recipes, and the forge hosts for AUR sources.
   ensure_go_proxy
   ensure_online_sources
+  # paru clones every recipe, builds and installs in one transaction.
+  check_aur_free_space 3072 "online" || exit 1
   # Bootstrap paru: archlinuxcn pacman package first (03 already configured
   # the repo); fall back to building the pinned recipe with makepkg.
   if ! command -v paru >/dev/null 2>&1; then

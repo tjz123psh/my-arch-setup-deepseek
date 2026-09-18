@@ -208,6 +208,17 @@ if grep -q 'makepkg -s --noconfirm --holdver' "$root/scripts/06-aur.sh"; then
 else
   fail=$((fail + 1)); echo "  FAIL 06-aur missing --holdver (offline builds try to update VCS sources)"
 fi
+# 06-aur must preflight free space before the AUR stage: a full disk aborts the
+# bulk install with a misleading "could not extract ... (Write failed)"
+# (VM offline round 2026-09-18 needed cache-size + ~3G).
+if grep -q '^check_aur_free_space()' "$root/scripts/06-aur.sh" \
+   && grep -q 'not enough free space for the' "$root/scripts/06-aur.sh" \
+   && grep -q 'check_aur_free_space 3072 "online"' "$root/scripts/06-aur.sh" \
+   && grep -q 'check_aur_free_space "\$(( \${cache_mb:-1024} + 3072 ))" "offline"' "$root/scripts/06-aur.sh"; then
+  pass=$((pass + 1)); echo "  ok   06-aur preflights free space (offline cache-sized, online 3G)"
+else
+  fail=$((fail + 1)); echo "  FAIL 06-aur free-space preflight missing (ENOSPC aborts the bulk install)"
+fi
 # 06-aur observability: mode banner + persistent log must exist so a fast-
 # scrolling install can be verified afterwards (user audit 2026-08-11: mode
 # was unverifiable by eye - banner too fast, output too dense).

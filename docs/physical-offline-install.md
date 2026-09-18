@@ -52,6 +52,14 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
 - **archinstall 基础安装时内核需 `linux-zen` 与 `linux` 并存**（默认只装 `linux`，03 硬性前置要求；可装完补 `pacman -S linux-zen && grub-mkconfig -o /boot/grub/grub.cfg`）
 - **打包结构**：仓库 tar 必须带顶层目录（`my-arch-setup-deepseek/`）；缓存 tar 顶层必须是
   `.aur-sources/`。否则解压散文件、离线模式不触发（06 会走在线 paru）
+- **磁盘空间（重要）**：离线 AUR 阶段要解包全部源码、构建 10+ 个包、再一次性安装
+  （chrome/QQ/微信/Obsidian 解包后合计 ~2.5G），需要 `.aur-sources` 体积 + **~3G** 余量。
+  实测坑（2026-09-18，19G 根分区）：全桌面已装 + 3.4G pacman 缓存 + btrfs/snapper 快照时爆盘，
+  失败形式是**误导性的** `error: could not extract /usr/bin/opencode (Write failed)` +
+  `failed to commit transaction`。`06-aur` 现在开工前会预检空闲空间并给出清理命令；手动腾空间：
+  `sudo pacman -Sc`（或 `sudo rm -rf /var/cache/pacman/pkg/*`，注意 `/var/cache/pacman/pkg` 可能是
+  独立 btrfs 子卷）、删掉解压后的 `aur-sources-*.tar.gz`、`sudo snapper list` 后删掉旧快照。
+- **缓存 tar 解压后可删**（省 900M~1.6G），离线模式只认 `.aur-sources/` 目录
 - 全程一次 sudo 密码（安装器最小授权，装完自动恢复）
 - 某 AUR 构建失败自动重试一次；仍失败报错退出，网络恢复后重跑 `./install.sh` 续传
 - 旧系统 `flclash-bin` 由 03 显式迁移到 archlinuxcn/flclash
