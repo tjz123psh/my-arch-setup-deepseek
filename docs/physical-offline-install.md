@@ -224,4 +224,20 @@ greetd 下载问题不再复现。
 证据：`.ai/vm-logs-20260918/`（`install-clean-1/2`、`install-vm-A`、`install-vm-b23-r2`（修复前失败样本）、
 `install-phy`、`install-niri`、`install-none`）。
 
-**仍未覆盖**：在线模式轮（需要海外网络；以上全部为离线缓存轮）。
+### 2026-09-18 在线模式轮（同一 payload，经宿主代理）
+
+干净基线（`Snapshot 1`）上、经宿主 Clash 代理（guest 内反向 SSH 隧道 `-R 7890` +
+`https_proxy/http_proxy/all_proxy`）跑 `-d both -t vm`（**不带** `.aur-sources`）：
+`★ AUR MODE: ONLINE — paru latest from AUR ★`、`EXIT=0`、11 步、`deployed=288`。
+
+- paru `-S` 目标 **11 个** = 清单 12 个 AUR install 行 − 单独引导构建的 `paru`；
+  与离线轮同口径（离线 13 次构建 = paru + 1 个前置依赖 + 11 个目标）。
+- 版本走 AUR HEAD，与离线 pin 不同（`dbx-bin 0.6.16-1` vs pin `0.6.4-1`；
+  `obsidian-bin 1.13.7-2` vs pin `1.13.7-1`；`greetd-dms-greeter-git 1:1.6.2.r3.gc792f1e-1`
+  vs pin `…g0175be5`）—— 与「在线装最新 / 离线装 pin」的双模式语义一致。
+- 08-services 输出已记录的已知提示：在线模式下 `uwsm` 会被依赖带进来，因此
+  `hyprland-uwsm.desktop` 会出现在会话菜单、但不在受验证链里（按既有决定不修，仅记录；
+  greeter 中请选普通 `Hyprland` 入口）。
+
+证据：`.ai/vm-logs-20260918/install-online.log` 与 `online-summary.txt`。
+至此验证矩阵（vm 干净 / vm 续跑 / 修复式重跑 / PHY-sim 干净 / niri / none / 在线）全部 `EXIT=0`。
