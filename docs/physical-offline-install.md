@@ -181,3 +181,27 @@ greetd 下载问题不再复现。
   greetd-dms-greeter-git 1:1.6.2.r0.g0175be5-1 等）；07 部署：物理轮 `deployed=289`，vm 轮 `deployed=288 skipped=1`（唯一的 asus-hardware 行 rog-control-center.cfg 被 module 门控跳过）。
 - 限制：这两轮都是"已装系统的修复式重跑"（真实构建 + 安装，离线路径全覆盖）；
   **同一 TEST_ID 的干净 base 四轮验收（VM-R1/R2 + PHY-R1/R2）仍待另行执行**。
+### 2026-09-18 审计修复后复验（vm 干净基线 + 续跑；含 locale bug 修复）
+
+审计修复批次 0/1/4 + 2/3 + locale 修复后的复验（vm 缓存，`-d both -t vm`）：
+
+- **干净基线轮**（快照 `Snapshot 1`，201 包；会话 `LANG` 未设 → C 排序）：
+  `Base preconditions: 12/12 present`、`AUR MODE: OFFLINE`（12 个目标 + `snapd-xdg-open-git`
+  前置，全部 makepkg 离线构建）、`07 CONFIG_RESULT deployed=288 skipped=0`、
+  空间预检 `17258MB available (need ~4038MB)`、11 步全绿 **`EXIT=0`**。
+- **续跑轮**（同 payload；安装后 `09-settings` 已写入 locale，新会话为 `LANG=zh_CN.UTF-8`）：
+  11 个模块全部 `already done, skipping`、**`EXIT=0`**。
+- 另在已装系统上跑过一轮完整修复式重跑（`LC_ALL=C`）：`EXIT=0`、`deployed=288`。
+
+**本轮复验发现并修复的真问题**：续跑上下文哈希用了裸 `sort -z`，排序受 locale 影响
+（`config/` 有 61 个非 ASCII 文件名；`third_party` 路径也会因标点排序规则变序），于是
+“干净轮（C 排序）→ 装完后 locale 已设置（zh_CN.UTF-8）→ 续跑被误判上下文不匹配而拒绝”。
+实测：`LC_ALL=C` → `config=bf582008188f aur=77f2bc400d02`；`zh_CN.UTF-8` →
+`config=6f220fa8ab98 aur=6e7c56ed5277`。修复：三处 `sort` 前固定 `LC_ALL=C`
+（`fetch-aur-sources.sh` 早已如此）；修复后两轮哈希一致、续跑恢复正常。
+
+证据：`.ai/vm-logs-20260918/`（`install-clean-1.log` 干净轮、`install-clean-2.log` 续跑轮、
+`install-vm-A.log` 修复式重跑、`install-vm-b23-r2.log` 修复前的失败样本）。
+
+限制：本轮仍是 **vm** 单一机型 + `-d both`；修复后的 payload **尚未**再跑物理/伪物理轮
+（04-drivers 的 71 个驱动包与物理宿主分支未覆盖，但本批改动未触碰 04-drivers）。
