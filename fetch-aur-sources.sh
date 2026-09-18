@@ -160,7 +160,17 @@ fi
 
 echo
 echo "== Go module cache (greetd-dms-greeter) =="
+# Go module proxy: honour the machine's configured GOPROXY (go env), because
+# the built-in default proxy.golang.org is unreachable from CN networks
+# (2026-09-18: cache build failed with "dial tcp 142.250.197.81:443: i/o
+# timeout" - the same class of bug that hung the operator's VM online install).
+# The proxy used here only affects WHERE the cache is built; the target machine
+# still builds fully offline (GOPROXY=off + this cache). Override with
+# GO_PROXY=<url>,direct if needed.
 if command -v go >/dev/null 2>&1; then
+  GO_PROXY="${GO_PROXY:-$(go env GOPROXY 2>/dev/null || true)}"
+  [[ -z "${GO_PROXY}" || "${GO_PROXY}" == "off" ]] && GO_PROXY="https://proxy.golang.org,direct"
+  echo "go module proxy for this cache build: ${GO_PROXY}"
   # Check out the EXACT commit pinned in the recipe (not the mirror HEAD):
   # a HEAD/go.mod drift would make the cached module set useless for the
   # pinned build (found 2026-08-12). A .pin marker binds the cache to that
@@ -177,7 +187,7 @@ if command -v go >/dev/null 2>&1; then
     rm -rf /tmp/aur-dg-wc
     git clone -q --no-checkout "$DEST/dank-greeter" /tmp/aur-dg-wc 2>/dev/null
     git -C /tmp/aur-dg-wc checkout -q "${PIN}" 2>/dev/null
-    if ( cd /tmp/aur-dg-wc/core && GOMODCACHE="$DEST/go-mod" GOPROXY=https://proxy.golang.org go mod download ); then
+    if ( cd /tmp/aur-dg-wc/core && GOMODCACHE="$DEST/go-mod" GOPROXY="$GO_PROXY" go mod download ); then
       echo "$PIN" > "$DEST/go-mod/.pin"
       echo "OK    go-mod @ ${PIN:0:8} ($(du -sh "$DEST/go-mod" | cut -f1))"
     else
