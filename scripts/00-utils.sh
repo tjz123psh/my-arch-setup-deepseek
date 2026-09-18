@@ -58,15 +58,23 @@ progress_context() {
   # and the AUR source-cache manifest (when present) as well, so a change in
   # any of them invalidates the resume context instead of silently resuming
   # with a different payload.
+  #
+  # 2026-09-18：下面三处 list-then-hash 必须固定 LC_ALL=C。此前用裸 `sort -z`，
+  # 排序受当前 locale 影响（config/ 有 61 个非 ASCII 文件名；连全 ASCII 的
+  # third_party 路径也会因标点排序规则不同而变序）→ 同一 payload 在不同 locale 的
+  # 两次运行会算出不同哈希，续跑被误判为“上下文不匹配”而拒绝（VM 实测：
+  # LC_ALL=C 得 config=bf582008188f / aur=77f2bc400d02，zh_CN.UTF-8 得
+  # config=6f220fa8ab98 / aur=6e7c56ed5277）。fetch-aur-sources.sh 早已用
+  # LC_ALL=C sort -z，这里补齐。
   local sh="-" cfh="-" rch="-" cach="-"
   if compgen -G "${PROJECT_DIR}/scripts/*.sh" >/dev/null 2>&1; then
-    sh="$(find "${PROJECT_DIR}/scripts" -maxdepth 1 -name '*.sh' -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+    sh="$(find "${PROJECT_DIR}/scripts" -maxdepth 1 -name '*.sh' -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
   fi
   if [[ -d "${PROJECT_DIR}/config" ]]; then
-    cfh="$(find "${PROJECT_DIR}/config" -type f -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+    cfh="$(find "${PROJECT_DIR}/config" -type f -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
   fi
   if compgen -G "${PROJECT_DIR}/third_party/aur/*/PKGBUILD" >/dev/null 2>&1; then
-    rch="$(find "${PROJECT_DIR}/third_party/aur" -maxdepth 2 \( -name PKGBUILD -o -name .SRCINFO \) -print0 2>/dev/null | sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
+    rch="$(find "${PROJECT_DIR}/third_party/aur" -maxdepth 2 \( -name PKGBUILD -o -name .SRCINFO \) -print0 2>/dev/null | LC_ALL=C sort -z | xargs -0 sha256sum 2>/dev/null | sha256sum | cut -c1-12)"
   fi
   if [[ -f "${PROJECT_DIR}/.aur-sources/manifest.sha256" ]]; then
     cach="$(sha256sum "${PROJECT_DIR}/.aur-sources/manifest.sha256" | cut -c1-12)"
