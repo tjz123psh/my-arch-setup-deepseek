@@ -205,3 +205,23 @@ greetd 下载问题不再复现。
 
 限制：本轮仍是 **vm** 单一机型 + `-d both`；修复后的 payload **尚未**再跑物理/伪物理轮
 （04-drivers 的 71 个驱动包与物理宿主分支未覆盖，但本批改动未触碰 04-drivers）。
+### 2026-09-18 同一 payload 的全机型 / 全桌面变体复验
+
+补齐上一节未覆盖的机型与桌面变体（全部离线缓存轮，同一 payload，含批次 0–4 与 locale 修复）：
+
+| 轮次 | 命令 | 结果 |
+|---|---|---|
+| vm 干净基线 | `-d both -t vm`（快照 `Snapshot 1`，201 包） | `EXIT=0`、11 步、`Base preconditions 12/12`、离线 AUR 12 目标、`deployed=288` |
+| vm 续跑 | 同上（装完后 09-settings 已写入 locale） | `EXIT=0`、11 个模块 `already done, skipping` |
+| 伪物理机干净基线 | `-d both -t physical --test-profile physical-sim-vmware` | `EXIT=0`、11 步、04-drivers 真实安装 GPU/平台驱动（nvidia-open-dkms DKMS）、`NOT_APPLICABLE_SIMULATED`×4、离线 15 次构建 / `Installed 18 AUR packages`、`deployed=289`、空间预检 `14100MB available (need ~4785MB)` |
+| niri 变体 | `-d niri -t vm` | `EXIT=0`、**10 步**、`deployed=270`、`socat` 由 daily-apps 装上（本批修复点） |
+| none 变体 | `-d none -t vm` | `EXIT=0`、**9 步**、`deployed=254` |
+
+部署计数与代码一致：`07-config.sh` 的 `module_selected()` 在三种桌面上分别应得
+`288 / 270 / 254` —— 正好是 `mappings=289` 减去机型行（`asus-hardware` 1 行）与桌面行
+（`wm-hyprland` 18 行、`wm-niri` 16 行），实测三轮完全吻合。
+
+证据：`.ai/vm-logs-20260918/`（`install-clean-1/2`、`install-vm-A`、`install-vm-b23-r2`（修复前失败样本）、
+`install-phy`、`install-niri`、`install-none`）。
+
+**仍未覆盖**：在线模式轮（需要海外网络；以上全部为离线缓存轮）。
