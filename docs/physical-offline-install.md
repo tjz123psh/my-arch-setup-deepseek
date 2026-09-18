@@ -54,12 +54,20 @@ cd ~/my-arch-setup-deepseek && ./install.sh -d both -t physical    # 虚拟机�
   `.aur-sources/`。否则解压散文件、离线模式不触发（06 会走在线 paru）
 - **磁盘空间（重要）**：离线 AUR 阶段要解包全部源码、构建 10+ 个包、再一次性安装
   （chrome/QQ/微信/Obsidian 解包后合计 ~2.5G），需要 `.aur-sources` 体积 + **~3G** 余量。
+  预检就是按这个公式算的（`06-aur` 开工前打印，2026-09-18 实测数字）：
+  **物理缓存 1.7G → 要求 `~4783MB`**（1700 + 3072）、**vm 缓存 964M → 要求 `~4036MB`**；
+  不足则 fail-closed 并给出三条清理命令。伪物理机轮实测：装完 04 驱动后只剩 4126MB 被拦下，
+  释放到 5059MB 才放行——**物理机请在公式之上再留余量，驱动安装本身就要 1G 上下**；
+  19G 这种小盘还要盯"缓存 + 构建产物 + 已装桌面"的峰值（实测安装阶段最低仅剩 2.7G）。
   实测坑（2026-09-18，19G 根分区）：全桌面已装 + 3.4G pacman 缓存 + btrfs/snapper 快照时爆盘，
   失败形式是**误导性的** `error: could not extract /usr/bin/opencode (Write failed)` +
-  `failed to commit transaction`。`06-aur` 现在开工前会预检空闲空间并给出清理命令；手动腾空间：
-  `sudo pacman -Sc`（或 `sudo rm -rf /var/cache/pacman/pkg/*`，注意 `/var/cache/pacman/pkg` 可能是
-  独立 btrfs 子卷）、删掉解压后的 `aur-sources-*.tar.gz`、`sudo snapper list` 后删掉旧快照。
-- **缓存 tar 解压后可删**（省 900M~1.6G），离线模式只认 `.aur-sources/` 目录
+  `failed to commit transaction`。手动腾空间：`sudo pacman -Sc`（或
+  `sudo rm -rf /var/cache/pacman/pkg/*`，注意 `/var/cache/pacman/pkg` 可能是独立 btrfs 子卷）、
+  删掉解压后的 `aur-sources-*.tar.gz`、`sudo snapper list` 后删掉旧快照。
+- **缓存 tar 解压后可删**（physical 省 1.6G、vm 省 900M），离线模式只认 `.aur-sources/` 目录。
+  缓存里还带 `.aur-sources/manifest.sha256`（`fetch-aur-sources.sh` 生成）：它会被写进
+  `.install_progress` 的续跑上下文，换缓存后旧进度不会被误用（续跑会提示删掉
+  `.install_progress` 重来）
 - 全程一次 sudo 密码（安装器最小授权，装完自动恢复）
 - 某 AUR 构建失败自动重试一次；仍失败报错退出，网络恢复后重跑 `./install.sh` 续传
 - 旧系统 `flclash-bin` 由 03 显式迁移到 archlinuxcn/flclash
@@ -151,3 +159,21 @@ go-mod 含 `.pin=f353eaf…` 与 recipe 固定 commit 绑定）：
 
 结论：离线缓存 go-mod 缺口与 vmmon DKMS 误报已修复，物理机离线安装的
 greetd 下载问题不再复现。
+
+### 2026-09-18 最终 payload 复验（physical-sim-vmware + vm，同一 payload）
+
+用发布资产 `my-arch-setup.tar`（TEST_ID `2aa6bae1c532e3bc`）在 19G VM 上复验：
+
+- **伪物理机（physical-sim-vmware + 物理缓存 1.7G）**：01-05 全绿（04 真实安装 71 个驱动包：
+  nvidia-open-dkms 615.71.09 + lib32-nvidia-utils 栈，DKMS 为 linux/linux-zen 两个内核构建）；
+  第 7 步首轮被空间预检 fail-closed 拦下（`4126MB available, ~4783MB needed`），腾空间后续跑
+  `5059MB available` 放行；14 个 recipe 全部从物理缓存离线构建——含 `vmware-keymaps 1.0-3`
+  （8 个 ISO + bundle 校验通过）与 `vmware-workstation 26H1-3`（装后 mkinitcpio 重建镜像）——
+  `✔ Installed 12 AUR packages`；07 `CONFIG_RESULT deployed=289 skipped=0`；08 物理宿主服务
+  按设计标 `NOT_APPLICABLE_SIMULATED`；09 物理分支在 guest 内正确回退 libx264；11 步全绿
+  `EXIT=0`。
+- **vm（vm 缓存 964M）**：`mode=offline targets=12`，12/12 离线构建安装，`EXIT=0`。
+- 离线 pin 命中（dbx-bin 0.6.4-1、obsidian-bin 1.13.7-1、google-chrome 153.0.8010.47-1、
+  greetd-dms-greeter-git 1:1.6.2.r0.g0175be5-1 等），两轮 07 均部署 289 个文件。
+- 限制：这两轮都是"已装系统的修复式重跑"（真实构建 + 安装，离线路径全覆盖）；
+  **同一 TEST_ID 的干净 base 四轮验收（VM-R1/R2 + PHY-R1/R2）仍待另行执行**。

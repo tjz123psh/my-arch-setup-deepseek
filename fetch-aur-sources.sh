@@ -228,6 +228,31 @@ else
 fi
 
 echo
+echo "== cache manifest (resume-context binding) =="
+# 00-utils.progress_context() folds .aur-sources/manifest.sha256 into the
+# .install_progress header, so replacing the cache invalidates an old resume
+# instead of silently continuing against mismatched sources (before this the
+# cache hash was always "-", i.e. extract a different cache and the stale
+# .install_progress still matched). Written last and only for a complete
+# cache; the listing is relative + C-sorted, so the manifest (and the hash
+# 00-utils takes of it) is reproducible for the same cache content.
+if (( FAILED > 0 )); then
+  echo "SKIP  manifest.sha256 (cache incomplete: ${FAILED} failed item(s))"
+else
+  man="$DEST/manifest.sha256"
+  if ( cd "$DEST" && find . -type f ! -name 'manifest.sha256*' ! -name '*.part' -print0 \
+         | LC_ALL=C sort -z | xargs -0 sha256sum ) > "$man.tmp" 2>/dev/null \
+     && [[ -s "$man.tmp" ]]; then
+    mv "$man.tmp" "$man"
+    echo "OK    manifest.sha256 ($(wc -l < "$man") files)"
+  else
+    rm -f "$man.tmp"
+    echo "FAIL  manifest.sha256 (could not hash the cache)"
+    FAILED=$((FAILED + 1))
+  fi
+fi
+
+echo
 if (( FAILED > 0 )); then echo "== DONE: $FAILED FAILED (see above) =="; exit 1; fi
 echo "== ALL OK =="
 du -sh "$DEST"
