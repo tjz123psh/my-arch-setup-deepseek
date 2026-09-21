@@ -93,7 +93,7 @@
 | **功能** | 模糊搜索核心工具，搜索文件名、文件内容、缓冲区、帮助文档等 |
 | **配置** | `plugins/telescope.lua` |
 | **加载** | `cmd = "Telescope"` |
-| **快捷键** | `<leader>ff` 搜索文件名、`<leader>fg` 搜索内容、`<leader>fb` 切换缓冲区、`<leader>fh` 搜索帮助、`<leader>fd` 搜索个人文档（~/md）、`<leader>fp` 搜索项目、`<leader>fc` 搜索 Neovim 配置 |
+| **快捷键** | `<leader>ff` 搜索文件名、`<leader>fg` 搜索内容、`<leader>fb` 切换缓冲区、`<leader>fh` 搜索帮助、`<leader>fp` 搜索项目、`<leader>fc` 搜索 Neovim 配置 |
 | **依赖** | plenary.nvim、project.nvim（扩展） |
 | **扩展** | projects（已移到 telescope config 注册） |
 | **备注** | 圆角自适应水平布局，搜索框置顶，智能缩短路径并显示动态预览标题；弹窗内用 `<C-j>`/`<C-k>` 上下选择 |
