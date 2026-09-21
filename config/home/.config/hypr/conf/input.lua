@@ -71,3 +71,14 @@ hl.device({
 	name = "asuf1204:00-2808:0202-touchpad",
 	sensitivity = 1,
 })
+
+-- 触摸板开关状态（Fn+F10 / XF86TouchpadToggle 触发，见 conf/keybinds.lua 与
+-- ~/scripts/desktop/hypr-touchpad-toggle）。状态存在 touchpad-state.lua，
+-- 由该脚本维护；这里在启动时读入并应用，使开关跨重启保留。
+-- 文件缺失或损坏时回退为「开启」，不影响配置加载。
+-- Hyprland 的 hl.device 逐字段合并，上面的 sensitivity 不会被这里覆盖。
+local touchpad_ok, touchpad_state = pcall(dofile, os.getenv("HOME") .. "/.config/hypr/touchpad-state.lua")
+hl.device({
+	name = "asuf1204:00-2808:0202-touchpad",
+	enabled = (touchpad_ok and type(touchpad_state) == "table") and (touchpad_state.enabled ~= false) or true,
+})

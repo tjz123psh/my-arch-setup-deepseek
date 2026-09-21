@@ -14,7 +14,7 @@
 > 06-aur 角色过滤、reflector timeout、ShellCheck error、nomacs 前置、
 > `hyprland-session.target`（R5/2026-08-09 已移除该 unit）等。本文出现的清单计数
 > （211/191/197/217/231/330）亦已过期：当前为 install=200 / verify=12 / deferred=8 /
-> total=220、mappings=291、recipes=15、config 文件 390（2026-09-21 值），以 `./check-extend.sh`
+> total=226、mappings=295、recipes=15、config 文件 394（2026-09-21 值），以 `./check-extend.sh`
 > reconcile 输出为准。
 
 - 审查对象：`/home/pang/Projects/my-arch-setup-deepseek`

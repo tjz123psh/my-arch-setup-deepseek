@@ -77,6 +77,12 @@ binds {
     // Ctrl+调高音量: 媒体播放音量微调 +3%
     Ctrl+XF86AudioRaiseVolume allow-when-locked=true { spawn "dms" "ipc" "call" "mpris" "increment" "3"; }
 
+    // ===== 触摸板 =====
+
+    // Fn+F10: 开关内置触摸板（ASUS 驱动上报 KEY_TOUCHPAD_TOGGLE，niri 无内置动作，
+    // 由脚本改写 touchpad-state.kdl 的 off 行后重载配置）
+    XF86TouchpadToggle allow-when-locked=true hotkey-overlay-title="开关触摸板" { spawn "/home/pang/scripts/desktop/niri-touchpad-toggle"; }
+
     // ===== 工作区切换（使用 Alt 键） =====
     // 原为 Super+1~9，已改为 Alt+1~9
 

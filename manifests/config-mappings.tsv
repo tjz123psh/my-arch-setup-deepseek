@@ -291,3 +291,7 @@ physical-v1	build-foundation	config/home/md/kafka/Kafka-King最简安装法.md	m
 physical-v1	developer-editor	config/home/md/linux/Obsidian-GoogleDrive云端自动同步配置.md	md/linux/Obsidian-GoogleDrive云端自动同步配置.md	644
 physical-v1	developer-editor	config/home/md/linux/WiFi热点修复记录.md	md/linux/WiFi热点修复记录.md	644
 physical-v1	build-foundation	config/home/md/zed/Zed安装与使用说明.md	md/zed/Zed安装与使用说明.md	644
+physical-v1	maintenance	config/home/scripts/desktop/hypr-touchpad-toggle	scripts/desktop/hypr-touchpad-toggle	755
+physical-v1	maintenance	config/home/scripts/desktop/niri-touchpad-toggle	scripts/desktop/niri-touchpad-toggle	755
+physical-v1	wm-hyprland	config/home/.config/hypr/touchpad-state.lua	.config/hypr/touchpad-state.lua	644
+physical-v1	wm-niri	config/home/.config/niri/touchpad-state.kdl	.config/niri/touchpad-state.kdl	644

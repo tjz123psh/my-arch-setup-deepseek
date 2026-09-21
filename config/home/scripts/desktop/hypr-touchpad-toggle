@@ -1,0 +1,197 @@
+#!/usr/bin/env bash
+# hypr-touchpad-toggle — 开关内置触摸板（Fn+F10 / XF86TouchpadToggle 触发）
+#
+# 与 niri 侧的 niri-touchpad-toggle 对应。ASUS TUF A15 的 Fn+F10 由 asus-wmi 驱动
+# 上报为 KEY_TOUCHPAD_TOGGLE（驱动内 0x6B → KEY_TOUCHPAD_TOGGLE），Hyprland 没有
+# 内置动作，但支持按设备名配 enabled：
+#
+#   hl.device({ name = "asuf1204:00-2808:0202-touchpad", enabled = false })
+#
+# 这是 libinput 层面的挂起（InputManager::setPointerConfigs 会 detach 设备并设置
+# LIBINPUT_CONFIG_SEND_EVENTS_DISABLED），与 niri 的 input.touchpad.off 同一机制。
+#
+# 关于状态存放：`hyprctl devices` 的输出里没有 enabled 字段（只有 name/defaultSpeed/
+# scrollFactor 等），运行时读不到真实开关状态；而 eval 设在内存里的 hl.device 会在
+# 下次配置 reload 时被清空（CConfigManager::reload 里 m_deviceConfigs.clear()）。
+# 因此状态写在与 niri 侧共用的 touchpad-state 文件里：
+#   - ~/.config/hypr/touchpad-state.lua —— Hyprland 启动时由 conf/input.lua 读取并应用
+#   - 切换时同步写入 ~/.config/niri/touchpad-state.kdl（niri 下次启动亦然）
+# 这样两个会话的开关状态始终一致，且都跨重启保留。
+#
+# 注意：conf/input.lua 里对同一设备还设了 sensitivity = 1。hl.device 的字段是
+# 逐项插入/替换（insert_or_assign），同一设备名多次调用会合并，不会被本脚本覆盖。
+#
+# 用法:
+#   hypr-touchpad-toggle            切换开 / 关（Fn+F10 走这条）
+#   hypr-touchpad-toggle on|off     明确设为开 / 关
+#   hypr-touchpad-toggle status     打印当前状态（on / off）
+#   hypr-touchpad-toggle -h         显示帮助
+set -euo pipefail
+
+DEVICE_NAME="${HYPR_TOUCHPAD_DEVICE:-asuf1204:00-2808:0202-touchpad}"
+STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/touchpad-state.lua"
+NIRI_STATE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/niri/touchpad-state.kdl"
+LABEL="hypr-touchpad-toggle"
+
+usage() {
+  cat <<'EOF'
+Usage: hypr-touchpad-toggle [on|off|status]
+
+不带参数时切换开关状态。
+
+Options:
+  on, off     明确设为打开 / 关闭触摸板
+  status      打印当前状态（on / off）
+  -h, --help  显示帮助
+
+环境变量:
+  HYPR_TOUCHPAD_DEVICE  设备名（默认 asuf1204:00-2808:0202-touchpad），
+                        可用 `hyprctl devices` 查看
+EOF
+}
+
+notify() {
+  command -v notify-send >/dev/null 2>&1 || return 0
+  notify-send -a "$LABEL" "$1" "$2" 2>/dev/null || true
+}
+
+die() {
+  printf '错误: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+# 参数解析放在连接检查之前：-h 与非法参数不需要 Hyprland 在跑也能给出正确退出码。
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  '') ;;
+  on|off|status) ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+# 实例签名：键位调用时 Hyprland 已注入；从普通终端调用时可能为空，也可能残留一个
+# 已退出实例的旧签名（此时 hyprctl 连不上）。两种情况都逐个探测运行中的实例——
+# hyprctl version 能连上才算，避免挑到死实例的目录名。（同 hypr-magnifier）
+if [[ -z "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]] || ! hyprctl version >/dev/null 2>&1; then
+  while IFS= read -r sig; do
+    if HYPRLAND_INSTANCE_SIGNATURE="$sig" hyprctl version >/dev/null 2>&1; then
+      HYPRLAND_INSTANCE_SIGNATURE="$sig"
+      export HYPRLAND_INSTANCE_SIGNATURE
+      break
+    fi
+  done < <(ls -t "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/hypr/ 2>/dev/null)
+fi
+
+command -v hyprctl >/dev/null 2>&1 || die "找不到 hyprctl（Hyprland 没装？）"
+hyprctl version >/dev/null 2>&1 || die "连不上运行中的 Hyprland 实例"
+
+# 读当前状态：状态文件是唯一真源（hyprctl 不暴露 enabled）。
+# 文件不存在时视为 on（等同于 conf/input.lua 的默认「不设 enabled」）。
+# 解析用 Lua 的 return 表形式，与 write_state 写出的格式一致。
+read_state() {
+  if [[ ! -f "$STATE_FILE" ]]; then
+    printf 'on\n'
+    return 0
+  fi
+  python3 - "$STATE_FILE" <<'PY'
+import re, sys
+
+try:
+    s = open(sys.argv[1], encoding='utf-8').read()
+except OSError:
+    print("on")
+    sys.exit(0)
+
+m = re.search(r'^[ \t]*return[ \t]*\{[^}]*\benabled[ \t]*=[ \t]*(true|false|on|off|1|0)\b',
+              s, re.M | re.I)
+if not m:
+    print("on")
+    sys.exit(0)
+
+print("off" if m.group(1).lower() in ("false", "off", "0") else "on")
+PY
+}
+
+# 状态文件写坏会让下次启动应用错值，故写完即校验可被 Hyprland 解析。
+write_state() {
+  local want="$1" lit
+  [[ "$want" == "on" ]] && lit=true || lit=false
+  mkdir -p "$(dirname "$STATE_FILE")"
+  cat > "$STATE_FILE" <<EOF
+-- 触摸板开关状态 —— 由 ~/.local/bin/hypr-touchpad-toggle（Fn+F10）维护，一般不用手改。
+-- conf/input.lua 启动时读本文件并应用。Hyprland 运行中改这里不会立即生效，
+-- 请用 hypr-touchpad-toggle 命令（它同时热切换并更新本文件）。
+return { enabled = $lit }
+EOF
+}
+
+# 与 niri 侧共用开关状态：同步改写 niri 的 touchpad-state.kdl。
+# niri 需要对 touchpad 小节整体替换，故这里只翻转它的 off 行；niri 在运行时也会
+# 因为文件变化自动重载，所以两个会话的状态保持一致。
+sync_niri_state() {
+  local want="$1"
+  [[ -f "$NIRI_STATE_FILE" ]] || return 0
+  local rc=0
+  python3 - "$NIRI_STATE_FILE" "$want" <<'PY' || rc=$?
+import re, sys
+
+path, want = sys.argv[1], sys.argv[2]
+new_line = '        off' if want == 'off' else '        // off'
+s = open(path, encoding='utf-8').read()
+if not re.search(r'^[ \t]*input[ \t]*\{', s, re.M) or not re.search(r'^[ \t]*touchpad[ \t]*\{', s, re.M):
+    sys.exit(3)
+pat = re.compile(r'^[ \t]*(?://[ \t]*)?off[ \t]*$', re.M)
+if not pat.search(s):
+    sys.exit(3)
+s, n = pat.subn(new_line, s)
+if n != 1:
+    sys.exit(3)
+open(path, 'w', encoding='utf-8').write(s)
+PY
+  # 同步失败不该影响 Hyprland 本身的切换（niri 侧文件结构可能被改过），只提示。
+  if (( rc != 0 )); then
+    printf '提示: niri 状态文件同步失败（%s），niri 下次启动时需手动跑 niri-touchpad-toggle\n' "$NIRI_STATE_FILE" >&2
+  fi
+}
+
+set_enabled() {
+  local want="$1" lit
+  [[ "$want" == "on" ]] && lit=true || lit=false
+  local out
+  if ! out=$(hyprctl eval "hl.device({ name = \"$DEVICE_NAME\", enabled = $lit })" 2>&1); then
+    die "hyprctl eval 执行失败: $out"
+  fi
+  # eval 成功时输出 "ok"；有 Lua 报错时会把错误文本返回，据此判定
+  if [[ "$out" != "ok" ]]; then
+    die "Hyprland 拒绝该设备配置: $out"
+  fi
+  write_state "$want"
+  sync_niri_state "$want"
+}
+
+current="$(read_state)"
+
+if [[ "${1:-}" == "status" ]]; then
+  printf '%s\n' "$current"
+  exit 0
+fi
+
+case "${1:-}" in
+  on)  want="on" ;;
+  off) want="off" ;;
+  *)   [[ "$current" == "off" ]] && want="on" || want="off" ;;
+esac
+
+if [[ "$want" == "$current" ]]; then
+  printf '触摸板已是%s状态\n' "$([[ $want == off ]] && echo 关闭 || echo 打开)"
+  exit 0
+fi
+
+set_enabled "$want"
+
+if [[ "$want" == "off" ]]; then
+  printf '触摸板已关闭（再按一次 Fn+F10 恢复）\n'
+  notify "触摸板已关闭" "再按一次 Fn+F10 恢复"
+else
+  printf '触摸板已打开\n'
+  notify "触摸板已打开" ""
+fi

@@ -117,6 +117,9 @@ Super+Shift+滚轮	上下切换工作区
 Ctrl+音量↑	当前播放器音量 +3%（mpris）
 Ctrl+音量↓	当前播放器音量 -3%（mpris）
 
+# 触摸板
+Fn+F10	开关内置触摸板（同 niri）
+
 # 系统
 Super+D	概览：平铺展开当前工作区所有窗口，点选窗口后自动收起
 Super+Shift+D	VM 测试模式：禁用 host 快捷键（再按一次退出）

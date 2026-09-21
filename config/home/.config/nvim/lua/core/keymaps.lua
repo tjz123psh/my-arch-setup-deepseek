@@ -79,15 +79,77 @@ map("n", "K", function()
   move_current_line(-1)
 end, { desc = "上移当前行", silent = true })
 
--- 可视模式整块移动，使用 Lua 调用避免触发 noice 命令行浮窗
+-- 判断当前缓冲区是否有真正的缩进计算来源。
+-- 没有来源时 = 会把缩进清成 0（Markdown、纯文本的缩进本身就是内容，会被改坏），
+-- 有 equalprg 时 = 会调用外部程序，这两种情况都跳过重缩进。
+local function can_reindent()
+  return vim.o.equalprg == "" and (vim.bo.indentexpr ~= "" or vim.bo.cindent or vim.o.lisp)
+end
+
+-- 可视模式整块移动：支持数字前缀，例如 3J / 3K
+-- 不能用 '< '> 取范围：这两个标记要等离开可视模式后才写入，可视模式内读到的是
+-- 未设定（E20 报错）或上一次的可视范围（会静默移动错误的行）。这里改用 line("v")
+-- 与 line(".") 直接算出行号，再以数字范围调用 :move
+local function move_visual_lines(direction)
+  if not vim.bo.modifiable then
+    return
+  end
+
+  local first = vim.fn.line("v")
+  local last = vim.fn.line(".")
+  if first > last then
+    first, last = last, first
+  end
+
+  local steps = vim.v.count1
+  -- :move {地址} 把范围移到该地址的下一行，所以地址要取在范围之外，并夹在缓冲区范围内
+  local target
+  local delta
+  if direction > 0 then
+    target = math.min(last + steps, vim.api.nvim_buf_line_count(0))
+    delta = target - last
+  else
+    target = math.max(first - steps - 1, 0)
+    delta = target + 1 - first
+  end
+
+  -- 已到缓冲区首/尾，什么都不做，避免 :move 报错
+  if delta == 0 then
+    return
+  end
+
+  vim.cmd(("silent keepjumps %d,%dmove %d"):format(first, last, target))
+
+  local new_first = first + delta
+  local new_last = last + delta
+
+  -- 按行号重缩进，让移过去的行贴合新位置；不用可视选区，避免 = 结束时退出可视模式
+  if can_reindent() then
+    vim.cmd(("silent keepjumps %d,%dnormal! =="):format(new_first, new_last))
+  end
+
+  -- 重建选区。必须先退出可视模式：在可视模式内执行 gv 只会在 行块/字符 之间切换，
+  -- 不会按标记恢复，行块选区会退化成字符选区。退出后 '< '> 也会被正确写入，再 gv 恢复原类型。
+  vim.cmd("normal! \27")
+  vim.fn.setpos("'<", { 0, new_first, 1, 0 })
+  vim.fn.setpos("'>", { 0, new_last, 1, 0 })
+  vim.api.nvim_win_set_cursor(0, { new_last, 0 })
+  vim.cmd("normal! gv")
+end
+
 map("x", "J", function()
-  vim.cmd("'<,'>move '>+1")
-  vim.cmd("normal! gv=gv")
-end, { desc = "向下移动选中行", silent = true })
+  move_visual_lines(1)
+end, { desc = "下移选中行", silent = true })
 map("x", "K", function()
-  vim.cmd("'<,'>move '<-2")
-  vim.cmd("normal! gv=gv")
-end, { desc = "向上移动选中行", silent = true })
+  move_visual_lines(-1)
+end, { desc = "上移选中行", silent = true })
+-- select 模式（可视模式内按 <C-g>）不继承 x 映射，单独绑定，否则 J/K 会被当作输入插入
+map("s", "J", function()
+  move_visual_lines(1)
+end, { desc = "下移选中行", silent = true })
+map("s", "K", function()
+  move_visual_lines(-1)
+end, { desc = "上移选中行", silent = true })
 
 map("n", "<leader>j", "mzJ`z", { desc = "合并下一行", silent = true })
 

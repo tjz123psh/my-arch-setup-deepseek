@@ -232,3 +232,9 @@ hl.bind("XF86AudioNext", hl.dsp.exec_cmd("dms ipc call mpris next"), { locked = 
 hl.bind("XF86AudioPause", hl.dsp.exec_cmd("dms ipc call mpris playPause"), { locked = true })
 hl.bind("XF86AudioPlay", hl.dsp.exec_cmd("dms ipc call mpris playPause"), { locked = true })
 hl.bind("XF86AudioPrev", hl.dsp.exec_cmd("dms ipc call mpris previous"), { locked = true })
+
+-- ===== 触摸板 =====
+-- Fn+F10：开关内置触摸板（ASUS 驱动上报 KEY_TOUCHPAD_TOGGLE，Hyprland 无内置动作，
+-- 由脚本用 hyprctl eval 改设备 enabled，并同步状态文件使开关跨重启保留）。
+-- 与 niri 侧的 XF86TouchpadToggle 绑定对应，命令同一套逻辑，两个会话行为一致。
+hl.bind("XF86TouchpadToggle", hl.dsp.exec_cmd("$HOME/scripts/desktop/hypr-touchpad-toggle"), { locked = true })

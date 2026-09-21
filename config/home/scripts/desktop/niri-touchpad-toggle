@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+# niri-touchpad-toggle — 开关内置触摸板（Fn+F10 / XF86TouchpadToggle 触发）
+#
+# 背景：ASUS TUF A15 的 Fn+F10 由 asus-wmi 驱动上报为 KEY_TOUCHPAD_TOGGLE
+# （驱动内 0x6B → KEY_TOUCHPAD_TOGGLE），niri 没有对应的内置动作（上游 issue #3316
+# 尚未合并），所以改用 niri 自己的 input.touchpad.off：改写 touchpad-state.kdl 里的
+# off 行后让 niri 重新加载，libinput 会把触摸板置为 send-events=disabled
+# （与 GNOME / KDE 同一机制），状态跨重启保留。
+#
+# touchpad-state.kdl 是触摸板设置的唯一来源——niri 对 touchpad 小节整体替换而不是
+# 逐项合并，因此本脚本只翻转 off 行，其余内容原样保留。
+#
+# 用法:
+#   niri-touchpad-toggle            切换开 / 关（Fn+F10 走这条）
+#   niri-touchpad-toggle on|off     明确设为开 / 关
+#   niri-touchpad-toggle status     打印当前状态（on / off）
+#   niri-touchpad-toggle -h         显示帮助
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/niri"
+STATE_FILE="$CONFIG_DIR/touchpad-state.kdl"
+LABEL="niri-touchpad-toggle"
+
+usage() {
+  cat <<'EOF'
+Usage: niri-touchpad-toggle [on|off|status]
+
+不带参数时切换开关状态。
+
+Options:
+  on, off   明确设为打开 / 关闭触摸板
+  status    打印当前状态（on / off）
+  -h, --help  显示帮助
+EOF
+}
+
+notify() {
+  command -v notify-send >/dev/null 2>&1 || return 0
+  notify-send -a "$LABEL" "$1" "$2" 2>/dev/null || true
+}
+
+die() {
+  printf '错误: %s\n' "$1" >&2
+  exit "${2:-1}"
+}
+
+state_of() {
+  if grep -qE '^[[:space:]]*off[[:space:]]*$' "$STATE_FILE" 2>/dev/null; then
+    printf 'off\n'
+  else
+    printf 'on\n'
+  fi
+}
+
+# 装载新状态文件后的重载：Fn 键由 niri spawn，NIRI_SOCKET 已在环境中；
+# 手动在终端执行时可能没有，此时按 niri.*.sock 逐个探测。
+reload_niri() {
+  if [[ -z "${NIRI_SOCKET:-}" ]] || ! niri msg version >/dev/null 2>&1; then
+    local sock
+    for sock in "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"/niri.*.sock; do
+      [[ -S "$sock" ]] || continue
+      if NIRI_SOCKET="$sock" niri msg version >/dev/null 2>&1; then
+        export NIRI_SOCKET="$sock"
+        break
+      fi
+    done
+  fi
+  # niri 也会监视 include 的文件变化，这里只是让生效更即时。
+  niri msg action load-config-file >/dev/null 2>&1 || true
+}
+
+# 与 Hyprland 侧共用开关状态：同步改写它的 touchpad-state.lua（由
+# ~/.config/hypr/conf/input.lua 在启动时读取并应用），使两个会话状态一致。
+# 文件不存在时跳过——用户可能没在用 Hyprland 那套配置。
+sync_hypr_state() {
+  local want="$1" lit hypr_state
+  [[ "$want" == "on" ]] && lit=true || lit=false
+  hypr_state="${XDG_CONFIG_HOME:-$HOME/.config}/hypr/touchpad-state.lua"
+  [[ -f "$hypr_state" ]] || return 0
+  cat > "$hypr_state" <<EOF
+-- 触摸板开关状态 —— 由 niri-touchpad-toggle / hypr-touchpad-toggle（Fn+F10）维护，
+-- 一般不用手改。conf/input.lua 启动时读本文件并应用。
+return { enabled = $lit }
+EOF
+}
+
+# 翻转状态文件里的 off 行；校验通过后才原子替换。
+# 返回 0 成功，Python 自查失败时原样返回它的退出码（3）。
+set_state() {
+  local want="$1" tmp="$STATE_FILE.tmp.$$"
+
+  # 注意：函数在 if 条件里调用时 set -e 不生效，Python 的退出码必须显式检查，
+  # 否则结构异常时会继续往下跑到 niri validate，报出误导性的二次错误。
+  # 失败路径各自显式清理 $tmp，不用 RETURN trap（trap 会留到函数返回之后，
+  # 污染后续其它函数的返回）。
+  local rc=0
+  python3 - "$STATE_FILE" "$tmp" "$want" <<'PY' || rc=$?
+import re, sys
+
+src, dst, want = sys.argv[1], sys.argv[2], sys.argv[3]
+new_line = '        off' if want == 'off' else '        // off'
+try:
+    s = open(src, encoding='utf-8').read()
+except OSError as e:
+    print(f'错误: 无法读取 {src}: {e}', file=sys.stderr)
+    sys.exit(3)
+
+if not re.search(r'^[ \t]*input[ \t]*\{', s, re.M) or not re.search(r'^[ \t]*touchpad[ \t]*\{', s, re.M):
+    print(f'错误: {src} 结构不符（缺少 input / touchpad 小节），已中止', file=sys.stderr)
+    sys.exit(3)
+
+pat = re.compile(r'^[ \t]*(?://[ \t]*)?off[ \t]*$', re.M)
+if pat.search(s):
+    s, n = pat.subn(new_line, s)
+    if n != 1:
+        print(f'错误: {src} 里匹配到 {n} 处 off 行，预期 1 处，已中止', file=sys.stderr)
+        sys.exit(3)
+else:
+    m = re.search(r'^([ \t]*)touchpad[ \t]*\{[ \t]*$', s, re.M)
+    indent = m.group(1) + '    '
+    s = s[:m.end()] + '\n' + indent + ('off' if want == 'off' else '// off') + s[m.end():]
+
+open(dst, 'w', encoding='utf-8').write(s)
+PY
+  if (( rc != 0 )); then
+    rm -f "$tmp"
+    return "$rc"
+  fi
+
+  # 校验不过就不替换，避免把 niri 配置写坏。
+  if command -v niri >/dev/null 2>&1 && ! niri validate -c "$tmp" >/dev/null 2>&1; then
+    niri validate -c "$tmp" 2>&1 | tail -3 >&2
+    rm -f "$tmp"
+    return 3
+  fi
+
+  mv -f "$tmp" "$STATE_FILE"
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  '') ;;
+  on|off|status) ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+[[ -f "$STATE_FILE" ]] || die "找不到状态文件 $STATE_FILE（触摸板设置与开关状态都写在那里）"
+
+if [[ "${1:-}" == "status" ]]; then
+  state_of
+  exit 0
+fi
+
+current="$(state_of)"
+case "${1:-}" in
+  on)  want="on" ;;
+  off) want="off" ;;
+  *)   [[ "$current" == "off" ]] && want="on" || want="off" ;;
+esac
+
+if [[ "$want" == "$current" ]]; then
+  printf '触摸板已是%s状态\n' "$([[ $want == off ]] && echo 关闭 || echo 打开)"
+  exit 0
+fi
+
+rc=0
+set_state "$want" || rc=$?
+if (( rc != 0 )); then
+  notify "触摸板切换失败" "状态文件异常，详见终端输出或 journal"
+  exit "$rc"
+fi
+
+reload_niri
+sync_hypr_state "$want"
+
+if [[ "$want" == "off" ]]; then
+  printf '触摸板已关闭（再按一次 Fn+F10 恢复）\n'
+  notify "触摸板已关闭" "再按一次 Fn+F10 恢复"
+else
+  printf '触摸板已打开\n'
+  notify "触摸板已打开" ""
+fi

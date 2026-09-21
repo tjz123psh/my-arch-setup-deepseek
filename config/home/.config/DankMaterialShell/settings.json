@@ -258,8 +258,7 @@
       "useOverlayLayer": false,
       "hoverPopouts": false,
       "attachToScreenEdge": false,
-      "batteryColorMode": "theme",
-      "island": false
+      "batteryColorMode": "theme"
     }
   ],
   "desktopClockCustomColor": {

@@ -52,6 +52,47 @@ done
 # ---------------------------------------------------------------------------
 # inventory: classify SRC files relative to DEST
 # ---------------------------------------------------------------------------
+# 2026-09-21: review/scratch/backup material must never reach the public repo, and
+# the rsync switch must not delete what the find-based inventory did not scan.
+# These patterns are excluded from BOTH the inventory and the switch.
+EXCLUDES=(
+  '*/.git/*'
+  '*/.backups/*'
+  '*/__pycache__/*'
+  '*/.sync-staging.*'
+  '*/.sync-backup-*'
+  '*/review/*'
+  '*/review1/*'
+  '*/.DS_Store'
+  '*.pyc'
+  '*.log'
+  '*.tar.gz'
+  '*.bak'
+)
+# rsync 的 '*' 不跨 '/', 顶层目录模式必须写成 'dir/' 形式才能递归命中
+rsync_excludes=(
+  --exclude='.git/'
+  --exclude='.backups/'
+  --exclude='__pycache__/'
+  --exclude='.sync-staging.*/'
+  --exclude='.sync-backup-*/'
+  --exclude='review/'
+  --exclude='review1/'
+  --exclude='.DS_Store'
+  --exclude='*.pyc'
+  --exclude='*.log'
+  --exclude='*.tar.gz'
+  --exclude='*.bak'
+)
+is_excluded() { # is_excluded <absolute path>
+  local p="$1" pat
+  for pat in "${EXCLUDES[@]}"; do
+    # shellcheck disable=SC2254
+    case "$p" in $pat) return 0 ;; esac
+  done
+  return 1
+}
+
 declare -a changed=() newfiles=() deleted=() same=()
 while IFS= read -r -d '' srcfile; do
   rel="${srcfile#"${SRC}"/}"
@@ -65,13 +106,13 @@ while IFS= read -r -d '' srcfile; do
   else
     newfiles+=("${rel}")
   fi
-done < <(find "${SRC}" -type f ! -path '*/.git/*' -print0 | sort -z)
+done < <(find "${SRC}" -type f -print0 | sort -z | while IFS= read -r -d '' f; do is_excluded "$f" || printf '%s\0' "$f"; done)
 
 # files present in DEST but not in SRC (candidates for removal / stale)
 while IFS= read -r -d '' destfile; do
   rel="${destfile#"${DEST}"/}"
   [[ -f "${SRC}/${rel}" ]] || deleted+=("${rel}")
-done < <(find "${DEST}" -type f -print0 | sort -z)
+done < <(find "${DEST}" -type f -print0 | sort -z | while IFS= read -r -d '' f; do is_excluded "$f" || printf '%s\0' "$f"; done)
 
 echo "== 1/4 inventory =="
 echo "  same=${#same[@]} changed=${#changed[@]} new=${#newfiles[@]} stale=${#deleted[@]}"
@@ -209,7 +250,7 @@ mkdir -p "${cache_dir}"
 # staging inside the cache (never touches the live tree)
 staging="$(mktemp -d "${cache_dir}/.sync-staging.XXXXXX")"
 trap 'rm -rf "${staging}"' EXIT
-rsync -a --exclude='.git' "${SRC}/" "${staging}/"
+rsync -a "${rsync_excludes[@]}" "${SRC}/" "${staging}/"
 # pre-switch dry-run so the exact change set is visible before the switch
 echo "  dry-run of the switch (staging -> ${DEST}):"
 rsync -a --dry-run --delete "${staging}/" "${DEST}/" \

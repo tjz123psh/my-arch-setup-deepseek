@@ -131,8 +131,8 @@ include "dms/keybinds.kdl"
 include "dms/outputs.kdl"
 // ===== 输入设置 =====
 // 键盘重复速度：DMS 1.6 自动生成的 dms/input.kdl 不再包含键盘段，niri 会回落到慢速默认值。
-// 鼠标/触摸板内容镜像自 dms/input.kdl（已不再 include 该文件），并补回键盘快速重复（200ms / 50Hz，
-// 与此前登录界面配置一致）。若 DMS 更新了鼠标/触摸板模板，需同步此处。
+// 鼠标内容镜像自 dms/input.kdl（已不再 include 该文件），并补回键盘快速重复（200ms / 50Hz，
+// 与此前登录界面配置一致）。若 DMS 更新了鼠标模板，需同步此处。
 input {
     keyboard {
         repeat-delay 200
@@ -141,13 +141,10 @@ input {
     mouse {
         accel-speed 0.0
     }
-    touchpad {
-        tap
-        accel-speed 0.3
-        natural-scroll
-        dwt
-    }
 }
+// 触摸板设置（含 Fn+F10 的开关键 off）：niri 对 touchpad 小节整体替换而不是逐项合并，
+// 所以该项设置集中放在 touchpad-state.kdl，改设置或切换开关都去那个文件。
+include "touchpad-state.kdl"
 include "dms/cursor.kdl"
 include "dms/windowrules.kdl"
 include "animations-spring.kdl"
