@@ -280,10 +280,21 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
   fi
 
   # user-provided units under ~/.config/systemd/user (vellum, custom services...)
-  for u in "${TARGET_HOME}/.config/systemd/user/"*.service; do
+  # 2026-09-21: .timer was missing here. A timer-only workflow (obsidian-sync)
+  # ships a .service WITHOUT [Install] plus a .timer with WantedBy=timers.target:
+  # enumerating only *.service left the timer disabled, so the sync never ran
+  # after a restore. Enable timers too; units lacking [Install] report
+  # "no installation config" from enable - tolerate that (the timer owns them).
+  for u in "${TARGET_HOME}/.config/systemd/user/"*.service "${TARGET_HOME}/.config/systemd/user/"*.timer; do
     [[ -e "${u}" ]] || continue
     unit="$(basename "${u}")"
-    if as_user systemctl --user enable "${unit}" 2>/dev/null; then log "User service: ${unit}"; else warn "could not enable user service: ${unit}"; fi
+    if as_user systemctl --user enable "${unit}" 2>/dev/null; then
+      log "User unit: ${unit}"
+    elif ! grep -q '^\[Install\]' "${u}"; then
+      log "User unit: ${unit} (no [Install]; driven by another unit)"
+    else
+      warn "could not enable user unit: ${unit}"
+    fi
   done
 
   # greetd login manager. `--command niri` selects ONLY the compositor that
