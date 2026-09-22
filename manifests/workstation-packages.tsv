@@ -224,7 +224,7 @@ yt-dlp-ejs	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	E
 nvtop	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	GPU process monitoring TUI for AMD/Intel/NVIDIA
 chafa	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	Image-to-text converter for terminal preview
 7zip	pacman	extra	pacman	cli-tools	package-only	install	current-explicit	File archiver with high compression (p7zip replacement)
-linux-lts-headers	pacman	extra	pacman	kernel-support	package-only	install	current-explicit	LTS kernel headers (paired with linux-lts when that kernel is used)
+linux-lts-headers	pacman	extra	pacman	kernel-support	package-only	install	current-explicit	LTS kernel headers (standalone; linux-lts itself is not installed - harmless if the LTS kernel is added later)
 net-tools	pacman	core	pacman	cli-tools	package-only	install	current-explicit	ifconfig/netstat/route - legacy net utilities some scripts still call
 python	pacman	core	pacman	cli-tools	package-only	install	current-explicit	python3 alias package (build scripts and AUR helpers expect the name)
 rclone	pacman	extra	pacman	base-tools	package-only	install	current-explicit	cloud sync CLI - dependency of the Obsidian GoogleDrive sync workflow
