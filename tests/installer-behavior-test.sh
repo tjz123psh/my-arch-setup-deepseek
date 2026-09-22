@@ -430,6 +430,58 @@ else
   fail=$((fail + 1)); echo "  FAIL workaround has no sudo fallback for /etc/environment"
 fi
 
+# --- 07-config P1-6: ~/.local/bin entry points ------------------------------
+# The symlink list must cover every entry point the payload references by bare
+# command (gsudo is documented as a command users type). Two contracts:
+#   a) the heredoc is parsed with # comment lines skipped (a comment row would
+#      otherwise be read as an entry and emit a bogus "not deployed" warning);
+#   b) the entry list stays in sync with the scripts actually shipped.
+p16_entries=$(sed -n "/done <<'ENTRIES'/,/^ENTRIES$/p" "$root/scripts/07-config.sh" \
+  | grep -E '^[a-z][a-z0-9-]+\|')
+if [[ -n "$p16_entries" ]]; then
+  pass=$((pass + 1)); echo "  ok   P1-6 entry list is non-empty ($(grep -c . <<<"$p16_entries") entries)"
+else
+  fail=$((fail + 1)); echo "  FAIL P1-6 entry list empty or heredoc tag changed"
+fi
+# comment lines inside the heredoc must be skipped by the loop guard
+if grep -q "== '#'\*" "$root/scripts/07-config.sh"; then
+  pass=$((pass + 1)); echo "  ok   P1-6 skips '#' comment rows in the heredoc"
+else
+  fail=$((fail + 1)); echo "  FAIL P1-6 heredoc comment guard missing (bogus 'not deployed' warnings)"
+fi
+# every entry's target must exist in the payload (else the link is skipped)
+p16_missing=0
+while IFS='|' read -r link script_rel; do
+  [[ -z "$link" || "$link" == '#'* ]] && continue
+  [[ -f "$root/config/home/scripts/$script_rel" ]] || { p16_missing=1; echo "       missing payload: scripts/$script_rel"; }
+done <<<"$p16_entries"
+check "P1-6 targets all ship in config/home/scripts" "$p16_missing" 0
+
+# --- 08-services: user units include .timer --------------------------------
+# obsidian-sync ships a .service WITHOUT [Install] plus a .timer with
+# WantedBy=timers.target. Enumerating only *.service left the timer disabled,
+# so the sync silently never ran after a restore (found 2026-09-21).
+if grep -q 'systemd/user/"\*\.service "${TARGET_HOME}/.config/systemd/user/"\*\.timer' "$root/scripts/08-services.sh" \
+   || grep -q '\*\.timer' "$root/scripts/08-services.sh"; then
+  pass=$((pass + 1)); echo "  ok   08-services enumerates .timer user units"
+else
+  fail=$((fail + 1)); echo "  FAIL 08-services only enumerates .service (timer-only workflows stay disabled)"
+fi
+# a unit without [Install] must be logged, not warned (systemctl enable reports
+# "no installation config" for such units - that is expected, not a failure)
+if grep -q "no \[Install\]; driven by another unit" "$root/scripts/08-services.sh"; then
+  pass=$((pass + 1)); echo "  ok   08-services tolerates units without [Install]"
+else
+  fail=$((fail + 1)); echo "  FAIL 08-services would warn on [Install]-less units"
+fi
+# the payload's timer-only service must actually be in that state
+if [[ -f "$root/config/home/.config/systemd/user/obsidian-sync.service" ]] \
+   && [[ -f "$root/config/home/.config/systemd/user/obsidian-sync.timer" ]] \
+   && ! grep -q '^\[Install\]' "$root/config/home/.config/systemd/user/obsidian-sync.service"; then
+  pass=$((pass + 1)); echo "  ok   obsidian-sync is a timer-only workflow (service has no [Install])"
+else
+  fail=$((fail + 1)); echo "  FAIL obsidian-sync unit pairing changed; re-check 08-services coverage"
+fi
 echo
 echo "installer behavior tests: $pass passed, $fail failed"
 [[ "$fail" -eq 0 ]]

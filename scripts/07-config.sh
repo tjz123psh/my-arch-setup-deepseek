@@ -157,6 +157,9 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
     mkdir -p "${local_bin}"
   fi
   while IFS='|' read -r link_name script_rel; do
+    # heredoc 里的 # 注释行不会被 read 跳过，必须显式忽略（否则会打 3 条
+    # 无意义的 "not deployed" 警告，让恢复日志看起来像出了问题）。
+    [[ -z "${link_name}" || "${link_name}" == '#'* ]] && continue
     target="${TARGET_HOME}/scripts/${script_rel}"
     [[ -f "${target}" ]] || { warn "P1-6: ${script_rel} not deployed; skipping ${link_name}"; continue; }
     link_path="${local_bin}/${link_name}"
