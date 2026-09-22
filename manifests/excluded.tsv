@@ -43,6 +43,8 @@ runtime-state	~/.config/hypr/touchpad-state.lua	physical	运行时开关状态�
 runtime-state	~/.config/niri/touchpad-state.kdl	physical	同上
 runtime-state	~/.local/share/pnpm/*	both	包管理器运行时（pnpm 自身安装产物）
 runtime-state	~/.local/share/maven/bin/mvn	physical	Maven 发行包解压产物；仓库只留 ~/.local/bin/mvn 包装器
+runtime-state	~/.local/bin/mvnDebug	physical	同上（Maven 调试启动器，随发行包解压产生）
+runtime-state	~/.local/bin/pnpx	physical	pnpm 自带入口；随 ~/.local/share/pnpm 安装产生
 runtime-state	~/.local/share/spring/*	physical	Spring CLI 发行包；仓库不分发，见 README「手工准备项」
 runtime-state	~/.config/vellum/config.toml.bak	both	运行时备份文件
 runtime-state	浏览器 profile / QQ 数据 / node_modules / fish_variables	both	缓存与运行时数据
@@ -59,3 +61,10 @@ payload-file	~/.local/share/applications/antigravity-ide*.desktop	physical	属�
 payload-file	~/.local/share/applications/io.github.pang.{mdreader,RjSupplicantGui}.desktop	physical	本地构建项目的桌面项，依赖各自源码树
 payload-file	~/.local/share/applications/mimeinfo.cache	both	桌面数据库缓存，由 update-desktop-database 生成
 payload-file	~/.local/share/applications/mimeapps.list	both	空的（0 字节）；真实默认程序表在 ~/.config/mimeapps.list（已入库）
+# 注：~/.local/bin 下的 b23 / gsudo / fuzzel-askpass / niri-keys / hypr-keys /
+#     {niri,hypr}-touchpad-toggle 不是缺口——由 scripts/07-config.sh 的 P1-6 段
+#     自动创建为指向 ~/scripts 的符号链接（2026-09-21 已补齐至 7 条）。
+# --- 7. 依赖宿主未入库项目/包的服务与入口（2026-09-21 重扫补录）---
+payload-file	~/.config/systemd/user/grok-workbuddy-shim.service	physical	ExecStart 指向 ~/Projects/grok-workbuddy 原型仓库（未入库）；属未纳入的 workbuddy AUR 包配套
+payload-file	~/.local/share/applications/antigravity-ide-url-handler.desktop	physical	属于未纳入的 antigravity-ide AUR 包（URL handler）
+
