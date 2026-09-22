@@ -295,3 +295,4 @@ physical-v1	maintenance	config/home/scripts/desktop/hypr-touchpad-toggle	scripts
 physical-v1	maintenance	config/home/scripts/desktop/niri-touchpad-toggle	scripts/desktop/niri-touchpad-toggle	755
 physical-v1	wm-hyprland	config/home/.config/hypr/touchpad-state.lua	.config/hypr/touchpad-state.lua	644
 physical-v1	wm-niri	config/home/.config/niri/touchpad-state.kdl	.config/niri/touchpad-state.kdl	644
+physical-v1	desktop-shared	config/home/.local/share/applications/ai.vellum-panel.desktop	.local/share/applications/ai.vellum-panel.desktop	644
