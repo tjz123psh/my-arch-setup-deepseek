@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DeepSeek Harness
+Comment=启动 DeepSeek Harness Web UI (http://127.0.0.1:3080)
+Exec=/home/pang/scripts/dsh/dsh-web.sh
+Icon=dsh
+Terminal=false
+Categories=Development;
+StartupNotify=false

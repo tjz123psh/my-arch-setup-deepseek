@@ -173,6 +173,13 @@ if [[ "${DESKTOP_ENV}" != "none" ]]; then
 niri-keys|desktop/niri-keys
 hypr-keys|desktop/hypr-keys
 b23|media/b23
+# 2026-09-21：补齐与宿主一致、且被配置/文档以裸命令调用的入口。
+# 此前只有上面 3 条，恢复后 gsudo / fuzzel-askpass / 触摸板开关没有 PATH 入口
+# （gsudo 文档教用户直接敲 gsudo；触摸板绑定走绝对路径故不受影响，但仍对齐宿主）。
+gsudo|desktop/gsudo
+fuzzel-askpass|desktop/fuzzel-askpass
+niri-touchpad-toggle|desktop/niri-touchpad-toggle
+hypr-touchpad-toggle|desktop/hypr-touchpad-toggle
 ENTRIES
 fi
 

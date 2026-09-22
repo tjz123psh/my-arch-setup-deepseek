@@ -1,0 +1,10 @@
+[Unit]
+Description=Timer for Obsidian Notes Sync
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

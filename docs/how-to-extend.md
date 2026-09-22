@@ -117,6 +117,7 @@ no mapping edits).` 结束；加 `--apply` 才把 `~/scripts` 镜像进 `config/
 4. `libvirt` 配置视为宿主资产（AGENTS 绝对指令二），**不得同步**
 5. 运行时/生成物不入库：浏览器 profile、QQ 数据、缓存、DMS/matugen 生成物（`dms/*.lua`、`colors.ini`、`dank-theme.conf`）、`*.bak`、vmtest 副本、`fish_variables`、`node_modules`
 6. 包审计注意：宿主若经离线 `pacman -U` 恢复，**所有包可能都标为显式**（`pacman -Qe` 语义失效）——按依赖关系分类，别按 install reason 判断
+7. **先查 `manifests/excluded.tsv`**：有意不纳入的包/文件都记在那里（含原因与依据）。宿主有、仓库没有 ≠ 遗漏；已定论的项不要重新提议，新增排除项也在那里登记。
 
 **主 agent 整合必做**：
 1. 复制文件进 `config/home/` → `./sync-config-mappings.sh --module <默认模块>` 自动补映射（新目录没有可继承 module 时用 `--module`；`config/etc` 不走映射，脚本直接部署）

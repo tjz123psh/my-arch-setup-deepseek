@@ -1,6 +1,7 @@
 # schema=1
 # package
 # 含 AUR→AUR 引导依赖（非安装目标）：vmware-keymaps、snapd-xdg-open-git
+# 有意不纳入的 AUR 包（antigravity-ide / workbuddy / wps-office-*）见 excluded.tsv
 dbx-bin
 dsearch-bin
 fcitx5-skin-fluentdark-git

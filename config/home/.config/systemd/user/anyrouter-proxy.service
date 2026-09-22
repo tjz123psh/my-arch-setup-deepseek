@@ -1,0 +1,17 @@
+[Unit]
+Description=AnyRouter reverse proxy for DSH (egress via Clash 127.0.0.1:7890)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /home/pang/.local/bin/anyrouter-proxy.mjs
+Environment=NODE_USE_ENV_PROXY=1
+Environment=HTTPS_PROXY=http://127.0.0.1:7890
+Environment=HTTP_PROXY=http://127.0.0.1:7890
+Environment=NO_PROXY=127.0.0.1,localhost
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

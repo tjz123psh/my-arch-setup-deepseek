@@ -190,6 +190,29 @@ refs() {
       rc=1
     fi
   done < <(grep -oE '^# [a-z0-9@._+:-]+$' fetch-aur-sources.sh | sed 's/^# //')
+  # excluded.tsv 一致性（2026-09-21）：不纳入清单是审计账本，格式错会让它悄悄失效。
+  # 校验：schema 头、每行 4 列、kind 取值合法、排除的 AUR 包不得同时出现在主清单。
+  if [[ -f manifests/excluded.tsv ]]; then
+    if [[ "$(head -1 manifests/excluded.tsv)" != "# schema=1" ]]; then
+      echo "  FAIL manifests/excluded.tsv 缺少 '# schema=1' 头"
+      rc=1
+    fi
+    local kind excl_name
+    while IFS=$'\t' read -r kind excl_name _scope _reason; do
+      [[ -n "${kind}" ]] || continue
+      case "${kind}" in
+        aur-package|pacman-package|payload-file|runtime-state|secret) ;;
+        *) echo "  FAIL excluded.tsv 非法 kind：${kind}（name=${excl_name}）"; rc=1 ;;
+      esac
+      if [[ "${kind}" == "aur-package" ]] && grep -qx "${excl_name}" manifests/aur-recipes.tsv 2>/dev/null; then
+        echo "  FAIL excluded.tsv 与 aur-recipes.tsv 冲突：${excl_name} 既排除又列入"
+        rc=1
+      fi
+    done < <(grep -vE '^#|^$' manifests/excluded.tsv)
+  else
+    echo "  FAIL manifests/excluded.tsv 缺失（不纳入清单是审计契约）"
+    rc=1
+  fi
   return $rc
 }
 

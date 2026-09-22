@@ -1,0 +1,61 @@
+# schema=1
+# 不纳入清单（excluded manifest）
+#
+# 记录**有意不纳入**本仓库恢复范围的包与文件，以及原因。这不是安装输入，
+# 任何安装步骤都不读取本文件；它是审计用的账本，避免"宿主有、仓库没有"
+# 被反复误判为遗漏，也避免将来重新引入已被否决的东西。
+#
+# 列：kind<TAB>name<TAB>scope<TAB>reason
+#   kind   = aur-package | pacman-package | payload-file | runtime-state | secret
+#   scope  = physical | vm | both（该排除项影响的机型）
+#   reason = 一句话原因；引用依据（AGENTS 条款 / 用户决定 / 测试断言）
+#
+# 判定准则见 docs/how-to-extend.md 第七节：a 该入库 / b 运行时不入库 / c 不确定
+# ——宁可少加。本文件收录 b 类与 c 类中已定论的项。
+#
+# --- 1. AUR 包：上游体积大、非恢复必需，用户明确决定不纳入（2026-09-21）---
+aur-package	antigravity-ide	physical	用户决定；AUR 无 recipe；恢复后如需可 paru -S antigravity-ide
+aur-package	workbuddy	physical	用户决定；AUR 无 recipe；且依赖 grok-workbuddy-shim 本地原型服务
+aur-package	wps-office-cn	physical	用户决定；AUR 无 recipe；WPS 三件套体积大且非桌面必需
+aur-package	wps-office-mime-cn	physical	同上（wps-office-cn 的 MIME 关联包）
+aur-package	wps-office-mui-zh-cn	physical	同上（wps-office-cn 的中文语言包）
+#
+# --- 2. pacman 包：KVM 时代遗留，2026-08-08 迁移到 VMware 后不再恢复 ---
+# 已在 workstation-packages.tsv 标 policy=deferred（安装器跳过），此处仅记录原因。
+pacman-package	dnsmasq	vm	KVM 遗留（virt-manager 网络）；VMware 迁移后不再恢复
+pacman-package	edk2-ovmf	vm	KVM 遗留（UEFI 固件）；VMware 迁移后不再恢复
+pacman-package	libvirt	vm	KVM 遗留；AGENTS 绝对指令二将 libvirt 配置视为宿主资产
+pacman-package	qemu-desktop	vm	KVM 遗留；改用 VMware Workstation
+pacman-package	qemu-guest-agent	vm	KVM 遗留；VMware 客户机改用 open-vm-tools
+pacman-package	spice-vdagent	vm	KVM 遗留；VMware 客户机改用 open-vm-tools
+pacman-package	virt-manager	vm	KVM 遗留；改用 VMware Workstation
+pacman-package	virt-viewer	vm	KVM 遗留；改用 VMware Workstation
+#
+# --- 3. 凭据类：AGENTS 凭据红线，严禁入库 ---
+secret	~/.config/vellum/config.toml	both	含 api_key / api_key_env 键（vellum OCR/翻译模型配置）
+secret	~/.config/rclone/rclone.conf	physical	含 Google Drive OAuth token（obsidian-sync 用）
+secret	~/.config/gh/hosts.yml	physical	GitHub CLI token
+secret	~/.config/grok/secrets/*.json	physical	Grok/WorkBuddy 会话凭据
+secret	fish 明文 key 赋值文件	physical	AGENTS 规定：同步前须轮换或改为 private-env.fish 引用
+#
+# --- 4. 运行时 / 生成物：会随运行变化，入库无意义或有害 ---
+runtime-state	~/.config/hypr/touchpad-state.lua	physical	运行时开关状态；payload 收录默认值副本，不随宿主状态同步
+runtime-state	~/.config/niri/touchpad-state.kdl	physical	同上
+runtime-state	~/.local/share/pnpm/*	both	包管理器运行时（pnpm 自身安装产物）
+runtime-state	~/.local/share/maven/bin/mvn	physical	Maven 发行包解压产物；仓库只留 ~/.local/bin/mvn 包装器
+runtime-state	~/.local/share/spring/*	physical	Spring CLI 发行包；仓库不分发，见 README「手工准备项」
+runtime-state	~/.config/vellum/config.toml.bak	both	运行时备份文件
+runtime-state	浏览器 profile / QQ 数据 / node_modules / fish_variables	both	缓存与运行时数据
+#
+# --- 5. 宿主资产：AGENTS 绝对指令二，不得同步 ---
+payload-file	libvirt 相关配置（/etc/libvirt、~/.config/libvirt）	both	宿主资产，不得改动或同步
+#
+# --- 6. 本机专用可执行物：依赖宿主项目路径或第三方发行，仓库不复现 ---
+payload-file	~/.local/bin/zedg	physical	Zed 启动包装器，注入 provider API key；key 来源为钥匙环/环境变量
+payload-file	~/.local/bin/antigravity-ide	physical	属于未纳入的 antigravity-ide AUR 包
+payload-file	~/.local/bin/rjsupplicant-gui	physical	第三方校园网认证工具（ELF），非仓库分发物
+payload-file	~/.local/bin/md-reader	physical	由 ~/Projects/md-reader 构建的 Python 启动器
+payload-file	~/.local/share/applications/antigravity-ide*.desktop	physical	属于未纳入的 antigravity-ide AUR 包
+payload-file	~/.local/share/applications/io.github.pang.{mdreader,RjSupplicantGui}.desktop	physical	本地构建项目的桌面项，依赖各自源码树
+payload-file	~/.local/share/applications/mimeinfo.cache	both	桌面数据库缓存，由 update-desktop-database 生成
+payload-file	~/.local/share/applications/mimeapps.list	both	空的（0 字节）；真实默认程序表在 ~/.config/mimeapps.list（已入库）
