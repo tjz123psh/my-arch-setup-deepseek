@@ -222,11 +222,53 @@ greetd 下载问题不再复现。
 （`wm-hyprland` 18 行、`wm-niri` 16 行），实测三轮完全吻合。
 > **计数注**：上表为 2026-09-18 实测值（mappings=289）。此后两批同步使配置面变大：
 > 2026-09-21 `~/md` 知识库同步后 291，同日追加触摸板配置、脚本、包清单与排除清单后为 302
-> （install 200→206、total 220→226）。同口径的干净轮部署数相应为 `301 / 283 / 267`；
-> 上表各轮的 `EXIT=0` 与步骤结论不变，但那批验收对应的是 289 时期的 payload。
+> （install 200→206、total 220→226）。同口径的干净轮部署数相应为 `301 / 282 / 265`
+> （2026-09-23 实测，见下节）；上表各轮的 `EXIT=0` 与步骤结论不变，但那批验收对应的是
+> 289 时期的 payload。
 
 证据：`.ai/vm-logs-20260918/`（`install-clean-1/2`、`install-vm-A`、`install-vm-b23-r2`（修复前失败样本）、
 `install-phy`、`install-niri`、`install-none`）。
+
+
+### 2026-09-23 复验（mappings=302：P1-6 符号链接补齐 + `.timer` 枚举 + 6 个新包）
+
+针对 2026-09-21/22 两批 payload 变更（`~/md` 知识库同步、6 个 pacman 包、触摸板开关、
+`excluded.tsv`、`07-config` P1-6 从 3 条补到 7 条、`08-services` 补 `.timer` 枚举）
+在干净基线（`Snapshot 1`，201 包）上重跑三档桌面，全部**在线模式**（无 `.aur-sources`，
+经宿主 Clash 反向隧道）：
+
+| 轮次 | 命令 | 结果 |
+|---|---|---|
+| vm 干净基线 | `-d both -t vm` | `EXIT=0`、11 步、`Base preconditions 12/12`、`deployed=301 skipped=0` |
+| niri 变体 | `-d niri -t vm` | `EXIT=0`、10 步、`deployed=282 skipped=0` |
+| none 变体 | `-d none -t vm` | `EXIT=0`、9 步、`deployed=265 skipped=0` |
+
+计数与代码一致：`302 − 1（asus-hardware）= 301`、`− 19（wm-hyprland）= 282`、
+`− 17（wm-niri）= 265`。本批新增两个 `wm-*` 行（`touchpad-state.lua` → `wm-hyprland`、
+`touchpad-state.kdl` → `wm-niri`）使两模块各 +1 行，所以同口径部署数由 289 时期的
+`288 / 270 / 254` 变为 `301 / 282 / 265`。
+
+**本轮重点验证（逐条实测）**：
+
+- `07-config` P1-6 的 7 条 `~/.local/bin` 符号链接全部创建（`niri-keys`/`hypr-keys`/`b23`/
+  `gsudo`/`fuzzel-askpass`/`niri-touchpad-toggle`/`hypr-touchpad-toggle`）；heredoc 里的
+  `#` 注释行未被当成条目（假警告 0 条）。
+- `08-services` 枚举 `.timer`：`obsidian-sync.timer` 由「不会被启用」变为 `enabled`；
+  无 `[Install]` 的 `obsidian-sync.service` 被正确识别为 timer 驱动（记 log 而非 warn）。
+- 6 个新包全部安装：`linux-lts-headers`/`net-tools`/`python`/`rclone`/`wireless-regdb`/`xdotool`。
+- 新 payload 文件全部落位：`anyrouter-proxy.{service,mjs}`、`obsidian-sync.{service,timer}`、
+  `dbx-handler.desktop`、`dsh.desktop`、`touchpad-state.kdl`、`touchpad-state.lua`。
+- 模块门控：niri 轮有 `touchpad-state.kdl`、无 `touchpad-state.lua` 且无 `~/.config/hypr`；
+  none 轮 `~/.config/{niri,hypr}` 均缺失、`~/.local/bin` **0 个符号链接**（P1-6 按设计跳过）、
+  用户单元不启用（`obsidian-sync.timer` = `disabled`）。
+- `niri validate` 通过（含新收录的 `include "touchpad-state.kdl"`）。
+
+证据：`.ai/vm-logs-20260923/`（`install-vm-both-20260923.log` 250K、
+`install-vm-none-20260923.log` 241K）。niri 轮的完整日志在归档前被 `Snapshot 1` 回滚清除，
+仅保留上述结果行与实测结论（下次先归档再回滚）。
+
+未覆盖：伪物理机轮（`--test-profile physical-sim-vmware`）与续跑轮本批未重跑；
+`04-drivers` 与续跑逻辑本批未改动。
 
 ### 2026-09-18 在线模式轮（同一 payload，经宿主代理）
 
